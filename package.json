@@ -9,7 +9,10 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@base-ui/react": "^1.6.0",
     "@hookform/resolvers": "^5.7.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "framer-motion": "^12.43.0",
     "idb-keyval": "^6.3.0",
     "jspdf": "^4.2.1",
@@ -19,18 +22,26 @@
     "react-dom": "19.1.0",
     "react-hook-form": "^7.84.0",
     "recharts": "^3.10.1",
+    "shadcn": "^4.16.1",
+    "tailwind-merge": "^3.6.0",
+    "tw-animate-css": "^1.4.0",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.0.5",
     "eslint": "^9",
     "eslint-config-next": "15.5.22",
+    "jsdom": "^30.0.1",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }
