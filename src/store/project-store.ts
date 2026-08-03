@@ -68,6 +68,23 @@ export function createEmptyProject(input: { schoolName?: string; id?: string } =
   })
 }
 
+/* ------------------------------------------------------------ save status */
+
+interface SaveStatusState {
+  status: 'idle' | 'pending' | 'saved'
+  lastSavedAt: string | null
+  markPending: () => void
+  markSaved: (at: string) => void
+}
+
+/** Tracks the real IndexedDB write, not just the in-memory state change. */
+export const useSaveStatus = create<SaveStatusState>((set) => ({
+  status: 'idle',
+  lastSavedAt: null,
+  markPending: () => set({ status: 'pending' }),
+  markSaved: (at) => set({ status: 'saved', lastSavedAt: at }),
+}))
+
 /* -------------------------------------------------------- idb-keyval storage */
 
 function hasIndexedDb(): boolean {
@@ -90,7 +107,9 @@ function debounce(fn: (name: string, value: string) => void, ms: number) {
 }
 
 const debouncedIdbSet = debounce((name, value) => {
-  void idbSet(name, value)
+  void idbSet(name, value).then(() => {
+    useSaveStatus.getState().markSaved(new Date().toISOString())
+  })
 }, DEBOUNCE_MS)
 
 export const idbStorage: StateStorage = {
@@ -100,6 +119,7 @@ export const idbStorage: StateStorage = {
   },
   setItem: (name, value) => {
     if (!hasIndexedDb()) return
+    useSaveStatus.getState().markPending()
     debouncedIdbSet(name, value)
   },
   removeItem: async (name) => {

@@ -4,6 +4,95 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ------------------------------------------------------------------------
+ * Palette and type scale — the single source of truth for every colour and
+ * font size in the product. Semantic tokens below are all *derived* from
+ * the --palette-* primitives via var()/color-mix(); nothing here is an
+ * independent literal. To retheme the app, change only the primitives.
+ * ---------------------------------------------------------------------- */
+
+:root {
+  --palette-ink: #0b0b0b;
+  --palette-ink-secondary: #52514e;
+  --palette-ink-muted: #898781;
+  --palette-surface: #f9f9f7;
+  --palette-surface-raised: #fcfcfb;
+  --palette-brand: #2a78d6;
+  --palette-brand-ink: #ffffff;
+  --palette-accent: #4a3aa7;
+  --palette-accent-ink: #ffffff;
+  --palette-success: #0ca30c;
+  --palette-warning: #fab219;
+  --palette-danger: #d03b3b;
+  --palette-chart-1: #2a78d6;
+  --palette-chart-2: #eb6834;
+  --palette-chart-3: #1baf7a;
+  --palette-chart-4: #eda100;
+  --palette-chart-5: #e87ba4;
+
+  --radius: 0.5rem;
+}
+
+.dark {
+  --palette-ink: #ffffff;
+  --palette-ink-secondary: #c3c2b7;
+  --palette-ink-muted: #898781;
+  --palette-surface: #0d0d0d;
+  --palette-surface-raised: #1a1a19;
+  --palette-brand: #3987e5;
+  --palette-brand-ink: #ffffff;
+  --palette-accent: #9085e9;
+  --palette-accent-ink: #0b0b0b;
+  --palette-success: #0ca30c;
+  --palette-warning: #fab219;
+  --palette-danger: #d03b3b;
+  --palette-chart-1: #3987e5;
+  --palette-chart-2: #d95926;
+  --palette-chart-3: #199e70;
+  --palette-chart-4: #c98500;
+  --palette-chart-5: #d55181;
+}
+
+:root {
+  /* Semantic tokens — one derivation per role, valid in both light and dark
+   * because only the primitives above change between them. */
+  --background: var(--palette-surface);
+  --foreground: var(--palette-ink);
+  --card: var(--palette-surface-raised);
+  --card-foreground: var(--palette-ink);
+  --popover: var(--palette-surface-raised);
+  --popover-foreground: var(--palette-ink);
+  --primary: var(--palette-brand);
+  --primary-foreground: var(--palette-brand-ink);
+  --secondary: color-mix(in oklch, var(--palette-ink) 6%, var(--palette-surface));
+  --secondary-foreground: var(--palette-ink);
+  --muted: color-mix(in oklch, var(--palette-ink) 5%, var(--palette-surface));
+  --muted-foreground: var(--palette-ink-secondary);
+  --accent: color-mix(in oklch, var(--palette-accent) 12%, var(--palette-surface));
+  --accent-foreground: var(--palette-accent);
+  --destructive: var(--palette-danger);
+  --success: var(--palette-success);
+  --success-foreground: #ffffff;
+  --warning: var(--palette-warning);
+  --warning-foreground: var(--palette-ink);
+  --border: color-mix(in oklch, var(--palette-ink) 10%, transparent);
+  --input: color-mix(in oklch, var(--palette-ink) 15%, transparent);
+  --ring: var(--palette-brand);
+  --chart-1: var(--palette-chart-1);
+  --chart-2: var(--palette-chart-2);
+  --chart-3: var(--palette-chart-3);
+  --chart-4: var(--palette-chart-4);
+  --chart-5: var(--palette-chart-5);
+  --sidebar: color-mix(in oklch, var(--palette-brand) 4%, var(--palette-surface));
+  --sidebar-foreground: var(--palette-ink);
+  --sidebar-primary: var(--palette-brand);
+  --sidebar-primary-foreground: var(--palette-brand-ink);
+  --sidebar-accent: color-mix(in oklch, var(--palette-brand) 12%, var(--palette-surface));
+  --sidebar-accent-foreground: var(--palette-brand);
+  --sidebar-border: color-mix(in oklch, var(--palette-ink) 10%, transparent);
+  --sidebar-ring: var(--palette-brand);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -27,6 +116,10 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -46,75 +139,23 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
-}
 
-:root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
-
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Type scale — deliberately tighter than Tailwind's stock scale, tuned
+   * for a dense financial UI where numbers sit next to labels in tables. */
+  --text-xs: 0.6875rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.0625rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: 2.25rem;
 }
 
 @layer base {
@@ -123,6 +164,7 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-variant-numeric: tabular-nums;
   }
   html {
     @apply font-sans;
