@@ -16,7 +16,7 @@ import { Step4Fees } from './step-4-fees'
 import { Step5Revenue } from './step-5-revenue'
 import { Step6Staffing } from './step-6-staffing'
 
-const STEPS = [
+export const WIZARD_STEPS = [
   { title: 'School information', description: 'Identity, currency and the academic calendar.' },
   { title: 'Curriculum', description: 'Year groups the school teaches.' },
   { title: 'Capacity', description: 'Classrooms, staffing and occupancy.' },
@@ -25,8 +25,8 @@ const STEPS = [
   { title: 'Staffing', description: 'Positions, headcount and compensation defaults.' },
 ] as const
 
-export function SetupWizard({ projectId }: { projectId: string }) {
-  const [step, setStep] = useState(1)
+export function SetupWizard({ projectId, initialStep }: { projectId: string; initialStep?: number }) {
+  const [step, setStep] = useState(() => Math.min(WIZARD_STEP_COUNT, Math.max(1, initialStep ?? 1)))
   const project = useProjectStore((state) => state.projects[projectId])
   const router = useRouter()
 
@@ -50,12 +50,12 @@ export function SetupWizard({ projectId }: { projectId: string }) {
     router.push('/dashboard')
   }
 
-  const current = STEPS[step - 1]!
+  const current = WIZARD_STEPS[step - 1]!
 
   return (
     <div className="flex flex-col gap-6">
       <ol className="flex flex-wrap items-center gap-2">
-        {STEPS.map((item, index) => {
+        {WIZARD_STEPS.map((item, index) => {
           const stepNumber = index + 1
           const isActive = stepNumber === step
           const isComplete = stepNumber < step
