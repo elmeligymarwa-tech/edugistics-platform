@@ -3,16 +3,17 @@
 import { useEffect } from 'react'
 
 import { PageHeader } from '@/components/app-shell/page-header'
-import { useActiveProject, useProjectStore } from '@/store/project-store'
+import { useActiveProject, useHasHydrated, useProjectStore } from '@/store/project-store'
 import { SetupWizard } from './wizard'
 
 export default function SetupPage() {
+  const hasHydrated = useHasHydrated()
   const project = useActiveProject()
   const createProject = useProjectStore((state) => state.createProject)
 
   useEffect(() => {
-    if (!project) createProject()
-  }, [project, createProject])
+    if (hasHydrated && !project) createProject()
+  }, [hasHydrated, project, createProject])
 
   return (
     <>

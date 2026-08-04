@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { get as idbGet } from 'idb-keyval'
 import { ProjectSchema, SCHEMA_VERSION } from '../domain/schema'
 import {
@@ -145,6 +145,45 @@ describe('migrateProject', () => {
     expect(migrateProject(null)).toBeNull()
     expect(migrateProject('not-a-project')).toBe('not-a-project')
   })
+})
+
+describe('rehydration', () => {
+  it('exposes hasHydrated and flips to true once IndexedDB has been read', async () => {
+    vi.resetModules()
+    const mod = await import('./project-store')
+
+    expect(mod.useProjectStore.getState().hasHydrated).toBe(false)
+    await vi.waitFor(() => {
+      expect(mod.useProjectStore.getState().hasHydrated).toBe(true)
+    })
+  })
+
+  it('gating auto-creation on hasHydrated avoids orphaning a persisted project behind a fresh empty one', async () => {
+    // Simulate a previous session that saved a populated project to IndexedDB.
+    vi.resetModules()
+    const priorSession = await import('./project-store')
+    const id = priorSession.useProjectStore.getState().createProject('Riverside International School')
+    priorSession.useProjectStore.getState().updateMeta(id, { country: 'Egypt' })
+    await new Promise((resolve) => setTimeout(resolve, 700)) // let the debounced idb write land
+
+    // Simulate a page reload: a fresh store instance reading the same backing store.
+    vi.resetModules()
+    const reloadedSession = await import('./project-store')
+
+    // Mirrors the wizard's setup page: only decide whether to auto-create once hydration has resolved.
+    await vi.waitFor(() => {
+      expect(reloadedSession.useProjectStore.getState().hasHydrated).toBe(true)
+    })
+    const state = reloadedSession.useProjectStore.getState()
+    if (!state.activeProjectId) state.createProject('Should never run')
+
+    const finalState = reloadedSession.useProjectStore.getState()
+    expect(Object.keys(finalState.projects)).toHaveLength(1)
+    const activeProject = finalState.activeProjectId
+      ? finalState.projects[finalState.activeProjectId]
+      : undefined
+    expect(activeProject?.meta.schoolName).toBe('Riverside International School')
+  }, 3000)
 })
 
 describe('storage persistence', () => {

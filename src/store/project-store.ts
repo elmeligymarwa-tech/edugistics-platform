@@ -137,6 +137,12 @@ interface PersistedProjectState {
 
 export type ProjectImportResult = { ok: true; id: string } | { ok: false; error: string }
 
+interface HydrationState {
+  /** False until IndexedDB rehydration has resolved (or failed). Gates any logic that would otherwise race the async read, such as auto-creating a project when none is active yet. */
+  hasHydrated: boolean
+  setHasHydrated: (value: boolean) => void
+}
+
 interface ProjectActions {
   createProject: (schoolName?: string) => string
   duplicateProject: (id: string) => string
@@ -157,7 +163,7 @@ interface ProjectActions {
   importProject: (json: string) => ProjectImportResult
 }
 
-export type ProjectStoreState = PersistedProjectState & ProjectActions
+export type ProjectStoreState = PersistedProjectState & HydrationState & ProjectActions
 
 const EMPTY_CAPACITY: YearGroupCapacity = {
   classrooms: 0,
@@ -188,6 +194,8 @@ export const useProjectStore = create<ProjectStoreState>()(
     (set, get) => ({
       projects: {},
       activeProjectId: null,
+      hasHydrated: false,
+      setHasHydrated: (value) => set({ hasHydrated: value }),
 
       createProject: (schoolName) => {
         const project = createEmptyProject({ schoolName })
@@ -382,6 +390,9 @@ export const useProjectStore = create<ProjectStoreState>()(
       name: STORAGE_NAME,
       storage: createJSONStorage(() => idbStorage),
       partialize: (state) => ({ projects: state.projects, activeProjectId: state.activeProjectId }),
+      onRehydrateStorage: () => () => {
+        useProjectStore.getState().setHasHydrated(true)
+      },
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<PersistedProjectState> | null
         if (!persisted?.projects) return currentState
@@ -418,6 +429,11 @@ export function useActiveProject(): Project | null {
   return useProjectStore((state) =>
     state.activeProjectId ? (state.projects[state.activeProjectId] ?? null) : null,
   )
+}
+
+/** True once IndexedDB rehydration has resolved. Gate any logic that reacts to an absent active project on this, otherwise it will race the async read and orphan persisted data behind a freshly created empty one. */
+export function useHasHydrated(): boolean {
+  return useProjectStore((state) => state.hasHydrated)
 }
 
 export function useProjectForecast(id: string): Forecast | null {
