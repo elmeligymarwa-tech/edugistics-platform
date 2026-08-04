@@ -146,6 +146,8 @@ interface ProjectActions {
   updateMeta: (id: string, patch: Partial<ProjectMeta>) => void
   updateCalendar: (id: string, patch: Partial<CalendarConfig>) => void
   updateYearGroups: (id: string, yearGroups: YearGroupId[]) => void
+  /** Removes a year group and any capacity, fee, intake and retention data tied to it. */
+  removeYearGroup: (id: string, yearGroup: YearGroupId) => void
   updateCapacity: (id: string, yearGroup: YearGroupId, patch: Partial<YearGroupCapacity>) => void
   updateFees: (id: string, patch: Partial<FeeStructure>) => void
   updateRevenueAssumptions: (id: string, patch: Partial<RevenueAssumptions>) => void
@@ -257,6 +259,38 @@ export const useProjectStore = create<ProjectStoreState>()(
           const project = state.projects[id]
           if (!project) return state
           return { projects: touch(state.projects, id, 'yearGroups', yearGroups) }
+        }),
+
+      removeYearGroup: (id, yearGroup) =>
+        set((state) => {
+          const project = state.projects[id]
+          if (!project) return state
+
+          const capacity = { ...project.capacity }
+          delete capacity[yearGroup]
+
+          const amounts = { ...project.fees.amounts }
+          delete amounts[yearGroup]
+
+          const newIntake = { ...project.revenueAssumptions.newIntake }
+          delete newIntake[yearGroup]
+
+          const retentionPct = { ...project.revenueAssumptions.retentionPct }
+          delete retentionPct[yearGroup]
+
+          return {
+            projects: {
+              ...state.projects,
+              [id]: {
+                ...project,
+                yearGroups: project.yearGroups.filter((g) => g !== yearGroup),
+                capacity,
+                fees: { ...project.fees, amounts },
+                revenueAssumptions: { ...project.revenueAssumptions, newIntake, retentionPct },
+                updatedAt: new Date().toISOString(),
+              },
+            },
+          }
         }),
 
       updateCapacity: (id, yearGroup, patch) =>
