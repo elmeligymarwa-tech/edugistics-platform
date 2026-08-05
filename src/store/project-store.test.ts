@@ -11,7 +11,7 @@ import {
 } from './project-store'
 
 beforeEach(() => {
-  useProjectStore.setState({ projects: {}, costModels: {}, activeProjectId: null })
+  useProjectStore.setState({ projects: {}, costModels: {}, scenarios: {}, activeProjectId: null })
 })
 
 describe('createEmptyProject', () => {
@@ -225,6 +225,155 @@ describe('cost model', () => {
     useProjectStore.getState().ensureCostModel(id)
 
     expect(useProjectStore.getState().costModels[id]?.financing.openingCash).toBe(999)
+  })
+})
+
+describe('scenarios', () => {
+  it('createScenario duplicates the project and cost model with lineage metadata', () => {
+    const baseId = useProjectStore.getState().createProject('Base School')
+    useProjectStore.getState().updateFinancing(baseId, { openingCash: 10000 })
+
+    const scenarioId = useProjectStore.getState().createScenario(baseId, 'Recession case')
+
+    const state = useProjectStore.getState()
+    expect(scenarioId).not.toBe(baseId)
+    expect(state.projects[scenarioId]?.meta.schoolName).toBe('Recession case')
+    expect(state.costModels[scenarioId]?.financing.openingCash).toBe(10000)
+    expect(state.costModels[scenarioId]?.projectId).toBe(scenarioId)
+    expect(state.scenarios[scenarioId]).toEqual({
+      baseProjectId: baseId,
+      name: 'Recession case',
+      createdAt: state.scenarios[scenarioId]?.createdAt,
+    })
+    expect(state.activeProjectId).toBe(scenarioId)
+  })
+
+  it('removes the scenario entry when its project is deleted', () => {
+    const baseId = useProjectStore.getState().createProject('Base School')
+    const scenarioId = useProjectStore.getState().createScenario(baseId, 'Downside case')
+
+    useProjectStore.getState().deleteProject(scenarioId)
+
+    expect(useProjectStore.getState().scenarios[scenarioId]).toBeUndefined()
+  })
+
+  it('applyScenarioAdjustments patches occupancy, escalation, discounts and headcount atomically', () => {
+    const baseId = useProjectStore.getState().createProject('Base School')
+    useProjectStore.getState().updateYearGroups(baseId, ['Y1'])
+    useProjectStore.getState().updateCapacity(baseId, 'Y1', {
+      classrooms: 2,
+      studentsPerClassroom: 20,
+      occupancyPctByYear: [80, 90],
+    })
+    useProjectStore.getState().updateRevenueAssumptions(baseId, {
+      tuitionEscalationPct: 3,
+      discounts: {
+        siblingPct: 10,
+        siblingEligiblePct: 0,
+        staffChildPct: 5,
+        staffChildPlaces: 0,
+        scholarshipPct: 2,
+        scholarshipPlaces: 0,
+        earlyPaymentPct: 1,
+        earlyPaymentTakeUpPct: 0,
+      },
+    })
+    useProjectStore.getState().updateStaffing(baseId, {
+      positions: [
+        {
+          id: 'admin-1',
+          title: 'Admin assistant',
+          section: 'administration',
+          derivedFromCapacity: false,
+          manualOverride: false,
+          headcount: 10,
+          averageSalary: 0,
+          minimumSalary: 0,
+          maximumSalary: 0,
+          annualIncrementPct: 0,
+          employerTaxPct: 0,
+          nationalInsurancePct: 0,
+          medicalInsurancePct: 0,
+          pensionPct: 0,
+          housingAllowance: 0,
+          transportAllowance: 0,
+          recruitmentCost: 0,
+          trainingCost: 0,
+        },
+      ],
+    })
+    useProjectStore.getState().updatePayrollConfig(baseId, { defaultIncrementPct: 4 })
+
+    const scenarioId = useProjectStore.getState().createScenario(baseId, 'Downside case')
+    useProjectStore.getState().applyScenarioAdjustments(scenarioId, {
+      occupancyDeltaPct: -10,
+      feeEscalationDeltaPct: -1,
+      salaryEscalationDeltaPct: 2,
+      discountDeltaPct: 5,
+      headcountScalePct: 80,
+    })
+
+    const project = useProjectStore.getState().projects[scenarioId]!
+    const cost = useProjectStore.getState().costModels[scenarioId]!
+
+    expect(project.capacity.Y1?.occupancyPctByYear).toEqual([70, 80])
+    expect(project.revenueAssumptions.tuitionEscalationPct).toBe(2)
+    expect(project.revenueAssumptions.discounts.siblingPct).toBe(15)
+    expect(project.staffing.positions[0]?.headcount).toBe(8)
+    expect(cost.payroll.defaultIncrementPct).toBe(6)
+
+    // The base project is untouched.
+    const base = useProjectStore.getState().projects[baseId]!
+    expect(base.capacity.Y1?.occupancyPctByYear).toEqual([80, 90])
+    expect(base.staffing.positions[0]?.headcount).toBe(10)
+  })
+
+  it('applyScenarioAdjustments clamps occupancy and discount percentages to 0-100', () => {
+    const baseId = useProjectStore.getState().createProject('Base School')
+    useProjectStore.getState().updateYearGroups(baseId, ['Y1'])
+    useProjectStore.getState().updateCapacity(baseId, 'Y1', {
+      classrooms: 1,
+      studentsPerClassroom: 20,
+      occupancyPctByYear: [95],
+    })
+    const scenarioId = useProjectStore.getState().createScenario(baseId, 'Overshoot case')
+
+    useProjectStore.getState().applyScenarioAdjustments(scenarioId, { occupancyDeltaPct: 50 })
+
+    expect(useProjectStore.getState().projects[scenarioId]?.capacity.Y1?.occupancyPctByYear).toEqual([100])
+  })
+
+  it('does not derived-headcount positions unless manually overridden', () => {
+    const baseId = useProjectStore.getState().createProject('Base School')
+    useProjectStore.getState().updateStaffing(baseId, {
+      positions: [
+        {
+          id: 'derived-teachers',
+          title: 'Teachers',
+          section: 'teaching',
+          derivedFromCapacity: true,
+          manualOverride: false,
+          headcount: 5,
+          averageSalary: 0,
+          minimumSalary: 0,
+          maximumSalary: 0,
+          annualIncrementPct: 0,
+          employerTaxPct: 0,
+          nationalInsurancePct: 0,
+          medicalInsurancePct: 0,
+          pensionPct: 0,
+          housingAllowance: 0,
+          transportAllowance: 0,
+          recruitmentCost: 0,
+          trainingCost: 0,
+        },
+      ],
+    })
+    const scenarioId = useProjectStore.getState().createScenario(baseId, 'Headcount case')
+
+    useProjectStore.getState().applyScenarioAdjustments(scenarioId, { headcountScalePct: 50 })
+
+    expect(useProjectStore.getState().projects[scenarioId]?.staffing.positions[0]?.headcount).toBe(5)
   })
 })
 

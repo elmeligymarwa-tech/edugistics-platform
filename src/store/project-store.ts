@@ -157,9 +157,31 @@ export const idbStorage: StateStorage = {
 
 /* ----------------------------------------------------------------- store */
 
+/**
+ * A scenario is a duplicated Project + CostModel with a name and a pointer
+ * back to the project it was branched from. schema.ts is locked, so this
+ * lineage lives only in the store, keyed by the scenario's own project id —
+ * never as a field on Project itself.
+ */
+export interface ScenarioMeta {
+  baseProjectId: string
+  name: string
+  createdAt: string
+}
+
+export interface ScenarioAdjustments {
+  occupancyDeltaPct?: number
+  feeEscalationDeltaPct?: number
+  salaryEscalationDeltaPct?: number
+  discountDeltaPct?: number
+  /** Percent of current headcount, e.g. 110 scales manually-set headcounts up 10%. */
+  headcountScalePct?: number
+}
+
 interface PersistedProjectState {
   projects: Record<string, Project>
   costModels: Record<string, CostModel>
+  scenarios: Record<string, ScenarioMeta>
   activeProjectId: string | null
 }
 
@@ -194,6 +216,8 @@ interface ProjectActions {
   updateOpex: (id: string, categories: OpexCategory[]) => void
   updateCapex: (id: string, items: CapexItem[]) => void
   updateFinancing: (id: string, patch: Partial<Financing>) => void
+  createScenario: (baseProjectId: string, name: string) => string
+  applyScenarioAdjustments: (id: string, adjustments: ScenarioAdjustments) => void
 }
 
 export type ProjectStoreState = PersistedProjectState & HydrationState & ProjectActions
@@ -222,6 +246,38 @@ function touch<K extends keyof Project>(
   }
 }
 
+/** Clones a project and its cost model under a fresh id, with a given school name. Shared by duplicateProject and createScenario. */
+function cloneProjectAndCost(
+  source: Project,
+  sourceCost: CostModel | undefined,
+  schoolName: string,
+  now: string,
+): { project: Project; costModel: CostModel } {
+  const project = ProjectSchema.parse({
+    ...source,
+    id: globalThis.crypto.randomUUID(),
+    meta: { ...source.meta, schoolName },
+    createdAt: now,
+    updatedAt: now,
+  })
+  const costModel = CostModelSchema.parse({
+    ...(sourceCost ?? createEmptyCostModel(source.id, now)),
+    projectId: project.id,
+    createdAt: now,
+    updatedAt: now,
+  })
+  return { project, costModel }
+}
+
+/** Adds a delta to a scalar-or-per-year escalation figure, preserving its shape. */
+function applyDelta(value: number | number[], delta: number): number | number[] {
+  return Array.isArray(value) ? value.map((entry) => entry + delta) : value + delta
+}
+
+function clampPct(value: number): number {
+  return Math.min(100, Math.max(0, value))
+}
+
 function touchCost<K extends keyof CostModel>(
   costModels: Record<string, CostModel>,
   id: string,
@@ -241,6 +297,7 @@ export const useProjectStore = create<ProjectStoreState>()(
     (set, get) => ({
       projects: {},
       costModels: {},
+      scenarios: {},
       activeProjectId: null,
       hasHydrated: false,
       setHasHydrated: (value) => set({ hasHydrated: value }),
@@ -260,20 +317,12 @@ export const useProjectStore = create<ProjectStoreState>()(
         const source = get().projects[id]
         if (!source) throw new Error(`Project not found: ${id}`)
         const now = new Date().toISOString()
-        const clone = ProjectSchema.parse({
-          ...source,
-          id: globalThis.crypto.randomUUID(),
-          meta: { ...source.meta, schoolName: `${source.meta.schoolName} (copy)` },
-          createdAt: now,
-          updatedAt: now,
-        })
-        const sourceCost = get().costModels[id]
-        const cloneCost = CostModelSchema.parse({
-          ...(sourceCost ?? createEmptyCostModel(id, now)),
-          projectId: clone.id,
-          createdAt: now,
-          updatedAt: now,
-        })
+        const { project: clone, costModel: cloneCost } = cloneProjectAndCost(
+          source,
+          get().costModels[id],
+          `${source.meta.schoolName} (copy)`,
+          now,
+        )
         set((state) => ({
           projects: { ...state.projects, [clone.id]: clone },
           costModels: { ...state.costModels, [clone.id]: cloneCost },
@@ -297,11 +346,14 @@ export const useProjectStore = create<ProjectStoreState>()(
           const costModels = Object.fromEntries(
             Object.entries(state.costModels).filter(([projectId]) => projectId !== id),
           )
+          const scenarios = Object.fromEntries(
+            Object.entries(state.scenarios).filter(([scenarioId]) => scenarioId !== id),
+          )
           const activeProjectId =
             state.activeProjectId === id
               ? (Object.keys(projects)[0] ?? null)
               : state.activeProjectId
-          return { projects, costModels, activeProjectId }
+          return { projects, costModels, scenarios, activeProjectId }
         }),
 
       setActiveProject: (id) =>
@@ -460,6 +512,111 @@ export const useProjectStore = create<ProjectStoreState>()(
           }
         }),
 
+      createScenario: (baseProjectId, name) => {
+        const source = get().projects[baseProjectId]
+        if (!source) throw new Error(`Project not found: ${baseProjectId}`)
+        const now = new Date().toISOString()
+        const { project: scenarioProject, costModel: scenarioCost } = cloneProjectAndCost(
+          source,
+          get().costModels[baseProjectId],
+          name,
+          now,
+        )
+        set((state) => ({
+          projects: { ...state.projects, [scenarioProject.id]: scenarioProject },
+          costModels: { ...state.costModels, [scenarioProject.id]: scenarioCost },
+          scenarios: {
+            ...state.scenarios,
+            [scenarioProject.id]: { baseProjectId, name, createdAt: now },
+          },
+          activeProjectId: scenarioProject.id,
+        }))
+        return scenarioProject.id
+      },
+
+      applyScenarioAdjustments: (id, adjustments) =>
+        set((state) => {
+          const project = state.projects[id]
+          const cost = state.costModels[id]
+          if (!project || !cost) return state
+
+          const {
+            occupancyDeltaPct = 0,
+            feeEscalationDeltaPct = 0,
+            salaryEscalationDeltaPct = 0,
+            discountDeltaPct = 0,
+            headcountScalePct = 100,
+          } = adjustments
+
+          const capacity = Object.fromEntries(
+            Object.entries(project.capacity).map(([group, groupCapacity]) => [
+              group,
+              {
+                ...groupCapacity,
+                occupancyPctByYear: groupCapacity.occupancyPctByYear.map((pct) =>
+                  clampPct(pct + occupancyDeltaPct),
+                ),
+              },
+            ]),
+          )
+
+          const revenueAssumptions = {
+            ...project.revenueAssumptions,
+            tuitionEscalationPct: applyDelta(
+              project.revenueAssumptions.tuitionEscalationPct,
+              feeEscalationDeltaPct,
+            ),
+            otherFeeEscalationPct: applyDelta(
+              project.revenueAssumptions.otherFeeEscalationPct,
+              feeEscalationDeltaPct,
+            ),
+            discounts: {
+              ...project.revenueAssumptions.discounts,
+              siblingPct: clampPct(project.revenueAssumptions.discounts.siblingPct + discountDeltaPct),
+              staffChildPct: clampPct(project.revenueAssumptions.discounts.staffChildPct + discountDeltaPct),
+              scholarshipPct: clampPct(
+                project.revenueAssumptions.discounts.scholarshipPct + discountDeltaPct,
+              ),
+              earlyPaymentPct: clampPct(
+                project.revenueAssumptions.discounts.earlyPaymentPct + discountDeltaPct,
+              ),
+            },
+          }
+
+          const positions = project.staffing.positions.map((position) => {
+            const isManual = !position.derivedFromCapacity || position.manualOverride
+            return isManual
+              ? { ...position, headcount: Math.max(0, Math.round((position.headcount * headcountScalePct) / 100)) }
+              : position
+          })
+
+          const now = new Date().toISOString()
+          const projects = {
+            ...state.projects,
+            [id]: {
+              ...project,
+              capacity,
+              revenueAssumptions,
+              staffing: { ...project.staffing, positions },
+              updatedAt: now,
+            },
+          }
+
+          const costModels = {
+            ...state.costModels,
+            [id]: {
+              ...cost,
+              payroll: {
+                ...cost.payroll,
+                defaultIncrementPct: applyDelta(cost.payroll.defaultIncrementPct, salaryEscalationDeltaPct),
+              },
+              updatedAt: now,
+            },
+          }
+
+          return { projects, costModels }
+        }),
+
       exportProject: (id) => {
         const project = get().projects[id]
         if (!project) throw new Error(`Project not found: ${id}`)
@@ -518,6 +675,7 @@ export const useProjectStore = create<ProjectStoreState>()(
       partialize: (state) => ({
         projects: state.projects,
         costModels: state.costModels,
+        scenarios: state.scenarios,
         activeProjectId: state.activeProjectId,
       }),
       onRehydrateStorage: () => () => {
@@ -542,6 +700,7 @@ export const useProjectStore = create<ProjectStoreState>()(
           ...currentState,
           projects,
           costModels,
+          scenarios: persisted.scenarios ?? currentState.scenarios,
           activeProjectId: persisted.activeProjectId ?? currentState.activeProjectId,
         }
       },
