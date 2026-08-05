@@ -271,6 +271,121 @@ describe('school wide ramp and student caps', () => {
   })
 })
 
+describe('school plan', () => {
+  const planProject = (overrides: Record<string, unknown> = {}) =>
+    makeProject({
+      calendar: { academicYearStart: 2027, financialYearStartMonth: 9, forecastYears: 3, termsPerYear: 3 },
+      yearGroups: ['Y1', 'Y2', 'Y3', 'Y4'],
+      capacity: Object.fromEntries(
+        ['Y1', 'Y2', 'Y3', 'Y4'].map((g) => [
+          g,
+          {
+            classrooms: 2, studentsPerClassroom: 25, teachers: 2,
+            teachingAssistants: 0, coTeachers: 0, maxCapacityPct: 100,
+            maxStudents: null, openFromYearIndex: 0, occupancyPctByYear: [100],
+          },
+        ]),
+      ),
+      fees: {
+        categories: makeProject().fees.categories,
+        amounts: Object.fromEntries(
+          ['Y1', 'Y2', 'Y3', 'Y4'].map((g) => [g, { tuition: 100000 }]),
+        ),
+      },
+      ...overrides,
+    })
+
+  it('spreads the school total evenly when the taper is zero', () => {
+    const project = planProject({
+      revenueAssumptions: {
+        ...makeProject().revenueAssumptions,
+        schoolPlan: {
+          enabled: true, maxSchoolStudents: null,
+          totalStudentsByYear: [100, 160, 200], taperPct: 0,
+        },
+      },
+    })
+    const rows = computeEnrolment(project)
+    expect(rows[0]!.map((e) => e.students)).toEqual([25, 25, 25, 25])
+    expect(rows[2]!.map((e) => e.students)).toEqual([50, 50, 50, 50])
+  })
+
+  it('weights the early years when the taper is set', () => {
+    const project = planProject({
+      revenueAssumptions: {
+        ...makeProject().revenueAssumptions,
+        schoolPlan: {
+          enabled: true, maxSchoolStudents: null,
+          totalStudentsByYear: [100], taperPct: 60,
+        },
+      },
+    })
+    const first = computeEnrolment(project)[0]!.map((e) => e.students)
+    // Weights taper 1.0, 0.8, 0.6, 0.4 and sum to 2.8.
+    expect(first[0]).toBeCloseTo(100 / 2.8, 6)
+    expect(first[3]).toBeCloseTo((100 * 0.4) / 2.8, 6)
+    expect(first.reduce((a, b) => a + b, 0)).toBeCloseTo(100, 6)
+  })
+
+  it('passes overflow from a full year group to the others', () => {
+    const project = planProject({
+      capacity: {
+        Y1: { classrooms: 1, studentsPerClassroom: 10, teachers: 1, teachingAssistants: 0, coTeachers: 0, maxCapacityPct: 100, maxStudents: null, openFromYearIndex: 0, occupancyPctByYear: [100] },
+        Y2: { classrooms: 2, studentsPerClassroom: 25, teachers: 2, teachingAssistants: 0, coTeachers: 0, maxCapacityPct: 100, maxStudents: null, openFromYearIndex: 0, occupancyPctByYear: [100] },
+        Y3: { classrooms: 2, studentsPerClassroom: 25, teachers: 2, teachingAssistants: 0, coTeachers: 0, maxCapacityPct: 100, maxStudents: null, openFromYearIndex: 0, occupancyPctByYear: [100] },
+        Y4: { classrooms: 2, studentsPerClassroom: 25, teachers: 2, teachingAssistants: 0, coTeachers: 0, maxCapacityPct: 100, maxStudents: null, openFromYearIndex: 0, occupancyPctByYear: [100] },
+      },
+      revenueAssumptions: {
+        ...makeProject().revenueAssumptions,
+        schoolPlan: {
+          enabled: true, maxSchoolStudents: null,
+          totalStudentsByYear: [120], taperPct: 0,
+        },
+      },
+    })
+    const first = computeEnrolment(project)[0]!.map((e) => e.students)
+    expect(first[0]).toBe(10)
+    expect(first.reduce((a, b) => a + b, 0)).toBeCloseTo(120, 6)
+  })
+
+  it('holds unopened year groups at zero until their opening year', () => {
+    const project = planProject({
+      capacity: {
+        Y1: { classrooms: 2, studentsPerClassroom: 25, teachers: 2, teachingAssistants: 0, coTeachers: 0, maxCapacityPct: 100, maxStudents: null, openFromYearIndex: 0, occupancyPctByYear: [100] },
+        Y2: { classrooms: 2, studentsPerClassroom: 25, teachers: 2, teachingAssistants: 0, coTeachers: 0, maxCapacityPct: 100, maxStudents: null, openFromYearIndex: 0, occupancyPctByYear: [100] },
+        Y3: { classrooms: 2, studentsPerClassroom: 25, teachers: 2, teachingAssistants: 0, coTeachers: 0, maxCapacityPct: 100, maxStudents: null, openFromYearIndex: 2, occupancyPctByYear: [100] },
+        Y4: { classrooms: 2, studentsPerClassroom: 25, teachers: 2, teachingAssistants: 0, coTeachers: 0, maxCapacityPct: 100, maxStudents: null, openFromYearIndex: 2, occupancyPctByYear: [100] },
+      },
+      revenueAssumptions: {
+        ...makeProject().revenueAssumptions,
+        schoolPlan: {
+          enabled: true, maxSchoolStudents: null,
+          totalStudentsByYear: [80, 80, 160], taperPct: 0,
+        },
+      },
+    })
+    const rows = computeEnrolment(project)
+    expect(rows[0]!.map((e) => e.students)).toEqual([40, 40, 0, 0])
+    expect(rows[2]!.map((e) => e.students)).toEqual([40, 40, 40, 40])
+  })
+
+  it('never exceeds the maximum school size', () => {
+    const project = planProject({
+      revenueAssumptions: {
+        ...makeProject().revenueAssumptions,
+        schoolPlan: {
+          enabled: true, maxSchoolStudents: 150,
+          totalStudentsByYear: [100, 400, 400], taperPct: 0,
+        },
+      },
+    })
+    const totals = computeEnrolment(project).map((r) =>
+      r.reduce((a, b) => a + b.students, 0),
+    )
+    expect(totals).toEqual([100, 150, 150])
+  })
+})
+
 describe('discounts', () => {
   it('stacks sibling and scholarship discounts against discountable revenue only', () => {
     const project = makeProject({

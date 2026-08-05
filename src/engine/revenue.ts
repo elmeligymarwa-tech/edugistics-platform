@@ -89,6 +89,55 @@ function rampFor(project: Project, group: YearGroupId): number[] {
   return project.capacity[group]?.occupancyPctByYear ?? []
 }
 
+/* --------------------------------------------------- top down allocation */
+
+/** Weight per year group, tapering from the first to the last. */
+export function taperWeights(count: number, taperPct: number): number[] {
+  if (count <= 0) return []
+  if (count === 1) return [1]
+  const taper = Math.min(100, Math.max(0, taperPct)) / 100
+  return Array.from({ length: count }, (_, i) => 1 - taper * (i / (count - 1)))
+}
+
+/**
+ * Distribute a school total across open year groups by weight, respecting each
+ * group's ceiling. Anything a full group cannot take flows to the others.
+ */
+export function allocateByWeight(
+  total: number,
+  entries: { key: string; weight: number; ceiling: number }[],
+): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const e of entries) out[e.key] = 0
+
+  let pool = entries.filter((e) => e.ceiling > 0 && e.weight > 0)
+  let remaining = Math.max(0, total)
+
+  for (let guard = 0; guard < 50 && pool.length > 0 && remaining > 0; guard += 1) {
+    const totalWeight = pool.reduce((s, e) => s + e.weight, 0)
+    if (totalWeight <= 0) break
+
+    const capped: typeof pool = []
+    for (const e of pool) {
+      if ((remaining * e.weight) / totalWeight > e.ceiling) capped.push(e)
+    }
+
+    if (capped.length === 0) {
+      for (const e of pool) out[e.key] = (remaining * e.weight) / totalWeight
+      remaining = 0
+      break
+    }
+
+    for (const e of capped) {
+      out[e.key] = e.ceiling
+      remaining -= e.ceiling
+    }
+    pool = pool.filter((e) => !capped.includes(e))
+  }
+
+  return out
+}
+
 /* ------------------------------------------------------------- enrolment */
 
 export function computeEnrolment(project: Project): YearGroupEnrolment[][] {
@@ -96,6 +145,49 @@ export function computeEnrolment(project: Project): YearGroupEnrolment[][] {
   const years = project.calendar.forecastYears
   const a = project.revenueAssumptions
   const result: YearGroupEnrolment[][] = []
+
+  const plan = a.schoolPlan
+
+  if (plan.enabled) {
+    const weights = taperWeights(groups.length, plan.taperPct)
+
+    for (let y = 0; y < years; y += 1) {
+      const open = groups
+        .map((group, i) => ({ group, i }))
+        .filter(({ group }) => y >= (project.capacity[group]?.openFromYearIndex ?? 0))
+
+      const target = plan.totalStudentsByYear.length
+        ? (plan.totalStudentsByYear[
+            Math.min(y, plan.totalStudentsByYear.length - 1)
+          ] ?? 0)
+        : 0
+      const capped =
+        plan.maxSchoolStudents === null ? target : Math.min(target, plan.maxSchoolStudents)
+
+      const allocation = allocateByWeight(
+        capped,
+        open.map(({ group, i }) => ({
+          key: group,
+          weight: weights[i] ?? 0,
+          ceiling: capacityCeiling(project, group),
+        })),
+      )
+
+      const row: YearGroupEnrolment[] = groups.map((group, g) => {
+        const students = allocation[group] ?? 0
+        const prior = y === 0 ? 0 : (result[y - 1]?.[g]?.students ?? 0)
+        return {
+          yearGroup: group,
+          students,
+          newEntrants: Math.max(0, students - prior),
+          capacityCeiling: capacityCeiling(project, group),
+        }
+      })
+      result.push(row)
+    }
+
+    return result
+  }
 
   for (let y = 0; y < years; y += 1) {
     const row: YearGroupEnrolment[] = []

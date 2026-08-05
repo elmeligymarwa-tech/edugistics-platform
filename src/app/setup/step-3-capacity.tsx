@@ -7,9 +7,10 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
-import { orderedYearGroups, type Project, type YearGroupCapacity, type YearGroupId } from '@/domain/schema'
-import { computeEnrolment } from '@/engine/revenue'
+import { orderedYearGroups, type Project, type SchoolPlan, type YearGroupCapacity, type YearGroupId } from '@/domain/schema'
+import { computeEnrolment, type YearGroupEnrolment } from '@/engine/revenue'
 import { YEAR_GROUP_LABELS } from '@/lib/wizard-data'
 import { useProjectStore } from '@/store/project-store'
 
@@ -34,6 +35,7 @@ export function Step3Capacity({ project }: { project: Project }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id, groupsKey, forecastYears])
 
+  const plan = project.revenueAssumptions.schoolPlan
   const schoolRampActive = project.revenueAssumptions.schoolOccupancyPctByYear.length > 0
   const enrolment = computeEnrolment(project)
   const yearOne = enrolment[0] ?? []
@@ -52,7 +54,9 @@ export function Step3Capacity({ project }: { project: Project }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <SchoolOccupancyRamp project={project} />
+      <SchoolPlanPanel project={project} enrolment={enrolment} />
+
+      {!plan.enabled ? <SchoolOccupancyRamp project={project} /> : null}
 
       <Card>
         <CardContent className="grid grid-cols-2 gap-4 pt-4 sm:grid-cols-5">
@@ -66,7 +70,10 @@ export function Step3Capacity({ project }: { project: Project }) {
             label="Student : teacher ratio"
             value={totalTeachers > 0 ? `${ratio.toFixed(1)} : 1` : '—'}
           />
-          <SummaryStat label="Occupancy ramp" value={schoolRampActive ? 'School-wide' : 'Per year group'} />
+          <SummaryStat
+            label="Occupancy ramp"
+            value={plan.enabled ? 'Top-down plan' : schoolRampActive ? 'School-wide' : 'Per year group'}
+          />
         </CardContent>
       </Card>
 
@@ -81,10 +88,167 @@ export function Step3Capacity({ project }: { project: Project }) {
             project={project}
             group={group}
             ceiling={ceilingByGroup.get(group) ?? 0}
+            planEnabled={plan.enabled}
+            allocatedByYear={enrolment.map((row) => row.find((e) => e.yearGroup === group)?.students ?? 0)}
           />
         ))
       )}
     </div>
+  )
+}
+
+function SchoolPlanPanel({
+  project,
+  enrolment,
+}: {
+  project: Project
+  enrolment: YearGroupEnrolment[][]
+}) {
+  const updateRevenueAssumptions = useProjectStore((state) => state.updateRevenueAssumptions)
+  const forecastYears = project.calendar.forecastYears
+  const groups = orderedYearGroups(project)
+  const plan = project.revenueAssumptions.schoolPlan
+  const [previewYearIndex, setPreviewYearIndex] = useState(0)
+
+  const patchPlan = (patch: Partial<SchoolPlan>) =>
+    updateRevenueAssumptions(project.id, { schoolPlan: { ...plan, ...patch } })
+
+  const totalStudentsFor = (index: number) =>
+    plan.totalStudentsByYear[index] ??
+    plan.totalStudentsByYear[plan.totalStudentsByYear.length - 1] ??
+    0
+
+  const setTotalStudents = (index: number, value: number) => {
+    const next = [...plan.totalStudentsByYear]
+    while (next.length <= index) next.push(next[next.length - 1] ?? 0)
+    next[index] = Math.max(0, value)
+    patchPlan({ totalStudentsByYear: next })
+  }
+
+  const previewIndex = Math.min(previewYearIndex, forecastYears - 1, Math.max(0, enrolment.length - 1))
+  const previewRow = enrolment[previewIndex] ?? []
+  const previewTotal = previewRow.reduce((sum, entry) => sum + entry.students, 0)
+
+  return (
+    <Card>
+      <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
+        <div>
+          <CardTitle>School plan</CardTitle>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Set the school total per year and let the model distribute students across year groups.
+          </p>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-foreground">
+          <Switch checked={plan.enabled} onCheckedChange={(checked) => patchPlan({ enabled: checked })} />
+          Plan top-down
+        </label>
+      </CardHeader>
+      {plan.enabled ? (
+        <CardContent className="flex flex-col gap-4 pt-0">
+          <div className="flex flex-wrap items-end gap-2">
+            <Field className="w-40">
+              <FieldLabel htmlFor="planMaxSchoolStudents">Maximum school students</FieldLabel>
+              <Input
+                id="planMaxSchoolStudents"
+                type="number"
+                min={0}
+                placeholder="No limit"
+                value={plan.maxSchoolStudents ?? ''}
+                onChange={(event) => {
+                  const raw = event.target.value
+                  patchPlan({
+                    maxSchoolStudents: raw === '' ? null : Math.max(0, Math.round(Number(raw))),
+                  })
+                }}
+              />
+            </Field>
+          </div>
+
+          <div>
+            <FieldLabel>Total students per forecast year</FieldLabel>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {Array.from({ length: forecastYears }, (_, index) => (
+                <Field key={index} className="w-24">
+                  <FieldLabel>Year {index + 1}</FieldLabel>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={totalStudentsFor(index)}
+                    onChange={(event) => setTotalStudents(index, Number(event.target.value))}
+                  />
+                </Field>
+              ))}
+            </div>
+          </div>
+
+          <Field>
+            <FieldLabel>Taper — {Math.round(plan.taperPct)}%</FieldLabel>
+            <Slider
+              min={0}
+              max={100}
+              step={1}
+              value={plan.taperPct}
+              onValueChange={(value) => patchPlan({ taperPct: value })}
+            />
+            <FieldDescription>
+              Zero spreads intake evenly across year groups. One hundred puts all growth in the first
+              year group and none in the last.
+            </FieldDescription>
+          </Field>
+
+          {groups.length > 0 ? (
+            <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-medium text-muted-foreground">Live preview — allocated students</p>
+                <div className="flex gap-1">
+                  {Array.from({ length: forecastYears }, (_, index) => (
+                    <Button
+                      key={index}
+                      type="button"
+                      size="xs"
+                      variant={previewIndex === index ? 'default' : 'outline'}
+                      onClick={() => setPreviewYearIndex(index)}
+                    >
+                      Year {index + 1}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {groups.map((group) => {
+                  const entry = previewRow.find((row) => row.yearGroup === group)
+                  const students = entry?.students ?? 0
+                  const ceiling = entry?.capacityCeiling ?? 0
+                  const width = previewTotal > 0 ? (students / previewTotal) * 100 : 0
+                  return (
+                    <div key={group} className="flex items-center gap-2 text-xs">
+                      <span className="w-20 shrink-0 font-medium text-foreground">
+                        {YEAR_GROUP_LABELS[group]}
+                      </span>
+                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-primary transition-[width]"
+                          style={{ width: `${width}%` }}
+                        />
+                      </div>
+                      <span className="w-28 shrink-0 text-right text-muted-foreground">
+                        {Math.round(students).toLocaleString()} / {Math.round(ceiling).toLocaleString()}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ) : null}
+        </CardContent>
+      ) : (
+        <CardContent className="pt-0">
+          <p className="text-xs text-muted-foreground">
+            Off. Each year group takes students from its own occupancy ramp until this is switched on.
+          </p>
+        </CardContent>
+      )}
+    </Card>
   )
 }
 
@@ -245,10 +409,14 @@ function CapacityCard({
   project,
   group,
   ceiling,
+  planEnabled,
+  allocatedByYear,
 }: {
   project: Project
   group: YearGroupId
   ceiling: number
+  planEnabled: boolean
+  allocatedByYear: number[]
 }) {
   const updateCapacity = useProjectStore((state) => state.updateCapacity)
   const capacity = project.capacity[group]
@@ -336,6 +504,19 @@ function CapacityCard({
             </FieldDescription>
           </Field>
         </div>
+
+        {planEnabled ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
+            <span className="text-xs font-medium text-muted-foreground">
+              Allocated students (from the school plan):
+            </span>
+            {allocatedByYear.map((students, index) => (
+              <Badge key={index} variant="outline">
+                Year {index + 1}: {Math.round(students).toLocaleString()}
+              </Badge>
+            ))}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   )

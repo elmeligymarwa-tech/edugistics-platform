@@ -5,7 +5,7 @@ import { Image as ImageIcon, Trash2, Upload } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Field, FieldError, FieldLabel } from '@/components/ui/field'
+import { Field, FieldDescription, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { ProjectMetaSchema, CalendarConfigSchema, type Project } from '@/domain/schema'
@@ -16,7 +16,17 @@ import { useProjectStore } from '@/store/project-store'
 export function Step1SchoolInfo({ project }: { project: Project }) {
   const updateMeta = useProjectStore((state) => state.updateMeta)
   const updateCalendar = useProjectStore((state) => state.updateCalendar)
+  const updateRevenueAssumptions = useProjectStore((state) => state.updateRevenueAssumptions)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const schoolPlan = project.revenueAssumptions.schoolPlan
+  const setMaxSchoolStudents = (raw: string) =>
+    updateRevenueAssumptions(project.id, {
+      schoolPlan: {
+        ...schoolPlan,
+        maxSchoolStudents: raw === '' ? null : Math.max(0, Math.round(Number(raw))),
+      },
+    })
 
   const metaResult = ProjectMetaSchema.safeParse(project.meta)
   const calendarResult = CalendarConfigSchema.safeParse(project.calendar)
@@ -192,6 +202,19 @@ export function Step1SchoolInfo({ project }: { project: Project }) {
                   updateCalendar(project.id, { financialYearStartMonth: Number(value) })
                 }
               />
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="maxSchoolStudents">Maximum school students</FieldLabel>
+              <Input
+                id="maxSchoolStudents"
+                type="number"
+                min={0}
+                placeholder="No limit"
+                value={schoolPlan.maxSchoolStudents ?? ''}
+                onChange={(event) => setMaxSchoolStudents(event.target.value)}
+              />
+              <FieldDescription>Hard ceiling for the whole school, used by top-down planning.</FieldDescription>
             </Field>
 
             <Field className="sm:col-span-2">

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Check } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -13,7 +13,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { YEAR_GROUP_ORDER, type Project, type YearGroupId } from '@/domain/schema'
+import { Field, FieldLabel } from '@/components/ui/field'
+import { Select } from '@/components/ui/select'
+import { YEAR_GROUP_ORDER, orderedYearGroups, type Project, type YearGroupId } from '@/domain/schema'
 import { cn } from '@/lib/utils'
 import { YEAR_GROUP_LABELS, describeYearGroupData } from '@/lib/wizard-data'
 import { useProjectStore } from '@/store/project-store'
@@ -27,7 +29,14 @@ const SECTIONS: Array<{ title: string; items: readonly YearGroupId[] }> = [
 export function Step2Curriculum({ project }: { project: Project }) {
   const updateYearGroups = useProjectStore((state) => state.updateYearGroups)
   const removeYearGroup = useProjectStore((state) => state.removeYearGroup)
+  const updateCapacity = useProjectStore((state) => state.updateCapacity)
   const [pendingRemoval, setPendingRemoval] = useState<YearGroupId | null>(null)
+
+  const forecastYears = project.calendar.forecastYears
+  const selectedGroups = orderedYearGroups(project)
+
+  const setOpenFromYearIndex = (group: YearGroupId, index: number) =>
+    updateCapacity(project.id, group, { openFromYearIndex: index })
 
   const isSelected = (group: YearGroupId) => project.yearGroups.includes(group)
 
@@ -93,6 +102,34 @@ export function Step2Curriculum({ project }: { project: Project }) {
           </div>
         </div>
       ))}
+
+      {selectedGroups.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Phased opening</CardTitle>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Every year group opens in year one by default. Set a later opening year for a group added
+              in a future phase — it still counts toward the school plan once it opens.
+            </p>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-3 pt-0 sm:grid-cols-4 lg:grid-cols-7">
+            {selectedGroups.map((group) => (
+              <Field key={group}>
+                <FieldLabel htmlFor={`opens-${group}`}>{YEAR_GROUP_LABELS[group]}</FieldLabel>
+                <Select
+                  id={`opens-${group}`}
+                  value={String(Math.min(project.capacity[group]?.openFromYearIndex ?? 0, forecastYears - 1))}
+                  items={Array.from({ length: forecastYears }, (_, index) => ({
+                    value: String(index),
+                    label: `Opens year ${index + 1}`,
+                  }))}
+                  onValueChange={(value) => setOpenFromYearIndex(group, Number(value))}
+                />
+              </Field>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Dialog open={pendingRemoval !== null} onOpenChange={(open) => !open && setPendingRemoval(null)}>
         <DialogContent>

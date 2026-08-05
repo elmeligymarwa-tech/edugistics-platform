@@ -64,13 +64,8 @@ export const YearGroupCapacitySchema = z.object({
    */
   maxStudents: z.number().min(0).nullable().default(null),
   /**
-   * Forecast year this year group opens. Groups selected at setup open in
-   * year one. Groups added for later phases open when their year arrives.
-   */
-  openFromYearIndex: z.number().int().min(0).default(0),
-  /**
-   * Per year group ramp. Ignored when a school wide ramp or a school plan
-   * is set in revenue assumptions.
+   * Per year group ramp. Ignored when a school wide ramp is set in
+   * revenue assumptions.
    */
   occupancyPctByYear: z.array(pct).min(1),
 })
@@ -139,31 +134,7 @@ export const CollectionsSchema = z
   )
 export type Collections = z.infer<typeof CollectionsSchema>
 
-/**
- * Top down planning. Enter the school total per year and let the model
- * distribute students across year groups, weighted to the early years.
- */
-export const SchoolPlanSchema = z.object({
-  enabled: z.boolean().default(false),
-  /** Hard ceiling on the whole school, whatever the year group capacities allow. */
-  maxSchoolStudents: z.number().min(0).nullable().default(null),
-  /** Total students per forecast year. Shorter arrays hold the final value. */
-  totalStudentsByYear: z.array(z.number().min(0)).default([]),
-  /**
-   * How strongly the intake tapers from the first year group to the last.
-   * Zero spreads evenly. One hundred gives the final year group no weight.
-   */
-  taperPct: pct.default(40),
-})
-export type SchoolPlan = z.infer<typeof SchoolPlanSchema>
-
 export const RevenueAssumptionsSchema = z.object({
-  schoolPlan: SchoolPlanSchema.default({
-    enabled: false,
-    maxSchoolStudents: null,
-    totalStudentsByYear: [],
-    taperPct: 40,
-  }),
   enrolmentModel: EnrolmentModelSchema.default('occupancy'),
   /**
    * One occupancy ramp for the whole school, entered once. When present it
