@@ -29,7 +29,7 @@ export default function ScenariosPage() {
       {project ? (
         <div className="flex flex-col gap-6">
           <ScenarioPanel project={project} scenarios={scenarios} />
-          <ScenarioComparison project={project} scenarios={scenarios} />
+          <ScenarioComparison project={project} />
         </div>
       ) : null}
     </>

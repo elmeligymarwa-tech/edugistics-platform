@@ -1,43 +1,51 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { Star } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { Project } from '@/domain/schema'
-import { formatMoney } from '@/lib/format'
 import { selectCostForecast, useProjectStore, type ScenarioMeta } from '@/store/project-store'
+import { ChartScenarioNetProfit } from './chart-scenario-net-profit'
+import type { ComparisonColumn } from './comparison-types'
+import { ScenarioCheckpointTable } from './scenario-checkpoint-table'
+import { ScenarioYearByYearTable } from './scenario-year-by-year-table'
 
+const MIN_COMPARISON = 2
 const MAX_COMPARISON = 3
 
-type MetricKey = 'netRevenue' | 'ebitda' | 'netProfit' | 'breakEven' | 'peakFunding'
+function labelFor(id: string, projects: Record<string, Project>, scenarios: Record<string, ScenarioMeta>): string {
+  return scenarios[id]?.name ?? projects[id]?.meta.schoolName ?? id
+}
 
-const METRICS: Array<{ key: MetricKey; label: string }> = [
-  { key: 'netRevenue', label: 'Net revenue' },
-  { key: 'ebitda', label: 'EBITDA' },
-  { key: 'netProfit', label: 'Net profit' },
-  { key: 'breakEven', label: 'Break-even year' },
-  { key: 'peakFunding', label: 'Peak funding requirement' },
-]
+function subtitleFor(
+  id: string,
+  projects: Record<string, Project>,
+  scenarios: Record<string, ScenarioMeta>,
+): string | null {
+  const meta = scenarios[id]
+  if (!meta) return null
+  const baseName = projects[meta.baseProjectId]?.meta.schoolName ?? 'a deleted project'
+  return `Scenario of ${baseName}`
+}
 
-export function ScenarioComparison({
-  project,
-  scenarios,
-}: {
-  project: Project
-  scenarios: Record<string, ScenarioMeta>
-}) {
+export function ScenarioComparison({ project }: { project: Project }) {
   const projects = useProjectStore((state) => state.projects)
+  const scenarios = useProjectStore((state) => state.scenarios)
   const costModels = useProjectStore((state) => state.costModels)
 
-  const candidateIds = [
-    project.id,
-    ...Object.entries(scenarios)
-      .filter(([, meta]) => meta.baseProjectId === project.id)
-      .map(([id]) => id),
-  ]
+  const allIds = useMemo(
+    () =>
+      Object.keys(projects).sort((a, b) =>
+        labelFor(a, projects, scenarios).localeCompare(labelFor(b, projects, scenarios)),
+      ),
+    [projects, scenarios],
+  )
 
-  const [selected, setSelected] = useState<string[]>(candidateIds.slice(0, 2))
+  const [selected, setSelected] = useState<string[]>(() => (allIds.includes(project.id) ? [project.id] : []))
+  const [baselineId, setBaselineId] = useState<string | null>(project.id)
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -47,109 +55,76 @@ export function ScenarioComparison({
     })
   }
 
-  const labelFor = (id: string) => (id === project.id ? project.meta.schoolName : (scenarios[id]?.name ?? id))
+  const effectiveBaselineId = baselineId && selected.includes(baselineId) ? baselineId : (selected[0] ?? null)
 
-  const columns = selected
+  const columns: ComparisonColumn[] = selected
     .map((id) => {
       const columnProject = projects[id]
       const costModel = costModels[id]
       if (!columnProject || !costModel) return null
-      const costForecast = selectCostForecast(columnProject, costModel)
-      const finalYear = costForecast.years[costForecast.years.length - 1]
-      return { id, label: labelFor(id), project: columnProject, costForecast, finalYear }
-    })
-    .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
-
-  const metricValue = (
-    column: (typeof columns)[number],
-    metric: MetricKey,
-  ): { display: string; numeric: number | null } => {
-    switch (metric) {
-      case 'netRevenue':
-        return { display: formatMoney(column.finalYear?.netRevenue ?? 0, column.project.meta), numeric: column.finalYear?.netRevenue ?? 0 }
-      case 'ebitda':
-        return { display: formatMoney(column.finalYear?.ebitda ?? 0, column.project.meta), numeric: column.finalYear?.ebitda ?? 0 }
-      case 'netProfit':
-        return { display: formatMoney(column.finalYear?.netProfit ?? 0, column.project.meta), numeric: column.finalYear?.netProfit ?? 0 }
-      case 'peakFunding':
-        return {
-          display: formatMoney(column.costForecast.peakFundingRequirement, column.project.meta),
-          numeric: column.costForecast.peakFundingRequirement,
-        }
-      case 'breakEven': {
-        const index = column.costForecast.breakEvenYearIndex
-        const label = index !== null ? (column.costForecast.years[index]?.label ?? 'Not within forecast') : 'Not within forecast'
-        return { display: label, numeric: index }
+      return {
+        id,
+        label: labelFor(id, projects, scenarios),
+        project: columnProject,
+        costForecast: selectCostForecast(columnProject, costModel),
       }
-    }
-  }
+    })
+    .filter((entry): entry is ComparisonColumn => entry !== null)
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Compare scenarios</CardTitle>
+        <CardTitle>Compare projects</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 pt-0">
-        <div className="flex flex-wrap gap-2">
-          {candidateIds.map((id) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => toggle(id)}
-              disabled={!selected.includes(id) && selected.length >= MAX_COMPARISON}
-              className="cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Badge variant={selected.includes(id) ? 'brand' : 'outline'}>{labelFor(id)}</Badge>
-            </button>
-          ))}
+        <div className="flex flex-col gap-2">
+          <p className="text-xs font-medium text-muted-foreground">
+            Select two or three saved projects to compare, then mark one as the baseline.
+          </p>
+          <div className="flex flex-col gap-1.5">
+            {allIds.map((id) => {
+              const isSelected = selected.includes(id)
+              const isBaseline = isSelected && effectiveBaselineId === id
+              const subtitle = subtitleFor(id, projects, scenarios)
+              return (
+                <div
+                  key={id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border px-3 py-2"
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggle(id)}
+                    disabled={!isSelected && selected.length >= MAX_COMPARISON}
+                    className="flex flex-1 cursor-pointer items-center gap-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Badge variant={isSelected ? 'brand' : 'outline'}>{labelFor(id, projects, scenarios)}</Badge>
+                    {id === project.id ? <span className="text-xs text-muted-foreground">Active</span> : null}
+                    {subtitle ? <span className="text-xs text-muted-foreground">{subtitle}</span> : null}
+                  </button>
+                  {isSelected ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={isBaseline ? 'default' : 'outline'}
+                      onClick={() => setBaselineId(id)}
+                    >
+                      <Star data-icon="inline-start" />
+                      {isBaseline ? 'Baseline' : 'Set as baseline'}
+                    </Button>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
         </div>
 
-        {columns.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Select two or three scenarios above to compare.</p>
+        {columns.length < MIN_COMPARISON ? (
+          <p className="text-sm text-muted-foreground">Select at least two projects above to compare.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-max border-collapse text-sm">
-              <thead>
-                <tr>
-                  <th className="sticky left-0 bg-card p-2 text-left font-medium text-muted-foreground">Metric</th>
-                  {columns.map((column) => (
-                    <th key={column.id} className="p-2 text-right font-medium text-muted-foreground">
-                      {column.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {METRICS.map((metric) => {
-                  const baseline = metricValue(columns[0]!, metric.key)
-                  return (
-                    <tr key={metric.key} className="border-t border-border">
-                      <td className="sticky left-0 bg-card p-2 font-medium text-foreground">{metric.label}</td>
-                      {columns.map((column, index) => {
-                        const value = metricValue(column, metric.key)
-                        const delta =
-                          index > 0 && value.numeric !== null && baseline.numeric !== null
-                            ? value.numeric - baseline.numeric
-                            : null
-                        return (
-                          <td key={column.id} className="p-2 text-right tabular-nums text-foreground">
-                            <div>{value.display}</div>
-                            {delta !== null && delta !== 0 ? (
-                              <div className={`text-xs ${delta > 0 ? 'text-success' : 'text-destructive'}`}>
-                                {delta > 0 ? '+' : ''}
-                                {metric.key === 'breakEven'
-                                  ? `${delta} yr`
-                                  : formatMoney(delta, column.project.meta)}
-                              </div>
-                            ) : null}
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+          <div className="flex flex-col gap-6">
+            <ScenarioCheckpointTable columns={columns} baselineId={effectiveBaselineId} />
+            <ScenarioYearByYearTable columns={columns} baselineId={effectiveBaselineId} />
+            <ChartScenarioNetProfit columns={columns} />
           </div>
         )}
       </CardContent>
