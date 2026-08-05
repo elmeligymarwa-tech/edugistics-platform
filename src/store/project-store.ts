@@ -15,6 +15,17 @@ import {
   type StmAgreement,
 } from '../domain/schema'
 import { computeForecast, type Forecast } from '../engine/revenue'
+import {
+  CostModelSchema,
+  COST_SCHEMA_VERSION,
+  createEmptyCostModel,
+  type CostModel,
+  type PayrollConfig,
+  type OpexCategory,
+  type CapexItem,
+  type Financing,
+} from '../domain/costs'
+import { computeCostForecast, type CostForecast } from '../engine/costs'
 
 export const STORAGE_NAME = 'edugistics-projects'
 const DEBOUNCE_MS = 500
@@ -35,6 +46,22 @@ export function migrateProject(data: unknown): unknown {
     version += 1
   }
   return { ...migrated, schemaVersion: SCHEMA_VERSION }
+}
+
+/** Per-version upgrade steps for the cost model, keyed by the schemaVersion they upgrade *from*. */
+const MIGRATIONS_COST: Record<number, (data: Record<string, unknown>) => Record<string, unknown>> = {}
+
+/** Upgrades a raw cost model object to the current COST_SCHEMA_VERSION. */
+export function migrateCostModel(data: unknown): unknown {
+  if (typeof data !== 'object' || data === null) return data
+  let migrated = data as Record<string, unknown>
+  let version = typeof migrated.schemaVersion === 'number' ? migrated.schemaVersion : 0
+  while (version < COST_SCHEMA_VERSION) {
+    const upgrade = MIGRATIONS_COST[version]
+    migrated = upgrade ? upgrade(migrated) : migrated
+    version += 1
+  }
+  return { ...migrated, schemaVersion: COST_SCHEMA_VERSION }
 }
 
 /* ---------------------------------------------------------------- empty */
@@ -132,6 +159,7 @@ export const idbStorage: StateStorage = {
 
 interface PersistedProjectState {
   projects: Record<string, Project>
+  costModels: Record<string, CostModel>
   activeProjectId: string | null
 }
 
@@ -161,6 +189,11 @@ interface ProjectActions {
   updateStm: (id: string, stm: StmAgreement | null) => void
   exportProject: (id: string) => string
   importProject: (json: string) => ProjectImportResult
+  ensureCostModel: (id: string) => void
+  updatePayrollConfig: (id: string, patch: Partial<PayrollConfig>) => void
+  updateOpex: (id: string, categories: OpexCategory[]) => void
+  updateCapex: (id: string, items: CapexItem[]) => void
+  updateFinancing: (id: string, patch: Partial<Financing>) => void
 }
 
 export type ProjectStoreState = PersistedProjectState & HydrationState & ProjectActions
@@ -189,18 +222,35 @@ function touch<K extends keyof Project>(
   }
 }
 
+function touchCost<K extends keyof CostModel>(
+  costModels: Record<string, CostModel>,
+  id: string,
+  key: K,
+  value: CostModel[K],
+): Record<string, CostModel> {
+  const existing = costModels[id]
+  if (!existing) return costModels
+  return {
+    ...costModels,
+    [id]: { ...existing, [key]: value, updatedAt: new Date().toISOString() },
+  }
+}
+
 export const useProjectStore = create<ProjectStoreState>()(
   persist(
     (set, get) => ({
       projects: {},
+      costModels: {},
       activeProjectId: null,
       hasHydrated: false,
       setHasHydrated: (value) => set({ hasHydrated: value }),
 
       createProject: (schoolName) => {
         const project = createEmptyProject({ schoolName })
+        const now = project.createdAt
         set((state) => ({
           projects: { ...state.projects, [project.id]: project },
+          costModels: { ...state.costModels, [project.id]: createEmptyCostModel(project.id, now) },
           activeProjectId: project.id,
         }))
         return project.id
@@ -217,8 +267,16 @@ export const useProjectStore = create<ProjectStoreState>()(
           createdAt: now,
           updatedAt: now,
         })
+        const sourceCost = get().costModels[id]
+        const cloneCost = CostModelSchema.parse({
+          ...(sourceCost ?? createEmptyCostModel(id, now)),
+          projectId: clone.id,
+          createdAt: now,
+          updatedAt: now,
+        })
         set((state) => ({
           projects: { ...state.projects, [clone.id]: clone },
+          costModels: { ...state.costModels, [clone.id]: cloneCost },
           activeProjectId: clone.id,
         }))
         return clone.id
@@ -236,11 +294,14 @@ export const useProjectStore = create<ProjectStoreState>()(
           const projects = Object.fromEntries(
             Object.entries(state.projects).filter(([projectId]) => projectId !== id),
           )
+          const costModels = Object.fromEntries(
+            Object.entries(state.costModels).filter(([projectId]) => projectId !== id),
+          )
           const activeProjectId =
             state.activeProjectId === id
               ? (Object.keys(projects)[0] ?? null)
               : state.activeProjectId
-          return { projects, activeProjectId }
+          return { projects, costModels, activeProjectId }
         }),
 
       setActiveProject: (id) =>
@@ -353,10 +414,57 @@ export const useProjectStore = create<ProjectStoreState>()(
           return { projects: touch(state.projects, id, 'stm', stm) }
         }),
 
+      ensureCostModel: (id) =>
+        set((state) => {
+          if (!state.projects[id] || state.costModels[id]) return state
+          return {
+            costModels: {
+              ...state.costModels,
+              [id]: createEmptyCostModel(id, new Date().toISOString()),
+            },
+          }
+        }),
+
+      updatePayrollConfig: (id, patch) =>
+        set((state) => {
+          const cost = state.costModels[id]
+          if (!cost) return state
+          return {
+            costModels: touchCost(state.costModels, id, 'payroll', { ...cost.payroll, ...patch }),
+          }
+        }),
+
+      updateOpex: (id, categories) =>
+        set((state) => {
+          const cost = state.costModels[id]
+          if (!cost) return state
+          return { costModels: touchCost(state.costModels, id, 'opex', categories) }
+        }),
+
+      updateCapex: (id, items) =>
+        set((state) => {
+          const cost = state.costModels[id]
+          if (!cost) return state
+          return { costModels: touchCost(state.costModels, id, 'capex', items) }
+        }),
+
+      updateFinancing: (id, patch) =>
+        set((state) => {
+          const cost = state.costModels[id]
+          if (!cost) return state
+          return {
+            costModels: touchCost(state.costModels, id, 'financing', {
+              ...cost.financing,
+              ...patch,
+            }),
+          }
+        }),
+
       exportProject: (id) => {
         const project = get().projects[id]
         if (!project) throw new Error(`Project not found: ${id}`)
-        return JSON.stringify(project)
+        const costModel = get().costModels[id] ?? createEmptyCostModel(id, project.updatedAt)
+        return JSON.stringify({ project, costModel })
       },
 
       importProject: (json) => {
@@ -367,20 +475,38 @@ export const useProjectStore = create<ProjectStoreState>()(
           return { ok: false, error: 'Invalid JSON' }
         }
 
-        const result = ProjectSchema.safeParse(migrateProject(parsed))
-        if (!result.success) {
-          return { ok: false, error: result.error.message }
+        const envelope =
+          typeof parsed === 'object' && parsed !== null && 'project' in parsed
+            ? (parsed as { project: unknown; costModel?: unknown })
+            : { project: parsed, costModel: undefined }
+
+        const projectResult = ProjectSchema.safeParse(migrateProject(envelope.project))
+        if (!projectResult.success) {
+          return { ok: false, error: projectResult.error.message }
         }
 
         const now = new Date().toISOString()
         const project: Project = {
-          ...result.data,
+          ...projectResult.data,
           id: globalThis.crypto.randomUUID(),
           createdAt: now,
           updatedAt: now,
         }
+
+        let costModel: CostModel
+        if (envelope.costModel) {
+          const costResult = CostModelSchema.safeParse(migrateCostModel(envelope.costModel))
+          if (!costResult.success) {
+            return { ok: false, error: costResult.error.message }
+          }
+          costModel = { ...costResult.data, projectId: project.id, createdAt: now, updatedAt: now }
+        } else {
+          costModel = createEmptyCostModel(project.id, now)
+        }
+
         set((state) => ({
           projects: { ...state.projects, [project.id]: project },
+          costModels: { ...state.costModels, [project.id]: costModel },
           activeProjectId: project.id,
         }))
         return { ok: true, id: project.id }
@@ -389,7 +515,11 @@ export const useProjectStore = create<ProjectStoreState>()(
     {
       name: STORAGE_NAME,
       storage: createJSONStorage(() => idbStorage),
-      partialize: (state) => ({ projects: state.projects, activeProjectId: state.activeProjectId }),
+      partialize: (state) => ({
+        projects: state.projects,
+        costModels: state.costModels,
+        activeProjectId: state.activeProjectId,
+      }),
       onRehydrateStorage: () => () => {
         useProjectStore.getState().setHasHydrated(true)
       },
@@ -402,9 +532,16 @@ export const useProjectStore = create<ProjectStoreState>()(
             ProjectSchema.parse(migrateProject(project)),
           ]),
         )
+        const costModels = Object.fromEntries(
+          Object.entries(persisted.costModels ?? {}).map(([id, costModel]) => [
+            id,
+            CostModelSchema.parse(migrateCostModel(costModel)),
+          ]),
+        )
         return {
           ...currentState,
           projects,
+          costModels,
           activeProjectId: persisted.activeProjectId ?? currentState.activeProjectId,
         }
       },
@@ -439,4 +576,30 @@ export function useHasHydrated(): boolean {
 export function useProjectForecast(id: string): Forecast | null {
   const project = useProjectStore((state) => state.projects[id])
   return project ? selectForecast(project) : null
+}
+
+const costForecastCache = new WeakMap<Project, WeakMap<CostModel, CostForecast>>()
+
+/** Memoises computeCostForecast against the identity of both the project and its cost model. */
+export function selectCostForecast(project: Project, cost: CostModel): CostForecast {
+  let byCost = costForecastCache.get(project)
+  if (!byCost) {
+    byCost = new WeakMap()
+    costForecastCache.set(project, byCost)
+  }
+  const cached = byCost.get(cost)
+  if (cached) return cached
+  const forecast = computeCostForecast(project, cost, selectForecast(project))
+  byCost.set(cost, forecast)
+  return forecast
+}
+
+export function useCostModel(id: string): CostModel | null {
+  return useProjectStore((state) => state.costModels[id] ?? null)
+}
+
+export function useProjectCostForecast(id: string): CostForecast | null {
+  const project = useProjectStore((state) => state.projects[id])
+  const cost = useProjectStore((state) => state.costModels[id])
+  return project && cost ? selectCostForecast(project, cost) : null
 }

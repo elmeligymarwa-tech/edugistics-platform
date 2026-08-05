@@ -1,15 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { get as idbGet } from 'idb-keyval'
+import { get as idbGet, set as idbSet } from 'idb-keyval'
 import { ProjectSchema, SCHEMA_VERSION } from '../domain/schema'
+import { CostModelSchema, COST_SCHEMA_VERSION } from '../domain/costs'
 import {
   useProjectStore,
   createEmptyProject,
   migrateProject,
+  migrateCostModel,
   STORAGE_NAME,
 } from './project-store'
 
 beforeEach(() => {
-  useProjectStore.setState({ projects: {}, activeProjectId: null })
+  useProjectStore.setState({ projects: {}, costModels: {}, activeProjectId: null })
 })
 
 describe('createEmptyProject', () => {
@@ -88,17 +90,19 @@ describe('granular updates', () => {
 })
 
 describe('exportProject', () => {
-  it('serialises a project as schema-valid JSON', () => {
+  it('serialises a project and its cost model as a schema-valid envelope', () => {
     const id = useProjectStore.getState().createProject('Export School')
     const json = useProjectStore.getState().exportProject(id)
-    const parsed: unknown = JSON.parse(json)
-    expect(() => ProjectSchema.parse(parsed)).not.toThrow()
+    const parsed = JSON.parse(json) as { project: unknown; costModel: unknown }
+    expect(() => ProjectSchema.parse(parsed.project)).not.toThrow()
+    expect(() => CostModelSchema.parse(parsed.costModel)).not.toThrow()
   })
 })
 
 describe('importProject', () => {
-  it('imports a valid exported project under a fresh id', () => {
+  it('imports a valid exported project and cost model under a fresh id', () => {
     const sourceId = useProjectStore.getState().createProject('Import School')
+    useProjectStore.getState().updatePayrollConfig(sourceId, { defaultIncrementPct: 5 })
     const json = useProjectStore.getState().exportProject(sourceId)
 
     const result = useProjectStore.getState().importProject(json)
@@ -107,7 +111,19 @@ describe('importProject', () => {
     if (!result.ok) return
     expect(result.id).not.toBe(sourceId)
     expect(useProjectStore.getState().projects[result.id]?.meta.schoolName).toBe('Import School')
+    expect(useProjectStore.getState().costModels[result.id]?.payroll.defaultIncrementPct).toBe(5)
+    expect(useProjectStore.getState().costModels[result.id]?.projectId).toBe(result.id)
     expect(useProjectStore.getState().activeProjectId).toBe(result.id)
+  })
+
+  it('imports a legacy bare-Project export by synthesising an empty cost model', () => {
+    const legacyProject = createEmptyProject({ schoolName: 'Legacy Export' })
+    const result = useProjectStore.getState().importProject(JSON.stringify(legacyProject))
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(useProjectStore.getState().costModels[result.id]).toBeDefined()
+    expect(useProjectStore.getState().costModels[result.id]?.projectId).toBe(result.id)
   })
 
   it('rejects a project that fails ProjectSchema without mutating the store', () => {
@@ -129,13 +145,13 @@ describe('importProject', () => {
 describe('migrateProject', () => {
   it('upgrades a legacy project to the current schemaVersion', () => {
     const id = useProjectStore.getState().createProject('Legacy School')
-    const exported = JSON.parse(useProjectStore.getState().exportProject(id)) as Record<
-      string,
-      unknown
-    >
-    delete exported.schemaVersion
+    const exported = JSON.parse(useProjectStore.getState().exportProject(id)) as {
+      project: Record<string, unknown>
+    }
+    const legacy = exported.project
+    delete legacy.schemaVersion
 
-    const migrated = migrateProject(exported) as Record<string, unknown>
+    const migrated = migrateProject(legacy) as Record<string, unknown>
 
     expect(migrated.schemaVersion).toBe(SCHEMA_VERSION)
     expect(() => ProjectSchema.parse(migrated)).not.toThrow()
@@ -144,6 +160,92 @@ describe('migrateProject', () => {
   it('passes non-object input through unchanged', () => {
     expect(migrateProject(null)).toBeNull()
     expect(migrateProject('not-a-project')).toBe('not-a-project')
+  })
+})
+
+describe('cost model', () => {
+  it('seeds an empty schema-valid cost model when a project is created', () => {
+    const id = useProjectStore.getState().createProject('Costed School')
+    const cost = useProjectStore.getState().costModels[id]
+    expect(cost).toBeDefined()
+    expect(cost?.projectId).toBe(id)
+    expect(cost?.schemaVersion).toBe(COST_SCHEMA_VERSION)
+    expect(() => CostModelSchema.parse(cost)).not.toThrow()
+  })
+
+  it('clones the cost model, re-pointed at the new project id, on duplicateProject', () => {
+    const sourceId = useProjectStore.getState().createProject('Original School')
+    useProjectStore.getState().updateFinancing(sourceId, { openingCash: 50000 })
+    const cloneId = useProjectStore.getState().duplicateProject(sourceId)
+
+    const clonedCost = useProjectStore.getState().costModels[cloneId]
+    expect(clonedCost?.projectId).toBe(cloneId)
+    expect(clonedCost?.financing.openingCash).toBe(50000)
+  })
+
+  it('removes the cost model when its project is deleted', () => {
+    const id = useProjectStore.getState().createProject('Doomed School')
+    useProjectStore.getState().deleteProject(id)
+    expect(useProjectStore.getState().costModels[id]).toBeUndefined()
+  })
+
+  it('applies granular updates to payroll, opex, capex and financing', () => {
+    const id = useProjectStore.getState().createProject('Granular School')
+
+    useProjectStore.getState().updatePayrollConfig(id, { turnoverPct: 12 })
+    useProjectStore.getState().updateOpex(id, [
+      {
+        id: 'rent',
+        name: 'Rent',
+        group: 'facilities',
+        basis: 'fixed',
+        amount: 100000,
+        escalationPct: 0,
+        startYearIndex: 0,
+        endYearIndex: null,
+      },
+    ])
+    useProjectStore.getState().updateCapex(id, [
+      { id: 'fitout', name: 'Fit out', amount: 200000, yearIndex: 0, usefulLifeYears: 5, method: 'straightLine' },
+    ])
+    useProjectStore.getState().updateFinancing(id, { corporateTaxPct: 20 })
+
+    const cost = useProjectStore.getState().costModels[id]!
+    expect(cost.payroll.turnoverPct).toBe(12)
+    expect(cost.opex).toHaveLength(1)
+    expect(cost.capex).toHaveLength(1)
+    expect(cost.financing.corporateTaxPct).toBe(20)
+    expect(() => CostModelSchema.parse(cost)).not.toThrow()
+  })
+
+  it('ensureCostModel is idempotent and only creates when missing', () => {
+    const id = useProjectStore.getState().createProject('Idempotent School')
+    useProjectStore.getState().updateFinancing(id, { openingCash: 999 })
+
+    useProjectStore.getState().ensureCostModel(id)
+
+    expect(useProjectStore.getState().costModels[id]?.financing.openingCash).toBe(999)
+  })
+})
+
+describe('migrateCostModel', () => {
+  it('upgrades a legacy cost model to the current COST_SCHEMA_VERSION', () => {
+    const id = useProjectStore.getState().createProject('Legacy Cost School')
+    const exported = JSON.parse(useProjectStore.getState().exportProject(id)) as {
+      costModel: Record<string, unknown>
+    }
+    const legacy = exported.costModel
+    delete legacy.schemaVersion
+
+    const migrated = migrateCostModel(legacy) as Record<string, unknown>
+
+    expect(migrated.schemaVersion).toBe(COST_SCHEMA_VERSION)
+    expect(() => CostModelSchema.parse(migrated)).not.toThrow()
+  })
+
+  it('passes non-object input through unchanged', () => {
+    expect(migrateCostModel(null)).toBeNull()
+    expect(migrateCostModel('not-a-cost-model')).toBe('not-a-cost-model')
   })
 })
 
@@ -183,6 +285,37 @@ describe('rehydration', () => {
       ? finalState.projects[finalState.activeProjectId]
       : undefined
     expect(activeProject?.meta.schoolName).toBe('Riverside International School')
+  }, 3000)
+
+  it('backfills a missing cost model for a legacy persisted project once hydrated, gated the same way', async () => {
+    // Write a legacy-format blob directly to the backing store: a project with no `costModels` key at all,
+    // as if persisted before the cost model existed.
+    vi.resetModules()
+    const { createEmptyProject: createLegacyProject, STORAGE_NAME: storageName } =
+      await import('./project-store')
+    const legacyProject = createLegacyProject({ schoolName: 'Pre-cost-model School' })
+    await idbSet(
+      storageName,
+      JSON.stringify({
+        state: { projects: { [legacyProject.id]: legacyProject }, activeProjectId: legacyProject.id },
+        version: 0,
+      }),
+    )
+
+    // Simulate a page reload with the app-wide sync effect's logic: only backfill once hydrated.
+    vi.resetModules()
+    const reloadedSession = await import('./project-store')
+    await vi.waitFor(() => {
+      expect(reloadedSession.useProjectStore.getState().hasHydrated).toBe(true)
+    })
+    expect(reloadedSession.useProjectStore.getState().projects[legacyProject.id]).toBeDefined()
+    expect(reloadedSession.useProjectStore.getState().costModels[legacyProject.id]).toBeUndefined()
+
+    reloadedSession.useProjectStore.getState().ensureCostModel(legacyProject.id)
+
+    const cost = reloadedSession.useProjectStore.getState().costModels[legacyProject.id]
+    expect(cost).toBeDefined()
+    expect(cost?.projectId).toBe(legacyProject.id)
   }, 3000)
 })
 
