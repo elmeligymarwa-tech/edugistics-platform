@@ -52,6 +52,14 @@ export const MONTH_OPTIONS: Array<{ value: number; label: string }> = [
 
 export const FORECAST_YEAR_OPTIONS = [1, 3, 5, 10] as const
 
+export const STAFF_SECTION_LABELS: Record<string, string> = {
+  leadership: 'Leadership',
+  teaching: 'Teaching',
+  studentServices: 'Student services',
+  administration: 'Administration',
+  facilities: 'Facilities',
+}
+
 export const YEAR_GROUP_LABELS: Record<YearGroupId, string> = {
   FS1: 'FS1',
   FS2: 'FS2',

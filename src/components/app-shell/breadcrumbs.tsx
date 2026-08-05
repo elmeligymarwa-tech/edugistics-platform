@@ -12,7 +12,10 @@ export function Breadcrumbs() {
 
   return (
     <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm">
-      <Link href="/dashboard" className="text-muted-foreground hover:text-foreground">
+      <Link
+        href="/dashboard"
+        className="rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+      >
         Edugistics
       </Link>
       {item ? (

@@ -10,15 +10,8 @@ import { Field, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { StaffSectionSchema, orderedYearGroups, type Project, type StaffPosition } from '@/domain/schema'
+import { STAFF_SECTION_LABELS } from '@/lib/wizard-data'
 import { useProjectStore } from '@/store/project-store'
-
-const SECTION_LABELS: Record<string, string> = {
-  leadership: 'Leadership',
-  teaching: 'Teaching',
-  studentServices: 'Student services',
-  administration: 'Administration',
-  facilities: 'Facilities',
-}
 
 const DERIVED_POSITIONS: Array<{
   id: string
@@ -147,7 +140,7 @@ export function Step6Staffing({ project }: { project: Project }) {
           <div key={section} className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-foreground">
-                {SECTION_LABELS[section] ?? section}
+                {STAFF_SECTION_LABELS[section] ?? section}
               </h3>
               <Button type="button" size="sm" variant="outline" onClick={() => addPosition(section)}>
                 <Plus data-icon="inline-start" />

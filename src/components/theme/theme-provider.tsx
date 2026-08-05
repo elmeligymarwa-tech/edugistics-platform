@@ -18,11 +18,16 @@ function applyTheme(theme: Theme) {
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() =>
-    typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
-      ? 'dark'
-      : 'light',
-  )
+  // Starts at the SSR-safe default and syncs to the real value after mount —
+  // the inline THEME_INIT_SCRIPT already applies the correct class to <html>
+  // before hydration, so reading it eagerly here would mismatch the server-
+  // rendered markup (which has no access to localStorage) and trigger a
+  // hydration error.
+  const [theme, setThemeState] = useState<Theme>('light')
+
+  useEffect(() => {
+    setThemeState(document.documentElement.classList.contains('dark') ? 'dark' : 'light')
+  }, [])
 
   const setTheme = useCallback((next: Theme) => {
     setThemeState(next)

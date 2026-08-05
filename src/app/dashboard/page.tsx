@@ -1,10 +1,11 @@
 'use client'
 
-import Link from 'next/link'
+import { LayoutDashboard } from 'lucide-react'
 
 import { PageHeader } from '@/components/app-shell/page-header'
-import { Button } from '@/components/ui/button'
 import { DashboardOverview } from '@/components/dashboard/dashboard-overview'
+import { EmptyState } from '@/components/module-shell/empty-state'
+import { ModuleLoading } from '@/components/module-shell/module-loading'
 import { useActiveProject, useHasHydrated, useProjectForecast } from '@/store/project-store'
 
 export default function DashboardPage() {
@@ -15,11 +16,14 @@ export default function DashboardPage() {
   return (
     <>
       <PageHeader title="Dashboard" description="An overview of enrolment, revenue and cash position." />
+      {!hasHydrated ? <ModuleLoading /> : null}
       {hasHydrated && !project ? (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-6">
-          <p className="text-sm text-muted-foreground">No project yet. Complete setup to see the dashboard.</p>
-          <Button render={<Link href="/setup" />}>Go to setup</Button>
-        </div>
+        <EmptyState
+          icon={LayoutDashboard}
+          title="No project yet"
+          description="Complete setup to see the dashboard."
+          action={{ label: 'Go to setup', href: '/setup' }}
+        />
       ) : null}
       {project && forecast ? <DashboardOverview project={project} forecast={forecast} /> : null}
     </>

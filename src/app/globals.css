@@ -170,3 +170,17 @@
     @apply font-sans;
   }
 }
+
+/* Respect the user's OS-level motion preference: collapse every animation
+ * and transition to near-instant rather than disabling them outright, so
+ * state changes (dialogs opening, ramps completing) still register. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
