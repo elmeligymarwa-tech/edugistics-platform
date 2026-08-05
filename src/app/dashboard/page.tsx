@@ -6,12 +6,13 @@ import { PageHeader } from '@/components/app-shell/page-header'
 import { DashboardOverview } from '@/components/dashboard/dashboard-overview'
 import { EmptyState } from '@/components/module-shell/empty-state'
 import { ModuleLoading } from '@/components/module-shell/module-loading'
-import { useActiveProject, useHasHydrated, useProjectForecast } from '@/store/project-store'
+import { useActiveProject, useHasHydrated, useProjectCostForecast, useProjectForecast } from '@/store/project-store'
 
 export default function DashboardPage() {
   const hasHydrated = useHasHydrated()
   const project = useActiveProject()
   const forecast = useProjectForecast(project?.id ?? '')
+  const costForecast = useProjectCostForecast(project?.id ?? '')
 
   return (
     <>
@@ -25,7 +26,9 @@ export default function DashboardPage() {
           action={{ label: 'Go to setup', href: '/setup' }}
         />
       ) : null}
-      {project && forecast ? <DashboardOverview project={project} forecast={forecast} /> : null}
+      {project && forecast && costForecast ? (
+        <DashboardOverview project={project} forecast={forecast} costForecast={costForecast} />
+      ) : null}
     </>
   )
 }
