@@ -1,6 +1,11 @@
 import { orderedYearGroups, type Project } from '../domain/schema'
 import type { CostModel, OpexCategory } from '../domain/costs'
-import { computeForecast, type Forecast } from './revenue'
+import {
+  computeForecast,
+  computeEnrolment,
+  type Forecast,
+  type YearGroupEnrolment,
+} from './revenue'
 
 /**
  * Version 2 cost engine. Pure functions, no React, no I/O.
@@ -88,17 +93,36 @@ function compound(rate: number | number[], yearIndex: number): number {
   return factor
 }
 
-export function derivedTeachingHeadcount(project: Project) {
+/**
+ * Teaching headcount follows enrolment, not the full-capacity classroom count.
+ * A school running at half occupancy opens half the classes and hires for those.
+ * Pass a yearIndex and enrolment to scale; omit them for the full-capacity figure.
+ */
+export function derivedTeachingHeadcount(
+  project: Project,
+  studentsByGroup?: Record<string, number>,
+) {
   let teachers = 0
   let teachingAssistants = 0
   let coTeachers = 0
+
   for (const group of orderedYearGroups(project)) {
     const c = project.capacity[group]
     if (!c) continue
-    teachers += c.teachers
-    teachingAssistants += c.teachingAssistants
-    coTeachers += c.coTeachers
+
+    let share = 1
+    if (studentsByGroup) {
+      const students = studentsByGroup[group] ?? 0
+      const classesOpen =
+        c.studentsPerClassroom > 0 ? Math.ceil(students / c.studentsPerClassroom) : 0
+      share = c.classrooms > 0 ? Math.min(1, classesOpen / c.classrooms) : 0
+    }
+
+    teachers += c.teachers * share
+    teachingAssistants += c.teachingAssistants * share
+    coTeachers += c.coTeachers * share
   }
+
   return { teachers, teachingAssistants, coTeachers }
 }
 
@@ -111,18 +135,28 @@ export function totalClassrooms(project: Project): number {
 
 /* --------------------------------------------------------------- payroll */
 
-export function computePayroll(project: Project, cost: CostModel): YearPayroll[] {
-  const derived = derivedTeachingHeadcount(project)
+export function computePayroll(
+  project: Project,
+  cost: CostModel,
+  enrolment?: YearGroupEnrolment[][],
+): YearPayroll[] {
   const years = project.calendar.forecastYears
+  const rows = enrolment ?? computeEnrolment(project)
   const result: YearPayroll[] = []
 
   for (let y = 0; y < years; y += 1) {
+    const byGroup: Record<string, number> = {}
+    for (const entry of rows[y] ?? []) byGroup[entry.yearGroup] = entry.students
+    const derived = derivedTeachingHeadcount(project, byGroup)
     const lines: PayrollLine[] = []
 
     for (const position of project.staffing.positions) {
+      const plan = cost.payroll.headcountByYear[position.id]
+      const planned = plan ? (plan[Math.min(y, plan.length - 1)] ?? 0) : null
       const role = cost.payroll.derivedRoleMap[position.id]
-      const isDerived = Boolean(role) && !position.manualOverride
-      const headcount = isDerived && role ? derived[role] : position.headcount
+      const isDerived = planned === null && Boolean(role) && !position.manualOverride
+      const headcount =
+        planned !== null ? planned : isDerived && role ? derived[role] : position.headcount
       if (headcount === 0) continue
 
       const increment =
@@ -240,7 +274,7 @@ export function computeCostForecast(
   revenue?: Forecast,
 ): CostForecast {
   const forecast = revenue ?? computeForecast(project)
-  const payroll = computePayroll(project, cost)
+  const payroll = computePayroll(project, cost, computeEnrolment(project))
   const years = forecast.years.length
   const depreciation = computeDepreciation(cost, years)
   const capex = capexByYear(cost, years)

@@ -147,6 +147,53 @@ describe('headcount', () => {
   })
 })
 
+describe('headcount scaling', () => {
+  it('opens classes with enrolment instead of staffing full capacity on day one', () => {
+    const project = makeProject({
+      calendar: { academicYearStart: 2027, financialYearStartMonth: 9, forecastYears: 3, termsPerYear: 3 },
+      capacity: {
+        Y1: {
+          classrooms: 4,
+          studentsPerClassroom: 25,
+          teachers: 4,
+          teachingAssistants: 0,
+          coTeachers: 0,
+          maxCapacityPct: 100,
+          occupancyPctByYear: [25, 50, 100],
+        },
+      },
+    })
+    const payroll = computePayroll(project, makeCost())
+    // 25 students needs 1 class of 4, 50 needs 2, 100 needs all 4.
+    expect(payroll.map((p) => p.headcount)).toEqual([1, 2, 4])
+  })
+})
+
+describe('establishment plan', () => {
+  it('follows an explicit headcount per year ahead of any other source', () => {
+    const project = makeProject({
+      calendar: { academicYearStart: 2027, financialYearStartMonth: 9, forecastYears: 3, termsPerYear: 3 },
+    })
+    const cost = makeCost({
+      payroll: {
+        derivedRoleMap: { teacher: 'teachers' },
+        headcountByYear: { teacher: [1, 3, 6] },
+      },
+    })
+    const payroll = computePayroll(project, cost)
+    expect(payroll.map((p) => p.headcount)).toEqual([1, 3, 6])
+    expect(payroll[1]!.salaries).toBe(600_000)
+  })
+
+  it('holds the final planned year when the plan is shorter than the forecast', () => {
+    const project = makeProject({
+      calendar: { academicYearStart: 2027, financialYearStartMonth: 9, forecastYears: 5, termsPerYear: 3 },
+    })
+    const cost = makeCost({ payroll: { headcountByYear: { teacher: [2, 4] } } })
+    expect(computePayroll(project, cost).map((p) => p.headcount)).toEqual([2, 4, 4, 4, 4])
+  })
+})
+
 describe('payroll', () => {
   it('matches a hand calculation: 2 teachers x 200,000 = 400,000', () => {
     expect(computePayroll(makeProject(), makeCost())[0]!.total).toBe(400_000)

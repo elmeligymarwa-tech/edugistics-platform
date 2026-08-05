@@ -23,6 +23,12 @@ export const PayrollConfigSchema = z.object({
   chargeRecruitmentOnNewHiresOnly: z.boolean().default(true),
   /** Annual staff turnover, which creates replacement recruitment cost. */
   turnoverPct: pct.default(0),
+  /**
+   * Explicit headcount per forecast year, keyed by position id. Overrides both
+   * the static headcount and the capacity-derived figure where present, so an
+   * establishment plan can be entered year by year.
+   */
+  headcountByYear: z.record(z.string(), z.array(z.number().min(0))).default({}),
 })
 export type PayrollConfig = z.infer<typeof PayrollConfigSchema>
 
