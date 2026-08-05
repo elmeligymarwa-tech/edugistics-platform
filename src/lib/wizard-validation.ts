@@ -62,6 +62,10 @@ export function validateStep3(project: Project): StepValidation {
     const result = YearGroupCapacitySchema.safeParse(project.capacity[group])
     if (!result.success) errors.push(...messagesFrom(result.error, group))
   }
+  const schoolRamp = RevenueAssumptionsSchema.shape.schoolOccupancyPctByYear.safeParse(
+    project.revenueAssumptions.schoolOccupancyPctByYear,
+  )
+  if (!schoolRamp.success) errors.push(...messagesFrom(schoolRamp.error, 'School occupancy ramp'))
   return { valid: errors.length === 0, errors }
 }
 
