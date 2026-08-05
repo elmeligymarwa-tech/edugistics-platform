@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/app-shell/page-header'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/module-shell/empty-state'
 import { ModuleLoading } from '@/components/module-shell/module-loading'
+import { SettingsData } from '@/components/settings/settings-data'
 import { SettingsOverview } from '@/components/settings/settings-overview'
 import { useActiveProject, useHasHydrated } from '@/store/project-store'
 
@@ -34,6 +35,7 @@ export default function SettingsPage() {
               Edit in setup
             </Button>
           </div>
+          <SettingsData project={project} />
         </div>
       ) : null}
     </>
