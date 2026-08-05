@@ -1,0 +1,53 @@
+'use client'
+
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import type { Project } from '@/domain/schema'
+import type { CostForecast } from '@/engine/costs'
+import { formatCompactMoney } from '@/lib/format'
+import { ChartTooltip } from '@/components/revenue/chart-tooltip'
+
+export function ChartCostPerStudent({
+  project,
+  costForecast,
+}: {
+  project: Project
+  costForecast: CostForecast
+}) {
+  const data = costForecast.years.map((year) => ({ label: year.label, costPerStudent: year.costPerStudent }))
+  const tickFormatter = (value: number) => formatCompactMoney(value, project.meta)
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Cost per student over time</CardTitle>
+      </CardHeader>
+      <CardContent className="h-72 pt-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid vertical={false} stroke="var(--border)" />
+            <XAxis
+              dataKey="label"
+              tickLine={false}
+              axisLine={false}
+              tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
+            />
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              width={56}
+              tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
+              tickFormatter={tickFormatter}
+            />
+            <Tooltip
+              cursor={{ fill: 'var(--muted)' }}
+              content={(tooltipProps) => <ChartTooltip {...tooltipProps} meta={project.meta} />}
+            />
+            <Bar dataKey="costPerStudent" name="Cost per student" fill="var(--chart-2)" radius={[4, 4, 0, 0]} maxBarSize={32} />
+          </BarChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+  )
+}
