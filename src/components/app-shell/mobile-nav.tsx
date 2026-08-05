@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import { Menu } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -21,7 +22,17 @@ export function MobileNav() {
       />
       <SheetContent side="left">
         <SheetHeader>
-          <SheetTitle>Edugistics</SheetTitle>
+          <SheetTitle className="flex items-center gap-2">
+            <Image src="/brand/mark-light.png" alt="" width={158} height={238} className="h-6 w-auto dark:hidden" />
+            <Image
+              src="/brand/mark-dark.png"
+              alt=""
+              width={158}
+              height={238}
+              className="hidden h-6 w-auto dark:block"
+            />
+            Edugistics
+          </SheetTitle>
         </SheetHeader>
         <SidebarNav onNavigate={() => setOpen(false)} />
       </SheetContent>

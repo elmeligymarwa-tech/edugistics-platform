@@ -257,7 +257,7 @@ export function ForecastTable({ project, forecast }: { project: Project; forecas
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="overflow-x-auto pt-0">
+      <CardContent className="max-h-[32rem] overflow-auto pt-0">
         {rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             {rowMode === 'yearGroup'
@@ -265,7 +265,7 @@ export function ForecastTable({ project, forecast }: { project: Project; forecas
               : 'Add fee categories in setup to see a forecast breakdown.'}
           </p>
         ) : (
-          <table className="w-full min-w-max border-collapse text-sm">
+          <table className="data-table w-full min-w-max border-collapse text-sm">
             <thead>
               <tr>
                 <th className="sticky left-0 bg-card p-2 text-left font-medium text-muted-foreground">

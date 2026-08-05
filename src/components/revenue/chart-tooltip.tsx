@@ -39,8 +39,11 @@ export function renderChartLegend(props: DefaultLegendContentProps) {
 
   return (
     <ul className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
-      {payload.map((entry) => (
-        <li key={entry.value} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      {payload.map((entry, index) => (
+        <li
+          key={`${index}-${String(entry.dataKey ?? entry.value)}`}
+          className="flex items-center gap-1.5 text-xs text-muted-foreground"
+        >
           <span aria-hidden className="h-0.5 w-3 rounded-full" style={{ backgroundColor: entry.color }} />
           {entry.value}
         </li>

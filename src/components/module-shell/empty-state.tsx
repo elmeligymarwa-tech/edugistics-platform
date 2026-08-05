@@ -21,18 +21,18 @@ interface EmptyStateProps {
 /** Shared empty-state card: what this module does, and what to do next. */
 export function EmptyState({ icon: Icon, title, description, action, children }: EmptyStateProps) {
   return (
-    <Card>
-      <CardContent className="items-start gap-3 pt-6">
-        <div className="flex size-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-          <Icon className="size-5" aria-hidden="true" />
+    <Card className="border-dashed bg-muted/30">
+      <CardContent className="items-center gap-3 px-6 py-12 text-center">
+        <div className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <Icon className="size-6" aria-hidden="true" />
         </div>
-        <div className="flex flex-col gap-1">
-          <p className="text-sm font-medium text-foreground">{title}</p>
-          <p className="max-w-prose text-sm text-muted-foreground">{description}</p>
+        <div className="flex max-w-sm flex-col gap-1">
+          <p className="text-sm font-semibold text-foreground">{title}</p>
+          <p className="text-sm text-muted-foreground">{description}</p>
         </div>
         {children}
         {action ? (
-          <Button size="sm" render={<Link href={action.href} />}>
+          <Button size="sm" className="mt-1" render={<Link href={action.href} />}>
             {action.label}
           </Button>
         ) : null}

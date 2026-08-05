@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Fraunces, Geist, Geist_Mono } from "next/font/google";
 
 import { AppShell } from "@/components/app-shell/app-shell";
 import { ServiceWorkerRegistrar } from "@/components/pwa/service-worker-registrar";
@@ -16,6 +16,14 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// A high-contrast display serif reserved for page titles — everything else
+// (body copy, card titles, tabular figures) stays on the grotesk above.
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+  axes: ["opsz"],
+});
+
 export const metadata: Metadata = {
   title: "Edugistics — School Financial Planning",
   description: "Financial planning and forecasting for school operators.",
@@ -24,8 +32,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f9f9f7" },
-    { media: "(prefers-color-scheme: dark)", color: "#0d0d0d" },
+    { media: "(prefers-color-scheme: light)", color: "#F6F7FA" },
+    { media: "(prefers-color-scheme: dark)", color: "#0F1626" },
   ],
 };
 
@@ -40,7 +48,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable} antialiased`}
       >
         <ThemeProvider>
           <ServiceWorkerRegistrar />

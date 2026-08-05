@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: 'Financial planning and forecasting for school operators.',
     start_url: '/dashboard',
     display: 'standalone',
-    background_color: '#f9f9f7',
-    theme_color: '#2a78d6',
+    background_color: '#F6F7FA',
+    theme_color: '#2B3A67',
     icons: [
       { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
       { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },

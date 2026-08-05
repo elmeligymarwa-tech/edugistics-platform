@@ -37,8 +37,8 @@ export function ScenarioYearByYearTable({
           ))}
         </div>
       </CardHeader>
-      <CardContent className="overflow-x-auto pt-0">
-        <table className="w-full min-w-max border-collapse text-sm">
+      <CardContent className="max-h-[32rem] overflow-auto pt-0">
+        <table className="data-table w-full min-w-max border-collapse text-sm">
           <thead>
             <tr>
               <th className="sticky left-0 bg-card p-2 text-left font-medium text-muted-foreground">Year</th>

@@ -97,7 +97,29 @@ function imageFormatFromDataUri(dataUri: string): 'PNG' | 'JPEG' {
   return dataUri.startsWith('data:image/jpeg') || dataUri.startsWith('data:image/jpg') ? 'JPEG' : 'PNG'
 }
 
-function buildCoverSection(doc: jsPDF, theme: PdfTheme, cursor: Cursor, project: Project): void {
+/** Fetches a static asset and inlines it as a data URI — jsPDF's addImage can't take a path. */
+async function loadImageAsDataUri(path: string): Promise<string> {
+  const response = await fetch(path)
+  const blob = await response.blob()
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
+}
+
+const BRAND_LOGO_ASPECT = 649 / 900
+
+function buildCoverSection(doc: jsPDF, theme: PdfTheme, cursor: Cursor, project: Project, brandLogo: string | null): void {
+  if (brandLogo) {
+    try {
+      const width = 26
+      doc.addImage(brandLogo, 'PNG', pageWidth(doc) - MARGIN - width, MARGIN, width, width * BRAND_LOGO_ASPECT)
+    } catch {
+      // Malformed logo data — continue without it rather than failing the export.
+    }
+  }
   if (project.meta.logoBase64) {
     try {
       doc.addImage(project.meta.logoBase64, imageFormatFromDataUri(project.meta.logoBase64), MARGIN, cursor.y, 30, 30)
@@ -237,8 +259,12 @@ export function ReportBuilder({
     })
   }
 
-  const generate = () => {
+  const generate = async () => {
     if (selected.size === 0) return
+
+    const brandLogo = selected.has('cover')
+      ? await loadImageAsDataUri('/brand/logo-light.png').catch(() => null)
+      : null
 
     const doc = new jsPDF()
     const theme = readPdfTheme()
@@ -255,7 +281,7 @@ export function ReportBuilder({
 
     if (selected.has('cover')) {
       startSection()
-      buildCoverSection(doc, theme, cursor, project)
+      buildCoverSection(doc, theme, cursor, project, brandLogo)
     }
     if (selected.has('assumptions')) {
       startSection()

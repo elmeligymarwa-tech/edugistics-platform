@@ -1,8 +1,9 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { Download, Upload } from 'lucide-react'
+import { Download, Pencil, Trash2, Upload } from 'lucide-react'
 
+import { DeleteProjectDialog, RenameProjectDialog } from '@/components/app-shell/project-dialogs'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { Project } from '@/domain/schema'
@@ -16,6 +17,8 @@ export function SettingsData({ project }: { project: Project }) {
   const importProject = useProjectStore((state) => state.importProject)
   const [errors, setErrors] = useState<string[] | null>(null)
   const [importedName, setImportedName] = useState<string | null>(null)
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   function handleExport() {
     const json = exportProject(project.id)
@@ -54,6 +57,14 @@ export function SettingsData({ project }: { project: Project }) {
             <Upload data-icon="inline-start" />
             Import project
           </Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => setRenameOpen(true)}>
+            <Pencil data-icon="inline-start" />
+            Rename project
+          </Button>
+          <Button type="button" variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
+            <Trash2 data-icon="inline-start" />
+            Delete project
+          </Button>
           <input
             ref={fileInputRef}
             type="file"
@@ -82,6 +93,14 @@ export function SettingsData({ project }: { project: Project }) {
           </div>
         ) : null}
       </CardContent>
+      <RenameProjectDialog
+        project={renameOpen ? project : null}
+        onOpenChange={(open) => setRenameOpen(open)}
+      />
+      <DeleteProjectDialog
+        project={deleteOpen ? project : null}
+        onOpenChange={(open) => setDeleteOpen(open)}
+      />
     </Card>
   )
 }

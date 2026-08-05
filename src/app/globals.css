@@ -12,45 +12,48 @@
  * ---------------------------------------------------------------------- */
 
 :root {
-  --palette-ink: #0b0b0b;
-  --palette-ink-secondary: #52514e;
-  --palette-ink-muted: #898781;
-  --palette-surface: #f9f9f7;
-  --palette-surface-raised: #fcfcfb;
-  --palette-brand: #2a78d6;
+  /* Edugistics brand primitives — navy, teal, amber, coral. The neutral ink
+   * and surface tones are tinted from the navy primary rather than pure
+   * grey, so chrome and copy read as part of the same family as the mark. */
+  --palette-ink: #17213d;
+  --palette-ink-secondary: #4c5570;
+  --palette-ink-muted: #8790a6;
+  --palette-surface: #f6f7fa;
+  --palette-surface-raised: #ffffff;
+  --palette-brand: #2b3a67;
   --palette-brand-ink: #ffffff;
-  --palette-accent: #4a3aa7;
+  --palette-accent: #3e8e96;
   --palette-accent-ink: #ffffff;
-  --palette-success: #0ca30c;
-  --palette-warning: #fab219;
-  --palette-danger: #d03b3b;
-  --palette-chart-1: #2a78d6;
-  --palette-chart-2: #eb6834;
-  --palette-chart-3: #1baf7a;
-  --palette-chart-4: #eda100;
-  --palette-chart-5: #e87ba4;
+  --palette-success: #3e8e96;
+  --palette-warning: #f2b65c;
+  --palette-danger: #e1493c;
+  --palette-chart-1: #2b3a67;
+  --palette-chart-2: #3e8e96;
+  --palette-chart-3: #f2b65c;
+  --palette-chart-4: #e1493c;
+  --palette-chart-5: #7c8aae;
 
   --radius: 0.5rem;
 }
 
 .dark {
-  --palette-ink: #ffffff;
-  --palette-ink-secondary: #c3c2b7;
-  --palette-ink-muted: #898781;
-  --palette-surface: #0d0d0d;
-  --palette-surface-raised: #1a1a19;
-  --palette-brand: #3987e5;
+  --palette-ink: #f3f5fa;
+  --palette-ink-secondary: #c3cadc;
+  --palette-ink-muted: #8a93ac;
+  --palette-surface: #0f1626;
+  --palette-surface-raised: #182238;
+  --palette-brand: #5470a6;
   --palette-brand-ink: #ffffff;
-  --palette-accent: #9085e9;
-  --palette-accent-ink: #0b0b0b;
-  --palette-success: #0ca30c;
-  --palette-warning: #fab219;
-  --palette-danger: #d03b3b;
-  --palette-chart-1: #3987e5;
-  --palette-chart-2: #d95926;
-  --palette-chart-3: #199e70;
-  --palette-chart-4: #c98500;
-  --palette-chart-5: #d55181;
+  --palette-accent: #57adb5;
+  --palette-accent-ink: #0b1626;
+  --palette-success: #57adb5;
+  --palette-warning: #f2b65c;
+  --palette-danger: #f0574a;
+  --palette-chart-1: #5470a6;
+  --palette-chart-2: #57adb5;
+  --palette-chart-3: #f2b65c;
+  --palette-chart-4: #f0574a;
+  --palette-chart-5: #98a3c4;
 }
 
 :root {
@@ -98,7 +101,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-heading: var(--font-fraunces), var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -168,6 +171,35 @@
   }
   html {
     @apply font-sans;
+  }
+}
+
+/* Dense data-table treatment shared by every forecast/statement table: a
+ * sticky header that stays above scrolled rows, and zebra striping that
+ * stays opaque so it doesn't let content bleed through the sticky first
+ * column. Applied by adding `data-table` alongside each table's own classes. */
+@layer components {
+  .data-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: var(--card);
+    box-shadow: inset 0 -1px 0 0 var(--border);
+  }
+  .data-table tbody td.sticky {
+    z-index: 10;
+  }
+  .data-table tbody tr:nth-child(even) td {
+    background: color-mix(in oklch, var(--palette-ink) 3%, var(--card));
+  }
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
   }
 }
 
