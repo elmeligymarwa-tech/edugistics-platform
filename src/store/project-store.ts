@@ -229,6 +229,7 @@ const EMPTY_CAPACITY: YearGroupCapacity = {
   teachingAssistants: 0,
   coTeachers: 0,
   maxCapacityPct: 100,
+  maxStudents: null,
   occupancyPctByYear: [],
 }
 

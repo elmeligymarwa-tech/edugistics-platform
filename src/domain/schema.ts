@@ -58,7 +58,15 @@ export const YearGroupCapacitySchema = z.object({
   teachingAssistants: z.number().min(0),
   coTeachers: z.number().min(0),
   maxCapacityPct: pct.default(100),
-  /** One entry per forecast year. Shorter arrays hold the final value. */
+  /**
+   * Hard cap in students for this year group. When set, it replaces the
+   * classrooms times students per classroom times maximum capacity calculation.
+   */
+  maxStudents: z.number().min(0).nullable().default(null),
+  /**
+   * Per year group ramp. Ignored when a school wide ramp is set in
+   * revenue assumptions.
+   */
   occupancyPctByYear: z.array(pct).min(1),
 })
 export type YearGroupCapacity = z.infer<typeof YearGroupCapacitySchema>
@@ -128,6 +136,11 @@ export type Collections = z.infer<typeof CollectionsSchema>
 
 export const RevenueAssumptionsSchema = z.object({
   enrolmentModel: EnrolmentModelSchema.default('occupancy'),
+  /**
+   * One occupancy ramp for the whole school, entered once. When present it
+   * overrides every per year group ramp. Empty means fall back to per group.
+   */
+  schoolOccupancyPctByYear: z.array(pct).default([]),
   tuitionEscalationPct: escalation.default(0),
   otherFeeEscalationPct: escalation.default(0),
   /** newIntake[yearGroupId][forecastYearIndex] */

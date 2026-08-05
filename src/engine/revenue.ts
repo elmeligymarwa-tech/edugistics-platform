@@ -78,7 +78,15 @@ function escalationFactor(
 function capacityCeiling(project: Project, group: YearGroupId): number {
   const c = project.capacity[group]
   if (!c) return 0
+  if (c.maxStudents !== null) return c.maxStudents
   return (c.classrooms * c.studentsPerClassroom * c.maxCapacityPct) / 100
+}
+
+/** The school wide ramp wins where it is set. */
+function rampFor(project: Project, group: YearGroupId): number[] {
+  const school = project.revenueAssumptions.schoolOccupancyPctByYear
+  if (school.length > 0) return school
+  return project.capacity[group]?.occupancyPctByYear ?? []
 }
 
 /* ------------------------------------------------------------- enrolment */
@@ -101,7 +109,7 @@ export function computeEnrolment(project: Project): YearGroupEnrolment[][] {
       let newEntrants: number
 
       if (a.enrolmentModel === 'occupancy' || y === 0) {
-        const occ = capacity ? occupancyForYear(capacity.occupancyPctByYear, y) : 0
+        const occ = capacity ? occupancyForYear(rampFor(project, group), y) : 0
         students = Math.min(ceiling, (ceiling * occ) / 100)
         const prior = y === 0 ? 0 : (result[y - 1]?.[g]?.students ?? 0)
         newEntrants = Math.max(0, students - prior)

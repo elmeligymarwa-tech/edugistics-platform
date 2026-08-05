@@ -2,7 +2,7 @@
 
 ## Non-negotiable rules
 
-- `src/domain/schema.ts` and `src/engine/revenue.ts` are complete and locked. Do not modify them.
+- `src/domain/schema.ts` and `src/engine/revenue.ts` are locked against your own changes — never modify them yourself. The user updates them deliberately and hands you the files. When such a change breaks downstream code, fix the downstream code to match; do not revert the locked files.
 - `src/domain/costs.ts` and `src/engine/costs.ts` are complete and locked alongside the V1 files. Do not modify them.
 - Import all types from `src/domain/schema.ts`. Never redeclare a domain type.
 - Never duplicate a calculation from `src/engine/revenue.ts` inside a component.

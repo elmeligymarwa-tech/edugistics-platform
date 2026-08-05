@@ -211,6 +211,66 @@ describe('enrolment', () => {
   })
 })
 
+describe('school wide ramp and student caps', () => {
+  it('uses one school ramp for every year group when set', () => {
+    const project = makeProject({
+      calendar: { academicYearStart: 2027, financialYearStartMonth: 9, forecastYears: 3, termsPerYear: 3 },
+      yearGroups: ['Y1', 'Y2'],
+      capacity: {
+        Y1: {
+          classrooms: 2, studentsPerClassroom: 20, teachers: 2,
+          teachingAssistants: 0, coTeachers: 0, maxCapacityPct: 100,
+          maxStudents: null, occupancyPctByYear: [10],
+        },
+        Y2: {
+          classrooms: 2, studentsPerClassroom: 20, teachers: 2,
+          teachingAssistants: 0, coTeachers: 0, maxCapacityPct: 100,
+          maxStudents: null, occupancyPctByYear: [90],
+        },
+      },
+      fees: {
+        categories: makeProject().fees.categories,
+        amounts: { Y1: { tuition: 100000 }, Y2: { tuition: 100000 } },
+      },
+      revenueAssumptions: {
+        ...makeProject().revenueAssumptions,
+        schoolOccupancyPctByYear: [50, 75, 100],
+      },
+    })
+    const enrolment = computeEnrolment(project)
+    expect(enrolment.map((y) => y.map((g) => g.students))).toEqual([
+      [20, 20], [30, 30], [40, 40],
+    ])
+  })
+
+  it('caps a year group at an explicit student number', () => {
+    const project = makeProject({
+      capacity: {
+        Y1: {
+          classrooms: 2, studentsPerClassroom: 20, teachers: 2,
+          teachingAssistants: 0, coTeachers: 0, maxCapacityPct: 100,
+          maxStudents: 30, occupancyPctByYear: [100],
+        },
+      },
+    })
+    expect(computeForecast(project).years[0]!.students).toBe(30)
+  })
+
+  it('falls back to the per group ramp when no school ramp is set', () => {
+    const project = makeProject({
+      calendar: { academicYearStart: 2027, financialYearStartMonth: 9, forecastYears: 3, termsPerYear: 3 },
+      capacity: {
+        Y1: {
+          classrooms: 2, studentsPerClassroom: 20, teachers: 2,
+          teachingAssistants: 0, coTeachers: 0, maxCapacityPct: 100,
+          maxStudents: null, occupancyPctByYear: [25, 50, 100],
+        },
+      },
+    })
+    expect(computeEnrolment(project).map((y) => y[0]!.students)).toEqual([10, 20, 40])
+  })
+})
+
 describe('discounts', () => {
   it('stacks sibling and scholarship discounts against discountable revenue only', () => {
     const project = makeProject({
