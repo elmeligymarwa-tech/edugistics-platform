@@ -22,15 +22,33 @@ export function ValuationSummaryCards({
       <StatTile
         label="Enterprise value"
         value={<CurrencyText value={formatMoney(valuation.enterpriseValue, project.meta)} />}
+        term="enterprise-value"
+        glossaryValue={formatMoney(valuation.enterpriseValue, project.meta).text}
       />
-      <StatTile label="Net debt" value={<CurrencyText value={formatMoney(valuation.netDebt, project.meta)} />} />
+      <StatTile
+        label="Net debt"
+        value={<CurrencyText value={formatMoney(valuation.netDebt, project.meta)} />}
+        term="net-debt"
+        glossaryValue={formatMoney(valuation.netDebt, project.meta).text}
+      />
       <StatTile
         label="Equity value"
         value={<CurrencyText value={formatMoney(valuation.equityValue, project.meta)} />}
+        term="equity-value"
+        glossaryValue={formatMoney(valuation.equityValue, project.meta).text}
       />
-      <StatTile label="NPV" value={<CurrencyText value={formatMoney(valuation.npv, project.meta)} />} />
-      <StatTile label="IRR" value={valuation.irrPct !== null ? formatPercent(valuation.irrPct) : 'n/a'} />
-      <StatTile label="Payback year" value={paybackLabel} />
+      <StatTile
+        label="NPV"
+        value={<CurrencyText value={formatMoney(valuation.npv, project.meta)} />}
+        term="npv"
+        glossaryValue={formatMoney(valuation.npv, project.meta).text}
+      />
+      <StatTile
+        label="IRR"
+        value={valuation.irrPct !== null ? formatPercent(valuation.irrPct) : 'n/a'}
+        term="irr"
+      />
+      <StatTile label="Payback year" value={paybackLabel} term="payback-period" />
     </div>
   )
 }

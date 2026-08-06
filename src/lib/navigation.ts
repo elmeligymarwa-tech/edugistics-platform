@@ -10,6 +10,7 @@ import {
   LineChart,
   BarChart3,
   GitBranch,
+  BookOpen,
   Settings,
   type LucideIcon,
 } from 'lucide-react'
@@ -32,6 +33,7 @@ export const NAV_ITEMS: NavItem[] = [
   { title: 'Valuation', href: '/valuation', icon: LineChart },
   { title: 'Reports', href: '/reports', icon: BarChart3 },
   { title: 'Scenarios', href: '/scenarios', icon: GitBranch },
+  { title: 'Glossary', href: '/glossary', icon: BookOpen },
   { title: 'Settings', href: '/settings', icon: Settings },
 ]
 

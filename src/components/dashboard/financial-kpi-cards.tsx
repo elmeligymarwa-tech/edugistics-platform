@@ -20,21 +20,33 @@ export function FinancialKpiCards({ project, forecast }: { project: Project; for
         label="Year one net revenue"
         value={<CurrencyText value={formatCompactMoney(yearOne?.netRevenue ?? 0, project.meta)} />}
         hint={<CurrencyText value={formatMoney(yearOne?.netRevenue ?? 0, project.meta)} />}
+        term="net-revenue"
+        glossaryValue={formatMoney(yearOne?.netRevenue ?? 0, project.meta).text}
       />
       <StatTile
         label="Final year net revenue"
         value={<CurrencyText value={formatCompactMoney(finalYear?.netRevenue ?? 0, project.meta)} />}
         hint={<CurrencyText value={formatMoney(finalYear?.netRevenue ?? 0, project.meta)} />}
+        term="net-revenue"
+        glossaryValue={formatMoney(finalYear?.netRevenue ?? 0, project.meta).text}
       />
-      <StatTile label="Compound annual growth rate" value={formatPercent(forecast.cagrPct)} />
+      <StatTile
+        label="Compound annual growth rate"
+        value={formatPercent(forecast.cagrPct)}
+        term="compound-annual-growth-rate"
+      />
       <StatTile
         label="Average revenue per student"
         value={<CurrencyText value={formatMoney(averageRevenuePerStudent, project.meta)} />}
+        term="revenue-per-student"
+        glossaryValue={formatMoney(averageRevenuePerStudent, project.meta).text}
       />
       <StatTile
         label="Year one STM revenue share"
         value={<CurrencyText value={formatCompactMoney(yearOne?.stmLiability ?? 0, project.meta)} />}
         hint={<CurrencyText value={formatMoney(yearOne?.stmLiability ?? 0, project.meta)} />}
+        term="revenue-share"
+        glossaryValue={formatMoney(yearOne?.stmLiability ?? 0, project.meta).text}
       />
     </div>
   )

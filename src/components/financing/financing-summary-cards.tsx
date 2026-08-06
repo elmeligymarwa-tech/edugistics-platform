@@ -18,11 +18,23 @@ export function FinancingSummaryCards({
 
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-      <StatTile label="Peak debt" value={<CurrencyText value={formatMoney(capitalForecast.peakDebt, project.meta)} />} />
-      <StatTile label="Total interest" value={<CurrencyText value={formatMoney(totalInterest, project.meta)} />} />
+      <StatTile
+        label="Peak debt"
+        value={<CurrencyText value={formatMoney(capitalForecast.peakDebt, project.meta)} />}
+        term="peak-debt"
+        glossaryValue={formatMoney(capitalForecast.peakDebt, project.meta).text}
+      />
+      <StatTile
+        label="Total interest"
+        value={<CurrencyText value={formatMoney(totalInterest, project.meta)} />}
+        term="total-interest"
+        glossaryValue={formatMoney(totalInterest, project.meta).text}
+      />
       <StatTile
         label="Minimum cash"
         value={<CurrencyText value={formatMoney(capitalForecast.minimumCash, project.meta)} />}
+        term="minimum-cash"
+        glossaryValue={formatMoney(capitalForecast.minimumCash, project.meta).text}
       />
     </div>
   )

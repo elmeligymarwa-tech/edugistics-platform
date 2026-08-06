@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 
 import { DataGrid, toNumberOrZero, type GridColumnDef, type GridColumnGroup } from '@/components/grid'
+import { GlossaryHint } from '@/components/glossary/glossary-hint'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
@@ -61,7 +62,7 @@ export function Step3Capacity({ project }: { project: Project }) {
 
       <Card>
         <CardContent className="grid grid-cols-2 gap-4 pt-4 sm:grid-cols-5">
-          <SummaryStat label="Maximum students" value={Math.round(totalMax).toLocaleString()} />
+          <SummaryStat label="Maximum students" value={Math.round(totalMax).toLocaleString()} term="capacity-ceiling" />
           <SummaryStat label="Expected, year 1" value={Math.round(totalYearOne).toLocaleString()} />
           <SummaryStat
             label={`Expected, year ${forecastYears}`}
@@ -70,10 +71,12 @@ export function Step3Capacity({ project }: { project: Project }) {
           <SummaryStat
             label="Student : teacher ratio"
             value={totalTeachers > 0 ? `${ratio.toFixed(1)} : 1` : '—'}
+            term="student-teacher-ratio"
           />
           <SummaryStat
             label="Occupancy ramp"
             value={plan.enabled ? 'Top-down plan' : schoolRampActive ? 'School-wide' : 'Per year group'}
+            term="occupancy"
           />
         </CardContent>
       </Card>
@@ -397,10 +400,13 @@ function SchoolPlanPanel({
   )
 }
 
-function SummaryStat({ label, value }: { label: string; value: string }) {
+function SummaryStat({ label, value, term }: { label: string; value: string; term?: string }) {
   return (
     <div>
-      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="flex items-center gap-1 text-xs text-muted-foreground">
+        <span>{label}</span>
+        {term ? <GlossaryHint term={term} currentValue={value} context={label} /> : null}
+      </p>
       <p className="text-lg font-semibold text-foreground">{value}</p>
     </div>
   )

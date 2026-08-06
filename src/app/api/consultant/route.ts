@@ -6,7 +6,7 @@ import { buildAnsweredSummary } from '@/lib/consultant/answered-summary'
 import { ConsultantConfigError, callConsultant } from '@/lib/consultant/anthropic-client'
 import { checkBreakEven } from '@/lib/consultant/break-even-check'
 import { ConsultantRequestSchema, type ConsultantErrorEnvelope } from '@/lib/consultant/route-contract'
-import { buildInterviewSystemPrompt, buildReviewSystemPrompt } from '@/lib/consultant/system-prompt'
+import { buildExplainSystemPrompt, buildInterviewSystemPrompt, buildReviewSystemPrompt } from '@/lib/consultant/system-prompt'
 import { validateProposal } from '@/lib/consultant/validate-proposal'
 
 /**
@@ -35,7 +35,9 @@ export async function POST(request: NextRequest) {
   const systemPrompt =
     mode === 'interview'
       ? buildInterviewSystemPrompt(buildAnsweredSummary(projectSnapshot))
-      : buildReviewSystemPrompt()
+      : mode === 'explain'
+        ? buildExplainSystemPrompt()
+        : buildReviewSystemPrompt()
 
   let rawText: string
   try {

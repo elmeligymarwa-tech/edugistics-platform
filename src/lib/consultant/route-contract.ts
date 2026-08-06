@@ -73,7 +73,7 @@ export type ConsultantModelResponse = z.infer<typeof ConsultantModelResponseSche
 
 /** Request body the client sends to /api/consultant. */
 export const ConsultantRequestSchema = z.object({
-  mode: z.enum(['interview', 'review']),
+  mode: z.enum(['interview', 'review', 'explain']),
   conversationHistory: z.array(ConsultantMessageSchema),
   userMessage: z.string(),
   /** A snapshot of the fields already answered/entered on the current project — nothing from other saved projects. */

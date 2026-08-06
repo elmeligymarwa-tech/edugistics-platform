@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 
 import { DataGrid, toNumberOrZero, type GridColumnDef } from '@/components/grid'
+import { GlossaryHint } from '@/components/glossary/glossary-hint'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
@@ -95,7 +96,14 @@ export function Step5Revenue({ project }: { project: Project }) {
             />
           </Field>
           <Field className="sm:col-span-2">
-            <FieldLabel htmlFor="tuitionEscalation">Tuition escalation %</FieldLabel>
+            <FieldLabel htmlFor="tuitionEscalation" className="flex items-center gap-1">
+              Tuition escalation %
+              <GlossaryHint
+                term="escalation"
+                currentValue={`${typeof a.tuitionEscalationPct === 'number' ? a.tuitionEscalationPct : 0}%`}
+                context="Tuition escalation"
+              />
+            </FieldLabel>
             <SliderNumberField
               id="tuitionEscalation"
               aria-label="Tuition escalation %"
@@ -108,7 +116,14 @@ export function Step5Revenue({ project }: { project: Project }) {
             />
           </Field>
           <Field className="sm:col-span-2">
-            <FieldLabel htmlFor="otherEscalation">Other fee escalation %</FieldLabel>
+            <FieldLabel htmlFor="otherEscalation" className="flex items-center gap-1">
+              Other fee escalation %
+              <GlossaryHint
+                term="escalation"
+                currentValue={`${typeof a.otherFeeEscalationPct === 'number' ? a.otherFeeEscalationPct : 0}%`}
+                context="Other fee escalation"
+              />
+            </FieldLabel>
             <SliderNumberField
               id="otherEscalation"
               aria-label="Other fee escalation %"
@@ -230,7 +245,10 @@ export function Step5Revenue({ project }: { project: Project }) {
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-x-4 gap-y-4 pt-0 sm:grid-cols-2">
           <Field>
-            <FieldLabel htmlFor="siblingPct">Sibling discount %</FieldLabel>
+            <FieldLabel htmlFor="siblingPct" className="flex items-center gap-1">
+              Sibling discount %
+              <GlossaryHint term="sibling-discount" currentValue={`${a.discounts.siblingPct}%`} />
+            </FieldLabel>
             <SliderNumberField
               id="siblingPct"
               aria-label="Sibling discount %"
@@ -279,7 +297,10 @@ export function Step5Revenue({ project }: { project: Project }) {
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="scholarshipPct">Scholarship discount %</FieldLabel>
+            <FieldLabel htmlFor="scholarshipPct" className="flex items-center gap-1">
+              Scholarship discount %
+              <GlossaryHint term="scholarship" currentValue={`${a.discounts.scholarshipPct}%`} />
+            </FieldLabel>
             <SliderNumberField
               id="scholarshipPct"
               aria-label="Scholarship discount %"
@@ -373,7 +394,10 @@ export function Step5Revenue({ project }: { project: Project }) {
               />
             </Field>
             <Field>
-              <FieldLabel htmlFor="badDebtPct">Bad debt %</FieldLabel>
+              <FieldLabel htmlFor="badDebtPct" className="flex items-center gap-1">
+                Bad debt %
+                <GlossaryHint term="bad-debt" currentValue={`${a.collections.badDebtPct}%`} />
+              </FieldLabel>
               <SliderNumberField
                 id="badDebtPct"
                 aria-label="Bad debt %"
@@ -386,7 +410,10 @@ export function Step5Revenue({ project }: { project: Project }) {
               />
             </Field>
             <Field>
-              <FieldLabel htmlFor="dsoDays">Days sales outstanding</FieldLabel>
+              <FieldLabel htmlFor="dsoDays" className="flex items-center gap-1">
+                Days sales outstanding
+                <GlossaryHint term="days-sales-outstanding" currentValue={`${a.collections.dsoDays} days`} />
+              </FieldLabel>
               <SliderNumberField
                 id="dsoDays"
                 aria-label="Days sales outstanding"

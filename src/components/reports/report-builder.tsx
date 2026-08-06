@@ -10,6 +10,7 @@ import { Switch } from '@/components/ui/switch'
 import { orderedYearGroups, type Project } from '@/domain/schema'
 import type { CostForecast } from '@/engine/costs'
 import type { Forecast } from '@/engine/revenue'
+import { GLOSSARY_TERMS } from '@/lib/glossary/glossary-data'
 import { formatCompactMoneySigned, formatMoney, formatPercent, type FormattedCurrency } from '@/lib/format'
 import { readPdfTheme, type PdfTheme } from '@/lib/pdf-theme'
 import { YEAR_GROUP_LABELS } from '@/lib/wizard-data'
@@ -23,6 +24,7 @@ type SectionKey =
   | 'revenue'
   | 'costs'
   | 'breakEven'
+  | 'glossary'
 
 const SECTIONS: Array<{ key: SectionKey; label: string }> = [
   { key: 'cover', label: 'Cover page' },
@@ -33,6 +35,7 @@ const SECTIONS: Array<{ key: SectionKey; label: string }> = [
   { key: 'revenue', label: 'Enrolment and revenue forecast' },
   { key: 'costs', label: 'Cost forecast' },
   { key: 'breakEven', label: 'Break-even summary' },
+  { key: 'glossary', label: 'Glossary appendix' },
 ]
 
 const MARGIN = 15
@@ -534,6 +537,37 @@ function buildBreakEvenSection(doc: jsPDF, theme: PdfTheme, cursor: Cursor, proj
   )
 }
 
+/** One glossary entry: a bold title followed by its definition, wrapped to the page width. */
+function addGlossaryEntry(doc: jsPDF, theme: PdfTheme, cursor: Cursor, title: string, definition: string): void {
+  const usableWidth = pageWidth(doc) - MARGIN * 2
+  const lines = doc.splitTextToSize(definition, usableWidth) as string[]
+
+  ensureSpace(doc, cursor, LINE_HEIGHT + lines.length * LINE_HEIGHT * 0.9)
+  doc.setFontSize(9.5)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(...theme['--foreground'])
+  doc.text(title, MARGIN, cursor.y)
+  doc.setFont('helvetica', 'normal')
+  cursor.y += LINE_HEIGHT
+
+  doc.setFontSize(8.5)
+  doc.setTextColor(...theme['--muted-foreground'])
+  for (const line of lines) {
+    ensureSpace(doc, cursor, LINE_HEIGHT)
+    doc.text(line, MARGIN, cursor.y)
+    cursor.y += LINE_HEIGHT * 0.9
+  }
+  cursor.y += SECTION_GAP * 0.3
+}
+
+/** Every term in the application glossary, alphabetised by their defined order — an appendix a reader can check any figure against without leaving the document. */
+function buildGlossarySection(doc: jsPDF, theme: PdfTheme, cursor: Cursor): void {
+  addHeading(doc, theme, cursor, 'Glossary', LINE_HEIGHT * 3)
+  for (const entry of GLOSSARY_TERMS) {
+    addGlossaryEntry(doc, theme, cursor, entry.title, entry.definition)
+  }
+}
+
 /** Every page gets the school name, page number and total page count — drawn last, once the total is known. */
 function addFooters(doc: jsPDF, theme: PdfTheme, schoolName: string): void {
   const totalPages = doc.getNumberOfPages()
@@ -616,6 +650,12 @@ export function ReportBuilder({
     }
     if (selected.has('breakEven')) {
       buildBreakEvenSection(doc, theme, cursor, project, costForecast)
+      cursor.y += SECTION_GAP
+    }
+    if (selected.has('glossary')) {
+      doc.addPage()
+      cursor.y = MARGIN
+      buildGlossarySection(doc, theme, cursor)
     }
 
     addFooters(doc, theme, project.meta.schoolName)

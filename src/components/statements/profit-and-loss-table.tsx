@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { ChevronDown, ChevronRight, Download } from 'lucide-react'
 
 import { DataGrid, type GridColumnDef } from '@/components/grid'
+import { GlossaryHint } from '@/components/glossary/glossary-hint'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { NumericCell } from '@/components/ui/numeric-cell'
@@ -21,22 +22,22 @@ type CostRowKey = 'netRevenue' | 'payroll' | 'opex' | 'stm' | 'ebitda' | 'deprec
 type CapitalRowKey = 'interest' | 'profitBeforeTax' | 'tax' | 'netProfit' | 'dividend'
 type ExpandableKey = 'payroll' | 'opex'
 
-const COST_ROWS: Array<{ key: CostRowKey; label: string; emphasis?: boolean; expandable?: ExpandableKey }> = [
-  { key: 'netRevenue', label: 'Net revenue' },
+const COST_ROWS: Array<{ key: CostRowKey; label: string; emphasis?: boolean; expandable?: ExpandableKey; term?: string }> = [
+  { key: 'netRevenue', label: 'Net revenue', term: 'net-revenue' },
   { key: 'payroll', label: 'Payroll', expandable: 'payroll' },
   { key: 'opex', label: 'Operating expenses', expandable: 'opex' },
-  { key: 'stm', label: 'STM share' },
-  { key: 'ebitda', label: 'EBITDA', emphasis: true },
-  { key: 'depreciation', label: 'Depreciation' },
+  { key: 'stm', label: 'STM share', term: 'revenue-share' },
+  { key: 'ebitda', label: 'EBITDA', emphasis: true, term: 'ebitda' },
+  { key: 'depreciation', label: 'Depreciation', term: 'depreciation' },
 ]
 
 /** Below EBIT, the capital forecast is authoritative — its tax and net profit account for interest, which the cost forecast alone doesn't see. */
-const CAPITAL_ROWS: Array<{ key: CapitalRowKey; label: string; emphasis?: boolean }> = [
+const CAPITAL_ROWS: Array<{ key: CapitalRowKey; label: string; emphasis?: boolean; term?: string }> = [
   { key: 'interest', label: 'Interest' },
-  { key: 'profitBeforeTax', label: 'Profit before tax', emphasis: true },
-  { key: 'tax', label: 'Tax' },
-  { key: 'netProfit', label: 'Net profit', emphasis: true },
-  { key: 'dividend', label: 'Dividend' },
+  { key: 'profitBeforeTax', label: 'Profit before tax', emphasis: true, term: 'profit-before-tax' },
+  { key: 'tax', label: 'Tax', term: 'corporate-tax' },
+  { key: 'netProfit', label: 'Net profit', emphasis: true, term: 'net-profit' },
+  { key: 'dividend', label: 'Dividend', term: 'dividend-payout' },
 ]
 
 interface PLRow {
@@ -46,6 +47,7 @@ interface PLRow {
   indent?: boolean
   expandable?: ExpandableKey
   isExpanded?: boolean
+  term?: string
   valueKind: 'money' | 'percent'
   getYearValue: (yearIndex: number) => number
 }
@@ -111,6 +113,7 @@ export function ProfitAndLossTable({
       emphasis: base.emphasis,
       expandable: base.expandable,
       isExpanded: base.expandable ? expanded.has(base.expandable) : undefined,
+      term: base.term,
       valueKind: 'money',
       getYearValue: (yearIndex) => years[yearIndex]?.[base.key] ?? 0,
     })
@@ -141,6 +144,7 @@ export function ProfitAndLossTable({
     key: 'ebit',
     label: 'EBIT',
     emphasis: true,
+    term: 'ebit',
     valueKind: 'money',
     getYearValue: (yearIndex) => years[yearIndex]?.ebit ?? 0,
   })
@@ -149,6 +153,7 @@ export function ProfitAndLossTable({
       key: capitalRow.key,
       label: capitalRow.label,
       emphasis: capitalRow.emphasis,
+      term: capitalRow.term,
       valueKind: 'money',
       getYearValue: (yearIndex) => capitalYears[yearIndex]?.[capitalRow.key] ?? 0,
     })
@@ -156,12 +161,14 @@ export function ProfitAndLossTable({
   rows.push({
     key: 'ebitdaMargin',
     label: 'EBITDA margin',
+    term: 'ebitda-margin',
     valueKind: 'percent',
     getYearValue: (yearIndex) => years[yearIndex]?.ebitdaMarginPct ?? 0,
   })
   rows.push({
     key: 'netMargin',
     label: 'Net margin',
+    term: 'net-margin',
     valueKind: 'percent',
     getYearValue: (yearIndex) => {
       const netRevenue = years[yearIndex]?.netRevenue ?? 0
@@ -179,22 +186,37 @@ export function ProfitAndLossTable({
       minWidth: 180,
       pinned: 'left',
       getValue: (row) => row.label,
-      render: (row) => (
-        <button
-          type="button"
-          className={cn('flex w-full items-center gap-1.5 text-left', row.indent && 'pl-6', !row.expandable && 'cursor-default')}
-          onClick={row.expandable ? () => toggle(row.expandable!) : undefined}
-        >
-          {row.expandable ? (
-            row.isExpanded ? (
-              <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
-            )
-          ) : null}
-          <span className="truncate">{row.label}</span>
-        </button>
-      ),
+      render: (row) => {
+        const lastYearIndex = years.length - 1
+        const lastValue = row.getYearValue(lastYearIndex)
+        return (
+          <div className="flex w-full items-center gap-1.5">
+            <button
+              type="button"
+              className={cn('flex min-w-0 flex-1 items-center gap-1.5 text-left', row.indent && 'pl-6', !row.expandable && 'cursor-default')}
+              onClick={row.expandable ? () => toggle(row.expandable!) : undefined}
+            >
+              {row.expandable ? (
+                row.isExpanded ? (
+                  <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+                )
+              ) : null}
+              <span className="truncate">{row.label}</span>
+            </button>
+            {row.term ? (
+              <GlossaryHint
+                term={row.term}
+                currentValue={
+                  row.valueKind === 'percent' ? formatPercent(lastValue) : formatMoney(lastValue, project.meta).text
+                }
+                context={`Profit and loss, ${years[lastYearIndex]?.label ?? 'final forecast year'}`}
+              />
+            ) : null}
+          </div>
+        )
+      },
     },
     ...years.map(
       (year): GridColumnDef<PLRow> => ({

@@ -4,9 +4,10 @@ import { Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Toolt
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChartTooltip } from '@/components/revenue/chart-tooltip'
+import { GlossaryHint } from '@/components/glossary/glossary-hint'
 import type { Project } from '@/domain/schema'
 import type { CapitalForecast } from '@/engine/capital'
-import { formatCompactMoneySigned } from '@/lib/format'
+import { formatCompactMoneySigned, formatMoney } from '@/lib/format'
 
 export function ChartFreeCashFlow({
   project,
@@ -20,11 +21,17 @@ export function ChartFreeCashFlow({
     freeCashFlow: capitalForecast.valuation.freeCashFlows[i] ?? 0,
   }))
   const tickFormatter = (value: number) => formatCompactMoneySigned(value, project.meta)
+  const finalFreeCashFlow = data[data.length - 1]?.freeCashFlow ?? 0
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex-row items-center gap-1.5">
         <CardTitle>Free cash flow</CardTitle>
+        <GlossaryHint
+          term="free-cash-flow"
+          currentValue={formatMoney(finalFreeCashFlow, project.meta).text}
+          context={`Free cash flow, ${data[data.length - 1]?.label ?? 'final forecast year'}`}
+        />
       </CardHeader>
       <CardContent className="h-72 pt-0">
         <ResponsiveContainer width="100%" height="100%">

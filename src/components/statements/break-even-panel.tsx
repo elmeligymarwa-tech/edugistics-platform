@@ -12,14 +12,18 @@ export function BreakEvenPanel({ project, costForecast }: { project: Project; co
 
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-      <StatTile label="Break-even year" value={breakEvenLabel} />
+      <StatTile label="Break-even year" value={breakEvenLabel} term="break-even-year" />
       <StatTile
         label="Cash low point"
         value={<CurrencyText value={formatMoney(costForecast.cashLowPoint, project.meta)} />}
+        term="cash-low-point"
+        glossaryValue={formatMoney(costForecast.cashLowPoint, project.meta).text}
       />
       <StatTile
         label="Peak funding requirement"
         value={<CurrencyText value={formatMoney(costForecast.peakFundingRequirement, project.meta)} />}
+        term="peak-funding-requirement"
+        glossaryValue={formatMoney(costForecast.peakFundingRequirement, project.meta).text}
       />
     </div>
   )

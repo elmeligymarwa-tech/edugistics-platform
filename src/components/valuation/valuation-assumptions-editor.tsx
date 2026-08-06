@@ -1,5 +1,6 @@
 'use client'
 
+import { GlossaryHint } from '@/components/glossary/glossary-hint'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Select } from '@/components/ui/select'
@@ -44,7 +45,10 @@ export function ValuationAssumptionsEditor({
           />
         </Field>
         <Field>
-          <FieldLabel htmlFor="discountRatePct">Discount rate %</FieldLabel>
+          <FieldLabel htmlFor="discountRatePct" className="flex items-center gap-1">
+            Discount rate %
+            <GlossaryHint term="discount-rate" currentValue={`${valuation.discountRatePct}%`} />
+          </FieldLabel>
           <SliderNumberField
             id="discountRatePct"
             aria-label="Discount rate %"
@@ -58,7 +62,10 @@ export function ValuationAssumptionsEditor({
         </Field>
         {valuation.method === 'perpetuity' ? (
           <Field>
-            <FieldLabel htmlFor="terminalGrowthPct">Terminal growth %</FieldLabel>
+            <FieldLabel htmlFor="terminalGrowthPct" className="flex items-center gap-1">
+              Terminal growth %
+              <GlossaryHint term="terminal-growth" currentValue={`${valuation.terminalGrowthPct}%`} />
+            </FieldLabel>
             <SliderNumberField
               id="terminalGrowthPct"
               aria-label="Terminal growth %"
@@ -73,7 +80,10 @@ export function ValuationAssumptionsEditor({
           </Field>
         ) : (
           <Field>
-            <FieldLabel htmlFor="exitEbitdaMultiple">Exit EBITDA multiple</FieldLabel>
+            <FieldLabel htmlFor="exitEbitdaMultiple" className="flex items-center gap-1">
+              Exit EBITDA multiple
+              <GlossaryHint term="exit-multiple" currentValue={`${valuation.exitEbitdaMultiple}x`} />
+            </FieldLabel>
             <SliderNumberField
               id="exitEbitdaMultiple"
               aria-label="Exit EBITDA multiple"

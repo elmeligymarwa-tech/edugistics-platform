@@ -3,6 +3,7 @@
 import { Plus, Trash2 } from 'lucide-react'
 
 import { DataGrid, toNumberOrZero, type GridColumnDef } from '@/components/grid'
+import { GlossaryHint } from '@/components/glossary/glossary-hint'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
@@ -100,7 +101,10 @@ export function EquityEditor({
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-4 pt-0 sm:grid-cols-2">
           <Field>
-            <FieldLabel htmlFor="openingShareCapital">Opening share capital</FieldLabel>
+            <FieldLabel htmlFor="openingShareCapital" className="flex items-center gap-1">
+              Opening share capital
+              <GlossaryHint term="share-capital" currentValue={String(equity.openingShareCapital)} />
+            </FieldLabel>
             <Input
               id="openingShareCapital"
               type="number"
@@ -119,7 +123,10 @@ export function EquityEditor({
             <FieldDescription>Fixed assets already on the books before year one.</FieldDescription>
           </Field>
           <Field className="sm:col-span-2">
-            <FieldLabel htmlFor="dividendPayoutPct">Dividend payout %</FieldLabel>
+            <FieldLabel htmlFor="dividendPayoutPct" className="flex items-center gap-1">
+              Dividend payout %
+              <GlossaryHint term="dividend-payout" currentValue={`${equity.dividendPayoutPct}%`} />
+            </FieldLabel>
             <SliderNumberField
               id="dividendPayoutPct"
               aria-label="Dividend payout %"
