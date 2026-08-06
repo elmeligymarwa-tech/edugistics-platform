@@ -3,22 +3,65 @@
 import { useRef } from 'react'
 import { Image as ImageIcon, Trash2, Upload } from 'lucide-react'
 
+import { DataGrid, toNumberOrZero, type GridColumnDef } from '@/components/grid'
 import { PresetPanel } from '@/components/setup/preset-panel'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Field, FieldDescription, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { SliderNumberField } from '@/components/ui/slider-number-field'
 import { ProjectMetaSchema, CalendarConfigSchema, type Project } from '@/domain/schema'
 import { fieldMessage } from '@/lib/wizard-validation'
 import { CURRENCY_OPTIONS, FORECAST_YEAR_OPTIONS, LOCALE_OPTIONS, MONTH_OPTIONS } from '@/lib/wizard-data'
 import { useProjectStore } from '@/store/project-store'
+
+interface UsdRateRow {
+  key: string
+  yearIndex: number
+  label: string
+  rate: number
+}
 
 export function Step1SchoolInfo({ project }: { project: Project }) {
   const updateMeta = useProjectStore((state) => state.updateMeta)
   const updateCalendar = useProjectStore((state) => state.updateCalendar)
   const updateRevenueAssumptions = useProjectStore((state) => state.updateRevenueAssumptions)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const usdRateByYear = project.meta.usdRateByYear
+  const setUsdRateForYear = (yearIndex: number, rate: number) => {
+    const next = [...usdRateByYear]
+    while (next.length <= yearIndex) next.push(project.meta.usdRate)
+    next[yearIndex] = rate
+    updateMeta(project.id, { usdRateByYear: next })
+  }
+  const usdRateRows: UsdRateRow[] = Array.from({ length: project.calendar.forecastYears }, (_, yearIndex) => ({
+    key: `usd-rate-${yearIndex}`,
+    yearIndex,
+    label: `${project.calendar.academicYearStart + yearIndex}/${project.calendar.academicYearStart + yearIndex + 1}`,
+    rate: usdRateByYear[Math.min(yearIndex, usdRateByYear.length - 1)] ?? project.meta.usdRate,
+  }))
+  const usdRateColumns: GridColumnDef<UsdRateRow>[] = [
+    {
+      id: 'label',
+      label: 'Forecast year',
+      kind: 'readonly',
+      width: 140,
+      minWidth: 120,
+      pinned: 'left',
+      getValue: (row) => row.label,
+    },
+    {
+      id: 'rate',
+      label: `Rate (local currency per USD)`,
+      kind: 'numeric',
+      width: 200,
+      minWidth: 168,
+      getValue: (row) => row.rate,
+      onCommit: (row, value) => setUsdRateForYear(row.yearIndex, Math.max(0.0001, toNumberOrZero(value))),
+    },
+  ]
 
   const schoolPlan = project.revenueAssumptions.schoolPlan
   const setMaxSchoolStudents = (raw: string) =>
@@ -236,6 +279,55 @@ export function Step1SchoolInfo({ project }: { project: Project }) {
                 ))}
               </div>
             </Field>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <h3 className="text-sm font-semibold text-heading">USD reporting</h3>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field>
+              <FieldLabel htmlFor="usdRate">Base rate (local currency per USD)</FieldLabel>
+              <Input
+                id="usdRate"
+                type="number"
+                min={0.0001}
+                step="any"
+                value={project.meta.usdRate}
+                onChange={(event) => updateMeta(project.id, { usdRate: Math.max(0.0001, Number(event.target.value)) })}
+              />
+              <FieldDescription>Used for any forecast year without its own rate below.</FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="feeEscalationCapPct">Fee escalation cap %</FieldLabel>
+              <SliderNumberField
+                id="feeEscalationCapPct"
+                aria-label="Fee escalation cap %"
+                min={0}
+                max={100}
+                step={0.5}
+                suffix="%"
+                value={project.meta.feeEscalationCapPct}
+                onValueChange={(value) => updateMeta(project.id, { feeEscalationCapPct: value })}
+              />
+              <FieldDescription>Regulatory ceiling on annual fee increases.</FieldDescription>
+            </Field>
+          </div>
+          <div className="mt-4">
+            <DataGrid
+              rows={usdRateRows}
+              getRowId={(row) => row.key}
+              columns={usdRateColumns}
+              mode="edit"
+              gridId="setup-usd-rate-by-year"
+              ariaLabel="USD exchange rate by forecast year"
+            />
+            <FieldDescription className="mt-2">
+              Empty years fall back to the base rate held flat. A shorter list holds its final value.
+            </FieldDescription>
           </div>
         </CardContent>
       </Card>

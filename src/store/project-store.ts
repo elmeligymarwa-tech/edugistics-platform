@@ -26,6 +26,16 @@ import {
   type Financing,
 } from '../domain/costs'
 import { computeCostForecast, type CostForecast } from '../engine/costs'
+import {
+  CapitalModelSchema,
+  CAPITAL_SCHEMA_VERSION,
+  createEmptyCapitalModel,
+  type CapitalModel,
+  type Equity,
+  type Loan,
+  type Valuation,
+} from '../domain/capital'
+import { computeCapitalForecast, type CapitalForecast } from '../engine/capital'
 
 export const STORAGE_NAME = 'edugistics-projects'
 const DEBOUNCE_MS = 500
@@ -62,6 +72,22 @@ export function migrateCostModel(data: unknown): unknown {
     version += 1
   }
   return { ...migrated, schemaVersion: COST_SCHEMA_VERSION }
+}
+
+/** Per-version upgrade steps for the capital model, keyed by the schemaVersion they upgrade *from*. */
+const MIGRATIONS_CAPITAL: Record<number, (data: Record<string, unknown>) => Record<string, unknown>> = {}
+
+/** Upgrades a raw capital model object to the current CAPITAL_SCHEMA_VERSION. */
+export function migrateCapitalModel(data: unknown): unknown {
+  if (typeof data !== 'object' || data === null) return data
+  let migrated = data as Record<string, unknown>
+  let version = typeof migrated.schemaVersion === 'number' ? migrated.schemaVersion : 0
+  while (version < CAPITAL_SCHEMA_VERSION) {
+    const upgrade = MIGRATIONS_CAPITAL[version]
+    migrated = upgrade ? upgrade(migrated) : migrated
+    version += 1
+  }
+  return { ...migrated, schemaVersion: CAPITAL_SCHEMA_VERSION }
 }
 
 /* ---------------------------------------------------------------- empty */
@@ -181,6 +207,7 @@ export interface ScenarioAdjustments {
 interface PersistedProjectState {
   projects: Record<string, Project>
   costModels: Record<string, CostModel>
+  capitalModels: Record<string, CapitalModel>
   scenarios: Record<string, ScenarioMeta>
   activeProjectId: string | null
 }
@@ -212,10 +239,16 @@ interface ProjectActions {
   exportProject: (id: string) => string
   importProject: (json: string) => ProjectImportResult
   ensureCostModel: (id: string) => void
+  updateInflationPct: (id: string, value: number) => void
   updatePayrollConfig: (id: string, patch: Partial<PayrollConfig>) => void
   updateOpex: (id: string, categories: OpexCategory[]) => void
   updateCapex: (id: string, items: CapexItem[]) => void
   updateFinancing: (id: string, patch: Partial<Financing>) => void
+  ensureCapitalModel: (id: string) => void
+  updateEquity: (id: string, patch: Partial<Equity>) => void
+  updateLoans: (id: string, loans: Loan[]) => void
+  updateValuation: (id: string, patch: Partial<Valuation>) => void
+  updateOpeningFixedAssets: (id: string, value: number) => void
   createScenario: (baseProjectId: string, name: string) => string
   applyScenarioAdjustments: (id: string, adjustments: ScenarioAdjustments) => void
 }
@@ -248,13 +281,14 @@ function touch<K extends keyof Project>(
   }
 }
 
-/** Clones a project and its cost model under a fresh id, with a given school name. Shared by duplicateProject and createScenario. */
+/** Clones a project, its cost model and its capital model under a fresh id, with a given school name. Shared by duplicateProject and createScenario. */
 function cloneProjectAndCost(
   source: Project,
   sourceCost: CostModel | undefined,
+  sourceCapital: CapitalModel | undefined,
   schoolName: string,
   now: string,
-): { project: Project; costModel: CostModel } {
+): { project: Project; costModel: CostModel; capitalModel: CapitalModel } {
   const project = ProjectSchema.parse({
     ...source,
     id: globalThis.crypto.randomUUID(),
@@ -268,7 +302,13 @@ function cloneProjectAndCost(
     createdAt: now,
     updatedAt: now,
   })
-  return { project, costModel }
+  const capitalModel = CapitalModelSchema.parse({
+    ...(sourceCapital ?? createEmptyCapitalModel(source.id, now)),
+    projectId: project.id,
+    createdAt: now,
+    updatedAt: now,
+  })
+  return { project, costModel, capitalModel }
 }
 
 /** Adds a delta to a scalar-or-per-year escalation figure, preserving its shape. */
@@ -294,11 +334,26 @@ function touchCost<K extends keyof CostModel>(
   }
 }
 
+function touchCapital<K extends keyof CapitalModel>(
+  capitalModels: Record<string, CapitalModel>,
+  id: string,
+  key: K,
+  value: CapitalModel[K],
+): Record<string, CapitalModel> {
+  const existing = capitalModels[id]
+  if (!existing) return capitalModels
+  return {
+    ...capitalModels,
+    [id]: { ...existing, [key]: value, updatedAt: new Date().toISOString() },
+  }
+}
+
 export const useProjectStore = create<ProjectStoreState>()(
   persist(
     (set, get) => ({
       projects: {},
       costModels: {},
+      capitalModels: {},
       scenarios: {},
       activeProjectId: null,
       hasHydrated: false,
@@ -310,6 +365,10 @@ export const useProjectStore = create<ProjectStoreState>()(
         set((state) => ({
           projects: { ...state.projects, [project.id]: project },
           costModels: { ...state.costModels, [project.id]: createEmptyCostModel(project.id, now) },
+          capitalModels: {
+            ...state.capitalModels,
+            [project.id]: createEmptyCapitalModel(project.id, now),
+          },
           activeProjectId: project.id,
         }))
         return project.id
@@ -319,15 +378,21 @@ export const useProjectStore = create<ProjectStoreState>()(
         const source = get().projects[id]
         if (!source) throw new Error(`Project not found: ${id}`)
         const now = new Date().toISOString()
-        const { project: clone, costModel: cloneCost } = cloneProjectAndCost(
+        const {
+          project: clone,
+          costModel: cloneCost,
+          capitalModel: cloneCapital,
+        } = cloneProjectAndCost(
           source,
           get().costModels[id],
+          get().capitalModels[id],
           `${source.meta.schoolName} (copy)`,
           now,
         )
         set((state) => ({
           projects: { ...state.projects, [clone.id]: clone },
           costModels: { ...state.costModels, [clone.id]: cloneCost },
+          capitalModels: { ...state.capitalModels, [clone.id]: cloneCapital },
           activeProjectId: clone.id,
         }))
         return clone.id
@@ -348,6 +413,9 @@ export const useProjectStore = create<ProjectStoreState>()(
           const costModels = Object.fromEntries(
             Object.entries(state.costModels).filter(([projectId]) => projectId !== id),
           )
+          const capitalModels = Object.fromEntries(
+            Object.entries(state.capitalModels).filter(([projectId]) => projectId !== id),
+          )
           const scenarios = Object.fromEntries(
             Object.entries(state.scenarios).filter(([scenarioId]) => scenarioId !== id),
           )
@@ -355,7 +423,7 @@ export const useProjectStore = create<ProjectStoreState>()(
             state.activeProjectId === id
               ? (Object.keys(projects)[0] ?? null)
               : state.activeProjectId
-          return { projects, costModels, scenarios, activeProjectId }
+          return { projects, costModels, capitalModels, scenarios, activeProjectId }
         }),
 
       setActiveProject: (id) =>
@@ -479,6 +547,13 @@ export const useProjectStore = create<ProjectStoreState>()(
           }
         }),
 
+      updateInflationPct: (id, value) =>
+        set((state) => {
+          const cost = state.costModels[id]
+          if (!cost) return state
+          return { costModels: touchCost(state.costModels, id, 'inflationPct', value) }
+        }),
+
       updatePayrollConfig: (id, patch) =>
         set((state) => {
           const cost = state.costModels[id]
@@ -514,19 +589,74 @@ export const useProjectStore = create<ProjectStoreState>()(
           }
         }),
 
+      ensureCapitalModel: (id) =>
+        set((state) => {
+          if (!state.projects[id] || state.capitalModels[id]) return state
+          return {
+            capitalModels: {
+              ...state.capitalModels,
+              [id]: createEmptyCapitalModel(id, new Date().toISOString()),
+            },
+          }
+        }),
+
+      updateEquity: (id, patch) =>
+        set((state) => {
+          const capital = state.capitalModels[id]
+          if (!capital) return state
+          return {
+            capitalModels: touchCapital(state.capitalModels, id, 'equity', {
+              ...capital.equity,
+              ...patch,
+            }),
+          }
+        }),
+
+      updateLoans: (id, loans) =>
+        set((state) => {
+          const capital = state.capitalModels[id]
+          if (!capital) return state
+          return { capitalModels: touchCapital(state.capitalModels, id, 'loans', loans) }
+        }),
+
+      updateValuation: (id, patch) =>
+        set((state) => {
+          const capital = state.capitalModels[id]
+          if (!capital) return state
+          return {
+            capitalModels: touchCapital(state.capitalModels, id, 'valuation', {
+              ...capital.valuation,
+              ...patch,
+            }),
+          }
+        }),
+
+      updateOpeningFixedAssets: (id, value) =>
+        set((state) => {
+          const capital = state.capitalModels[id]
+          if (!capital) return state
+          return { capitalModels: touchCapital(state.capitalModels, id, 'openingFixedAssets', value) }
+        }),
+
       createScenario: (baseProjectId, name) => {
         const source = get().projects[baseProjectId]
         if (!source) throw new Error(`Project not found: ${baseProjectId}`)
         const now = new Date().toISOString()
-        const { project: scenarioProject, costModel: scenarioCost } = cloneProjectAndCost(
+        const {
+          project: scenarioProject,
+          costModel: scenarioCost,
+          capitalModel: scenarioCapital,
+        } = cloneProjectAndCost(
           source,
           get().costModels[baseProjectId],
+          get().capitalModels[baseProjectId],
           name,
           now,
         )
         set((state) => ({
           projects: { ...state.projects, [scenarioProject.id]: scenarioProject },
           costModels: { ...state.costModels, [scenarioProject.id]: scenarioCost },
+          capitalModels: { ...state.capitalModels, [scenarioProject.id]: scenarioCapital },
           scenarios: {
             ...state.scenarios,
             [scenarioProject.id]: { baseProjectId, name, createdAt: now },
@@ -623,7 +753,8 @@ export const useProjectStore = create<ProjectStoreState>()(
         const project = get().projects[id]
         if (!project) throw new Error(`Project not found: ${id}`)
         const costModel = get().costModels[id] ?? createEmptyCostModel(id, project.updatedAt)
-        return JSON.stringify({ project, costModel })
+        const capitalModel = get().capitalModels[id] ?? createEmptyCapitalModel(id, project.updatedAt)
+        return JSON.stringify({ project, costModel, capitalModel })
       },
 
       importProject: (json) => {
@@ -636,8 +767,8 @@ export const useProjectStore = create<ProjectStoreState>()(
 
         const envelope =
           typeof parsed === 'object' && parsed !== null && 'project' in parsed
-            ? (parsed as { project: unknown; costModel?: unknown })
-            : { project: parsed, costModel: undefined }
+            ? (parsed as { project: unknown; costModel?: unknown; capitalModel?: unknown })
+            : { project: parsed, costModel: undefined, capitalModel: undefined }
 
         const projectResult = ProjectSchema.safeParse(migrateProject(envelope.project))
         if (!projectResult.success) {
@@ -663,9 +794,21 @@ export const useProjectStore = create<ProjectStoreState>()(
           costModel = createEmptyCostModel(project.id, now)
         }
 
+        let capitalModel: CapitalModel
+        if (envelope.capitalModel) {
+          const capitalResult = CapitalModelSchema.safeParse(migrateCapitalModel(envelope.capitalModel))
+          if (!capitalResult.success) {
+            return { ok: false, error: capitalResult.error.message }
+          }
+          capitalModel = { ...capitalResult.data, projectId: project.id, createdAt: now, updatedAt: now }
+        } else {
+          capitalModel = createEmptyCapitalModel(project.id, now)
+        }
+
         set((state) => ({
           projects: { ...state.projects, [project.id]: project },
           costModels: { ...state.costModels, [project.id]: costModel },
+          capitalModels: { ...state.capitalModels, [project.id]: capitalModel },
           activeProjectId: project.id,
         }))
         return { ok: true, id: project.id }
@@ -677,6 +820,7 @@ export const useProjectStore = create<ProjectStoreState>()(
       partialize: (state) => ({
         projects: state.projects,
         costModels: state.costModels,
+        capitalModels: state.capitalModels,
         scenarios: state.scenarios,
         activeProjectId: state.activeProjectId,
       }),
@@ -698,10 +842,17 @@ export const useProjectStore = create<ProjectStoreState>()(
             CostModelSchema.parse(migrateCostModel(costModel)),
           ]),
         )
+        const capitalModels = Object.fromEntries(
+          Object.entries(persisted.capitalModels ?? {}).map(([id, capitalModel]) => [
+            id,
+            CapitalModelSchema.parse(migrateCapitalModel(capitalModel)),
+          ]),
+        )
         return {
           ...currentState,
           projects,
           costModels,
+          capitalModels,
           scenarios: persisted.scenarios ?? currentState.scenarios,
           activeProjectId: persisted.activeProjectId ?? currentState.activeProjectId,
         }
@@ -763,4 +914,40 @@ export function useProjectCostForecast(id: string): CostForecast | null {
   const project = useProjectStore((state) => state.projects[id])
   const cost = useProjectStore((state) => state.costModels[id])
   return project && cost ? selectCostForecast(project, cost) : null
+}
+
+const capitalForecastCache = new WeakMap<Project, WeakMap<CostModel, WeakMap<CapitalModel, CapitalForecast>>>()
+
+/** Memoises computeCapitalForecast against the identity of the project, cost model and capital model. */
+export function selectCapitalForecast(
+  project: Project,
+  cost: CostModel,
+  capital: CapitalModel,
+): CapitalForecast {
+  let byCost = capitalForecastCache.get(project)
+  if (!byCost) {
+    byCost = new WeakMap()
+    capitalForecastCache.set(project, byCost)
+  }
+  let byCapital = byCost.get(cost)
+  if (!byCapital) {
+    byCapital = new WeakMap()
+    byCost.set(cost, byCapital)
+  }
+  const cached = byCapital.get(capital)
+  if (cached) return cached
+  const forecast = computeCapitalForecast(project, cost, capital, selectCostForecast(project, cost))
+  byCapital.set(capital, forecast)
+  return forecast
+}
+
+export function useCapitalModel(id: string): CapitalModel | null {
+  return useProjectStore((state) => state.capitalModels[id] ?? null)
+}
+
+export function useProjectCapitalForecast(id: string): CapitalForecast | null {
+  const project = useProjectStore((state) => state.projects[id])
+  const cost = useProjectStore((state) => state.costModels[id])
+  const capital = useProjectStore((state) => state.capitalModels[id])
+  return project && cost && capital ? selectCapitalForecast(project, cost, capital) : null
 }

@@ -3,6 +3,7 @@ import { Breadcrumbs } from './breadcrumbs'
 import { MobileNav } from './mobile-nav'
 import { ProjectSwitcher } from './project-switcher'
 import { SavedIndicator } from './saved-indicator'
+import { UsdToggle } from './usd-toggle'
 
 export function TopBar() {
   return (
@@ -11,6 +12,7 @@ export function TopBar() {
       <Breadcrumbs />
       <div className="ml-auto flex items-center gap-3">
         <SavedIndicator />
+        <UsdToggle />
         <ProjectSwitcher />
         <ThemeToggle />
       </div>

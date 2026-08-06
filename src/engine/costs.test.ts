@@ -235,6 +235,46 @@ describe('payroll', () => {
   })
 })
 
+describe('contract length and inflation', () => {
+  it('prices a ten month contract at ten twelfths of the annual salary', () => {
+    const project = makeProject({
+      staffing: {
+        positions: [
+          { ...makeProject().staffing.positions[0]!, monthsWorked: 10 },
+        ],
+      },
+    })
+    expect(computePayroll(project, makeCost())[0]!.salaries).toBeCloseTo(400_000 * (10 / 12), 6)
+  })
+
+  it('inherits the model wide inflation rate where a category sets none', () => {
+    const cost = makeCost({
+      inflationPct: 10,
+      opex: [
+        { id: 'rent', name: 'Rent', group: 'facilities', basis: 'fixed', amount: 1_000_000, stepSizeStudents: 50, escalationPct: null, startYearIndex: 0, endYearIndex: null },
+      ],
+    })
+    const project = makeProject({
+      calendar: { academicYearStart: 2027, financialYearStartMonth: 9, forecastYears: 3, termsPerYear: 3 },
+    })
+    const years = computeCostForecast(project, cost).years
+    expect(years[0]!.opex).toBeCloseTo(1_000_000, 6)
+    expect(years[2]!.opex).toBeCloseTo(1_000_000 * 1.21, 6)
+  })
+})
+
+describe('stepped costs', () => {
+  it('buys a whole unit each time the threshold is crossed', () => {
+    const cost = makeCost({
+      opex: [
+        { id: 'bus', name: 'Bus', group: 'transport', basis: 'stepped', amount: 300_000, stepSizeStudents: 40, escalationPct: 0, startYearIndex: 0, endYearIndex: null },
+      ],
+    })
+    // 40 students at 100 per cent occupancy needs one bus.
+    expect(computeCostForecast(makeProject(), cost).years[0]!.opex).toBe(300_000)
+  })
+})
+
 describe('depreciation', () => {
   it('spreads capex straight line and stops at the end of useful life', () => {
     const cost = makeCost({

@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 
 import { DataGrid, toNumberOrZero, type GridColumnDef } from '@/components/grid'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Field, FieldLabel } from '@/components/ui/field'
+import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { SliderNumberField } from '@/components/ui/slider-number-field'
@@ -18,7 +18,7 @@ import {
   type YearGroupId,
 } from '@/domain/schema'
 import { YEAR_GROUP_LABELS } from '@/lib/wizard-data'
-import { useProjectStore } from '@/store/project-store'
+import { useCostModel, useProjectStore } from '@/store/project-store'
 
 const ENROLMENT_MODEL_LABELS: Record<string, string> = {
   occupancy: 'Occupancy-driven',
@@ -27,6 +27,8 @@ const ENROLMENT_MODEL_LABELS: Record<string, string> = {
 
 export function Step5Revenue({ project }: { project: Project }) {
   const updateRevenueAssumptions = useProjectStore((state) => state.updateRevenueAssumptions)
+  const updateInflationPct = useProjectStore((state) => state.updateInflationPct)
+  const costModel = useCostModel(project.id)
   const groups = orderedYearGroups(project)
   const a = project.revenueAssumptions
   const termsPerYear = project.calendar.termsPerYear
@@ -118,6 +120,24 @@ export function Step5Revenue({ project }: { project: Project }) {
               onValueChange={(value) => updateRevenueAssumptions(project.id, { otherFeeEscalationPct: value })}
             />
           </Field>
+          {costModel ? (
+            <Field className="sm:col-span-2">
+              <FieldLabel htmlFor="inflationPct">Cost inflation %</FieldLabel>
+              <SliderNumberField
+                id="inflationPct"
+                aria-label="Cost inflation %"
+                min={-20}
+                max={200}
+                step={0.5}
+                suffix="%"
+                value={costModel.inflationPct}
+                onValueChange={(value) => updateInflationPct(project.id, value)}
+              />
+              <FieldDescription>
+                Model wide rate that every payroll position and expense category without its own escalation inherits.
+              </FieldDescription>
+            </Field>
+          ) : null}
           <Field>
             <FieldLabel htmlFor="avgSiblings">Average siblings / family</FieldLabel>
             <Input

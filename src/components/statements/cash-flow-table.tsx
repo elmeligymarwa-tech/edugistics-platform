@@ -7,34 +7,75 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { Project } from '@/domain/schema'
 import type { CostForecast } from '@/engine/costs'
+import type { CapitalForecast } from '@/engine/capital'
 import { downloadCsv } from '@/lib/csv'
 import { formatMoney, formatMoneySigned } from '@/lib/format'
 
-type RowKey = 'cashCollected' | 'cashCostsPaid' | 'capexSpend' | 'taxPaid' | 'netCashMovement' | 'closingCash'
+type CostRowKey = 'cashCollected' | 'cashCostsPaid' | 'capexSpend'
+type CapitalRowKey =
+  | 'interest'
+  | 'drawdowns'
+  | 'principalRepaid'
+  | 'equityInjected'
+  | 'dividend'
+  | 'netCashMovement'
+  | 'closingCash'
 
-interface CashFlowRow {
-  key: RowKey
-  label: string
-  emphasis?: boolean
-}
-
-const ROWS: CashFlowRow[] = [
+const COST_ROWS: Array<{ key: CostRowKey; label: string }> = [
   { key: 'cashCollected', label: 'Cash collected' },
   { key: 'cashCostsPaid', label: 'Cash costs paid' },
   { key: 'capexSpend', label: 'Capital expenditure' },
-  { key: 'taxPaid', label: 'Tax paid' },
+]
+
+/** Once financing exists, tax, interest and every below-the-line flow come from the capital forecast, which is the layer that accounts for them. */
+const CAPITAL_ROWS: Array<{ key: CapitalRowKey; label: string; emphasis?: boolean }> = [
+  { key: 'interest', label: 'Interest paid' },
+  { key: 'drawdowns', label: 'Loan drawdowns' },
+  { key: 'principalRepaid', label: 'Loan repayments' },
+  { key: 'equityInjected', label: 'Equity injected' },
+  { key: 'dividend', label: 'Dividends paid' },
   { key: 'netCashMovement', label: 'Net movement', emphasis: true },
   { key: 'closingCash', label: 'Closing cash', emphasis: true },
 ]
 
-export function CashFlowTable({ project, costForecast }: { project: Project; costForecast: CostForecast }) {
+interface CashFlowRow {
+  key: string
+  label: string
+  emphasis?: boolean
+  getYearValue: (yearIndex: number) => number
+}
+
+export function CashFlowTable({
+  project,
+  costForecast,
+  capitalForecast,
+}: {
+  project: Project
+  costForecast: CostForecast
+  capitalForecast: CapitalForecast
+}) {
   const years = costForecast.years
+  const capitalYears = capitalForecast.years
+
+  const rows: CashFlowRow[] = [
+    ...COST_ROWS.map((row) => ({
+      key: row.key,
+      label: row.label,
+      getYearValue: (yearIndex: number) => years[yearIndex]?.[row.key] ?? 0,
+    })),
+    ...CAPITAL_ROWS.map((row) => ({
+      key: row.key,
+      label: row.label,
+      emphasis: row.emphasis,
+      getYearValue: (yearIndex: number) => capitalYears[yearIndex]?.[row.key] ?? 0,
+    })),
+  ]
 
   const handleExport = () => {
     const header = ['', ...years.map((year) => year.label)]
-    const body: string[][] = ROWS.map((row) => [
+    const body: string[][] = rows.map((row) => [
       row.label,
-      ...years.map((year) => formatMoneySigned(year[row.key], project.meta)),
+      ...years.map((year) => formatMoneySigned(row.getYearValue(year.yearIndex), project.meta)),
     ])
     downloadCsv(`${project.meta.schoolName} - cash flow.csv`, [header, ...body])
   }
@@ -56,7 +97,7 @@ export function CashFlowTable({ project, costForecast }: { project: Project; cos
         kind: 'readonly',
         width: 128,
         minWidth: 112,
-        getValue: (row) => year[row.key],
+        getValue: (row) => row.getYearValue(year.yearIndex),
         format: (value) => (typeof value === 'number' ? formatMoney(value, project.meta) : ''),
       }),
     ),
@@ -73,7 +114,7 @@ export function CashFlowTable({ project, costForecast }: { project: Project; cos
       </CardHeader>
       <CardContent className="pt-0">
         <DataGrid
-          rows={ROWS}
+          rows={rows}
           getRowId={(row) => row.key}
           columns={columns}
           mode="display"

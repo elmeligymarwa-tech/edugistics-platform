@@ -36,6 +36,7 @@ function position(overrides: Partial<StaffPosition> & Pick<StaffPosition, 'id' |
     transportAllowance: 0,
     recruitmentCost: 0,
     trainingCost: 0,
+    monthsWorked: 12,
     ...overrides,
   }
 }
@@ -55,17 +56,17 @@ const EGYPT_FEE_CATEGORIES: FeeCategory[] = [
 ]
 
 const EGYPT_OPEX_CATEGORIES: OpexCategory[] = [
-  { id: 'preset-egypt-rent', name: 'Rent', group: 'facilities', basis: 'fixed', amount: 3_500_000, escalationPct: 5, startYearIndex: 0, endYearIndex: null },
-  { id: 'preset-egypt-utilities', name: 'Utilities', group: 'facilities', basis: 'perStudent', amount: 1_200, escalationPct: 8, startYearIndex: 0, endYearIndex: null },
-  { id: 'preset-egypt-maintenance', name: 'Maintenance', group: 'facilities', basis: 'fixed', amount: 600_000, escalationPct: 5, startYearIndex: 0, endYearIndex: null },
-  { id: 'preset-egypt-cleaning', name: 'Cleaning', group: 'facilities', basis: 'perStudent', amount: 800, escalationPct: 5, startYearIndex: 0, endYearIndex: null },
-  { id: 'preset-egypt-security', name: 'Security', group: 'facilities', basis: 'fixed', amount: 450_000, escalationPct: 5, startYearIndex: 0, endYearIndex: null },
-  { id: 'preset-egypt-insurance', name: 'Insurance', group: 'administration', basis: 'fixed', amount: 250_000, escalationPct: 5, startYearIndex: 0, endYearIndex: null },
-  { id: 'preset-egypt-books-supplies', name: 'Academic supplies', group: 'academic', basis: 'perStudent', amount: 1_500, escalationPct: 5, startYearIndex: 0, endYearIndex: null },
-  { id: 'preset-egypt-software', name: 'Software and IT', group: 'technology', basis: 'perStudent', amount: 900, escalationPct: 5, startYearIndex: 0, endYearIndex: null },
-  { id: 'preset-egypt-marketing', name: 'Marketing', group: 'marketing', basis: 'pctOfRevenue', amount: 2, escalationPct: 0, startYearIndex: 0, endYearIndex: null },
-  { id: 'preset-egypt-transport-opex', name: 'Transport operations', group: 'transport', basis: 'perStudent', amount: 2_500, escalationPct: 6, startYearIndex: 0, endYearIndex: null },
-  { id: 'preset-egypt-catering', name: 'Catering', group: 'catering', basis: 'perStudent', amount: 1_800, escalationPct: 6, startYearIndex: 0, endYearIndex: null },
+  { id: 'preset-egypt-rent', name: 'Rent', group: 'facilities', basis: 'fixed', amount: 3_500_000, stepSizeStudents: 50, escalationPct: 5, startYearIndex: 0, endYearIndex: null },
+  { id: 'preset-egypt-utilities', name: 'Utilities', group: 'facilities', basis: 'perStudent', amount: 1_200, stepSizeStudents: 50, escalationPct: 8, startYearIndex: 0, endYearIndex: null },
+  { id: 'preset-egypt-maintenance', name: 'Maintenance', group: 'facilities', basis: 'fixed', amount: 600_000, stepSizeStudents: 50, escalationPct: 5, startYearIndex: 0, endYearIndex: null },
+  { id: 'preset-egypt-cleaning', name: 'Cleaning', group: 'facilities', basis: 'perStudent', amount: 800, stepSizeStudents: 50, escalationPct: 5, startYearIndex: 0, endYearIndex: null },
+  { id: 'preset-egypt-security', name: 'Security', group: 'facilities', basis: 'fixed', amount: 450_000, stepSizeStudents: 50, escalationPct: 5, startYearIndex: 0, endYearIndex: null },
+  { id: 'preset-egypt-insurance', name: 'Insurance', group: 'administration', basis: 'fixed', amount: 250_000, stepSizeStudents: 50, escalationPct: 5, startYearIndex: 0, endYearIndex: null },
+  { id: 'preset-egypt-books-supplies', name: 'Academic supplies', group: 'academic', basis: 'perStudent', amount: 1_500, stepSizeStudents: 50, escalationPct: 5, startYearIndex: 0, endYearIndex: null },
+  { id: 'preset-egypt-software', name: 'Software and IT', group: 'technology', basis: 'perStudent', amount: 900, stepSizeStudents: 50, escalationPct: 5, startYearIndex: 0, endYearIndex: null },
+  { id: 'preset-egypt-marketing', name: 'Marketing', group: 'marketing', basis: 'pctOfRevenue', amount: 2, stepSizeStudents: 50, escalationPct: 0, startYearIndex: 0, endYearIndex: null },
+  { id: 'preset-egypt-transport-opex', name: 'Transport operations', group: 'transport', basis: 'perStudent', amount: 2_500, stepSizeStudents: 50, escalationPct: 6, startYearIndex: 0, endYearIndex: null },
+  { id: 'preset-egypt-catering', name: 'Catering', group: 'catering', basis: 'perStudent', amount: 1_800, stepSizeStudents: 50, escalationPct: 6, startYearIndex: 0, endYearIndex: null },
 ]
 
 const EGYPT_POSITIONS: StaffPosition[] = [

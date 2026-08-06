@@ -69,13 +69,14 @@ export function ExpenseForecastTable({
   }
 
   const describeCategory = (category: OpexCategory) => {
-    const escalation = Array.isArray(category.escalationPct) ? (category.escalationPct[0] ?? 0) : category.escalationPct
+    const raw = Array.isArray(category.escalationPct) ? (category.escalationPct[0] ?? 0) : category.escalationPct
+    const escalation = raw === null ? 'inherits' : formatPercent(raw)
     const period =
       category.endYearIndex !== null
         ? `years ${category.startYearIndex + 1}–${category.endYearIndex + 1}`
         : `from year ${category.startYearIndex + 1}`
     const base = category.basis === 'pctOfRevenue' ? '' : ' base'
-    return `${category.name} — ${OPEX_BASIS_LABELS[category.basis]}, ${formatMoneySigned(category.amount, project.meta)}${base}, escalation ${formatPercent(escalation)}, ${period}`
+    return `${category.name} — ${OPEX_BASIS_LABELS[category.basis]}, ${formatMoneySigned(category.amount, project.meta)}${base}, escalation ${escalation}, ${period}`
   }
 
   const rows: ExpenseRow[] = []

@@ -38,6 +38,16 @@ export const ProjectMetaSchema = z.object({
   currencySymbol: z.string().min(1),
   decimalPlaces: z.number().int().min(0).max(4).default(0),
   locale: z.string().min(2).default('en-GB'),
+  /** Reporting rate for the USD view, in local currency per US dollar. */
+  usdRate: z.number().min(0.0001).default(50),
+  /**
+   * An explicit rate for each forecast year, entered directly rather than
+   * derived from a devaluation percentage. Empty falls back to usdRate held
+   * flat. A shorter array holds its final value.
+   */
+  usdRateByYear: z.array(z.number().min(0.0001)).default([]),
+  /** Regulatory ceiling on annual fee increases. */
+  feeEscalationCapPct: z.number().min(0).max(100).default(10),
 })
 export type ProjectMeta = z.infer<typeof ProjectMetaSchema>
 
@@ -214,6 +224,8 @@ export const StaffPositionSchema = z.object({
   transportAllowance: money.default(0),
   recruitmentCost: money.default(0),
   trainingCost: money.default(0),
+  /** Contract length. A ten month teaching contract costs less than twelve. */
+  monthsWorked: z.number().min(1).max(12).default(12),
 })
 export type StaffPosition = z.infer<typeof StaffPositionSchema>
 

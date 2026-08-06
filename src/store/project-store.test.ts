@@ -200,6 +200,7 @@ describe('cost model', () => {
         group: 'facilities',
         basis: 'fixed',
         amount: 100000,
+        stepSizeStudents: 50,
         escalationPct: 0,
         startYearIndex: 0,
         endYearIndex: null,
@@ -299,6 +300,7 @@ describe('scenarios', () => {
           transportAllowance: 0,
           recruitmentCost: 0,
           trainingCost: 0,
+          monthsWorked: 12,
         },
       ],
     })
@@ -366,6 +368,7 @@ describe('scenarios', () => {
           transportAllowance: 0,
           recruitmentCost: 0,
           trainingCost: 0,
+          monthsWorked: 12,
         },
       ],
     })

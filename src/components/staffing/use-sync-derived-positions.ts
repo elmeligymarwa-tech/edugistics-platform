@@ -38,6 +38,7 @@ export function createStaffPosition(
     transportAllowance: overrides.transportAllowance ?? 0,
     recruitmentCost: overrides.recruitmentCost ?? 0,
     trainingCost: overrides.trainingCost ?? 0,
+    monthsWorked: overrides.monthsWorked ?? 12,
   }
 }
 

@@ -12,7 +12,9 @@ import {
 export interface YearGroupEnrolment {
   yearGroup: YearGroupId
   students: number
+  /** Gross joiners, counting replacements for leavers, not just net growth. */
   newEntrants: number
+  leavers: number
   capacityCeiling: number
 }
 
@@ -176,10 +178,13 @@ export function computeEnrolment(project: Project): YearGroupEnrolment[][] {
       const row: YearGroupEnrolment[] = groups.map((group, g) => {
         const students = allocation[group] ?? 0
         const prior = y === 0 ? 0 : (result[y - 1]?.[g]?.students ?? 0)
+        const retention = (a.retentionPct[group] ?? 100) / 100
+        const retained = prior * retention
         return {
           yearGroup: group,
           students,
-          newEntrants: Math.max(0, students - prior),
+          newEntrants: Math.max(0, students - retained),
+          leavers: prior - retained,
           capacityCeiling: capacityCeiling(project, group),
         }
       })
@@ -199,25 +204,29 @@ export function computeEnrolment(project: Project): YearGroupEnrolment[][] {
 
       let students: number
       let newEntrants: number
+      let leavers = 0
 
       if (a.enrolmentModel === 'occupancy' || y === 0) {
         const occ = capacity ? occupancyForYear(rampFor(project, group), y) : 0
         students = Math.min(ceiling, (ceiling * occ) / 100)
         const prior = y === 0 ? 0 : (result[y - 1]?.[g]?.students ?? 0)
-        newEntrants = Math.max(0, students - prior)
+        const retention = (a.retentionPct[group] ?? 100) / 100
+        const retained = prior * retention
+        leavers = prior - retained
+        newEntrants = Math.max(0, students - retained)
       } else {
         const priorGroupPrevYear =
           a.progression && g > 0 ? (result[y - 1]?.[g - 1]?.students ?? 0) : 0
         const sameGroupPrevYear = result[y - 1]?.[g]?.students ?? 0
         const retention = (a.retentionPct[group] ?? 100) / 100
-        const carried = a.progression
-          ? priorGroupPrevYear * retention
-          : sameGroupPrevYear * retention
+        const source = a.progression ? priorGroupPrevYear : sameGroupPrevYear
+        const carried = source * retention
+        leavers = source - carried
         students = Math.min(ceiling, carried + intake)
         newEntrants = Math.max(0, students - carried)
       }
 
-      row.push({ yearGroup: group, students, newEntrants, capacityCeiling: ceiling })
+      row.push({ yearGroup: group, students, newEntrants, leavers, capacityCeiling: ceiling })
     }
     result.push(row)
   }
@@ -306,17 +315,31 @@ function revenueForYear(
 
 /* ------------------------------------------------------------- discounts */
 
+/**
+ * Discounts are counted per student, not blended across revenue. A child on a
+ * scholarship does not also take a staff or sibling discount, so the three are
+ * allocated in priority order against the student roll. Early payment is a
+ * settlement discount and applies on top.
+ */
 export function discountRate(project: Project, totalStudents: number): number {
   const d = project.revenueAssumptions.discounts
   if (totalStudents <= 0) return 0
 
-  const sibling = (d.siblingPct / 100) * (d.siblingEligiblePct / 100)
-  const staff = (d.staffChildPct / 100) * (Math.min(d.staffChildPlaces, totalStudents) / totalStudents)
-  const scholarship =
-    (d.scholarshipPct / 100) * (Math.min(d.scholarshipPlaces, totalStudents) / totalStudents)
+  let remaining = totalStudents
+  const scholarship = Math.min(d.scholarshipPlaces, remaining)
+  remaining -= scholarship
+  const staff = Math.min(d.staffChildPlaces, remaining)
+  remaining -= staff
+  const sibling = Math.min((d.siblingEligiblePct / 100) * totalStudents, remaining)
+
+  const weighted =
+    scholarship * (d.scholarshipPct / 100) +
+    staff * (d.staffChildPct / 100) +
+    sibling * (d.siblingPct / 100)
+
   const early = (d.earlyPaymentPct / 100) * (d.earlyPaymentTakeUpPct / 100)
 
-  return Math.min(1, sibling + staff + scholarship + early)
+  return Math.min(1, weighted / totalStudents + early)
 }
 
 /* ------------------------------------------------------------------- stm */

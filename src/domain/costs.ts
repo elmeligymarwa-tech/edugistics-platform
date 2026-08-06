@@ -40,6 +40,8 @@ export const OpexBasisSchema = z.enum([
   'perStaff',
   'pctOfRevenue',
   'perClassroom',
+  /** A whole unit bought each time a threshold is crossed, such as a bus per forty students. */
+  'stepped',
 ])
 export type OpexBasis = z.infer<typeof OpexBasisSchema>
 
@@ -61,7 +63,10 @@ export const OpexCategorySchema = z.object({
   basis: OpexBasisSchema.default('fixed'),
   /** Currency for fixed and per-unit bases. Percentage points for pctOfRevenue. */
   amount: money.default(0),
-  escalationPct: escalation.default(0),
+  /** Students per step. Applies to the stepped basis only. */
+  stepSizeStudents: z.number().min(1).default(50),
+  /** Null inherits the model wide inflation rate. */
+  escalationPct: escalation.nullable().default(null),
   startYearIndex: z.number().int().min(0).default(0),
   endYearIndex: z.number().int().min(0).nullable().default(null),
 })
@@ -100,6 +105,8 @@ export const COST_SCHEMA_VERSION = 1
 export const CostModelSchema = z.object({
   projectId: z.string().min(1),
   schemaVersion: z.number().int().default(COST_SCHEMA_VERSION),
+  /** One macro assumption. Any category or position without its own rate uses this. */
+  inflationPct: z.number().min(-20).max(200).default(0),
   payroll: PayrollConfigSchema,
   opex: z.array(OpexCategorySchema).default([]),
   capex: z.array(CapexItemSchema).default([]),

@@ -22,7 +22,8 @@ function createOpexCategory(): OpexCategory {
     group: 'other',
     basis: 'fixed',
     amount: 0,
-    escalationPct: 0,
+    stepSizeStudents: 50,
+    escalationPct: null,
     startYearIndex: 0,
     endYearIndex: null,
   }
@@ -103,14 +104,25 @@ export function OpexCategoryEditor({ projectId, opex }: { projectId: string; ope
       onCommit: (category, value) => updateCategory(category.id, { amount: toNumberOrZero(value) }),
     },
     {
+      id: 'stepSizeStudents',
+      label: 'Step size (students)',
+      kind: 'numeric',
+      width: 140,
+      minWidth: 120,
+      getValue: (category) => category.stepSizeStudents,
+      onCommit: (category, value) =>
+        updateCategory(category.id, { stepSizeStudents: Math.max(1, toNumberOrZero(value) || 1) }),
+    },
+    {
       id: 'escalationPct',
-      label: 'Escalation %',
+      label: 'Escalation % (blank inherits)',
       kind: 'percent',
-      width: 116,
-      minWidth: 100,
+      width: 168,
+      minWidth: 140,
       allowFillDown: true,
       getValue: (category) => (Array.isArray(category.escalationPct) ? (category.escalationPct[0] ?? 0) : category.escalationPct),
-      onCommit: (category, value) => updateCategory(category.id, { escalationPct: toNumberOrZero(value) }),
+      onCommit: (category, value) =>
+        updateCategory(category.id, { escalationPct: value === null ? null : toNumberOrZero(value) }),
     },
     {
       id: 'startYearIndex',

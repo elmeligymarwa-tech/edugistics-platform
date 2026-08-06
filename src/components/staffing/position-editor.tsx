@@ -31,6 +31,7 @@ const NUMBER_FIELDS: Array<{ key: keyof StaffPosition; label: string }> = [
   { key: 'transportAllowance', label: 'Transport allowance' },
   { key: 'recruitmentCost', label: 'Recruitment cost' },
   { key: 'trainingCost', label: 'Training cost' },
+  { key: 'monthsWorked', label: 'Months worked' },
 ]
 
 interface PositionRow {
@@ -145,9 +146,12 @@ export function PositionEditor({ project }: { project: Project }) {
         width: 128,
         minWidth: 108,
         allowFillDown: true,
-        allowUplift: true,
+        allowUplift: key !== 'monthsWorked',
         getValue: (row) => row.position[key] as number,
-        onCommit: (row, value) => row.onUpdate({ [key]: toNumberOrZero(value) } as Partial<StaffPosition>),
+        onCommit: (row, value) =>
+          row.onUpdate({
+            [key]: key === 'monthsWorked' ? Math.min(12, Math.max(1, toNumberOrZero(value))) : toNumberOrZero(value),
+          } as Partial<StaffPosition>),
       }),
     ),
   ]

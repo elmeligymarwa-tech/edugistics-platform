@@ -162,10 +162,13 @@ export function computePayroll(
       const increment =
         position.annualIncrementPct > 0
           ? position.annualIncrementPct
-          : cost.payroll.defaultIncrementPct
+          : cost.payroll.defaultIncrementPct !== 0
+            ? cost.payroll.defaultIncrementPct
+            : cost.inflationPct
       const factor = compound(increment, y)
+      const monthsFactor = position.monthsWorked / 12
 
-      const salaries = position.averageSalary * headcount * factor
+      const salaries = position.averageSalary * headcount * factor * monthsFactor
       const allowances =
         (position.housingAllowance + position.transportAllowance) * headcount * factor
       const onCostRate =
@@ -223,11 +226,13 @@ function opexAmount(
   category: OpexCategory,
   yearIndex: number,
   drivers: { students: number; staff: number; classrooms: number; netRevenue: number },
+  inflationPct: number,
 ): number {
   if (yearIndex < category.startYearIndex) return 0
   if (category.endYearIndex !== null && yearIndex > category.endYearIndex) return 0
 
-  const escalated = category.amount * compound(category.escalationPct, yearIndex)
+  const rate = category.escalationPct === null ? inflationPct : category.escalationPct
+  const escalated = category.amount * compound(rate, yearIndex)
 
   switch (category.basis) {
     case 'perStudent':
@@ -238,6 +243,8 @@ function opexAmount(
       return escalated * drivers.classrooms
     case 'pctOfRevenue':
       return (drivers.netRevenue * category.amount) / 100
+    case 'stepped':
+      return escalated * Math.ceil(drivers.students / category.stepSizeStudents)
     default:
       return escalated
   }
@@ -300,7 +307,7 @@ export function computeCostForecast(
     const opexByGroup: Record<string, number> = {}
     let opexTotal = 0
     for (const category of cost.opex) {
-      const amount = opexAmount(category, y, drivers)
+      const amount = opexAmount(category, y, drivers, cost.inflationPct)
       if (amount === 0) continue
       opexByGroup[category.group] = (opexByGroup[category.group] ?? 0) + amount
       opexTotal += amount

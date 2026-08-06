@@ -9,26 +9,34 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { NumericCell } from '@/components/ui/numeric-cell'
 import { OpexGroupSchema } from '@/domain/costs'
 import { StaffSectionSchema, type Project } from '@/domain/schema'
-import type { CostForecast, YearStatement } from '@/engine/costs'
+import type { CostForecast } from '@/engine/costs'
+import type { CapitalForecast } from '@/engine/capital'
 import { cn } from '@/lib/utils'
 import { downloadCsv } from '@/lib/csv'
 import { OPEX_GROUP_LABELS } from '@/lib/expenses-data'
 import { formatMoney, formatMoneySigned, formatPercent } from '@/lib/format'
 import { STAFF_SECTION_LABELS } from '@/lib/wizard-data'
 
-type RowKey = 'netRevenue' | 'payroll' | 'opex' | 'stm' | 'ebitda' | 'depreciation' | 'ebit' | 'tax' | 'netProfit'
+type CostRowKey = 'netRevenue' | 'payroll' | 'opex' | 'stm' | 'ebitda' | 'depreciation'
+type CapitalRowKey = 'interest' | 'profitBeforeTax' | 'tax' | 'netProfit' | 'dividend'
 type ExpandableKey = 'payroll' | 'opex'
 
-const BASE_ROWS: Array<{ key: RowKey; label: string; emphasis?: boolean; expandable?: ExpandableKey }> = [
+const COST_ROWS: Array<{ key: CostRowKey; label: string; emphasis?: boolean; expandable?: ExpandableKey }> = [
   { key: 'netRevenue', label: 'Net revenue' },
   { key: 'payroll', label: 'Payroll', expandable: 'payroll' },
   { key: 'opex', label: 'Operating expenses', expandable: 'opex' },
   { key: 'stm', label: 'STM share' },
   { key: 'ebitda', label: 'EBITDA', emphasis: true },
   { key: 'depreciation', label: 'Depreciation' },
-  { key: 'ebit', label: 'EBIT', emphasis: true },
+]
+
+/** Below EBIT, the capital forecast is authoritative — its tax and net profit account for interest, which the cost forecast alone doesn't see. */
+const CAPITAL_ROWS: Array<{ key: CapitalRowKey; label: string; emphasis?: boolean }> = [
+  { key: 'interest', label: 'Interest' },
+  { key: 'profitBeforeTax', label: 'Profit before tax', emphasis: true },
   { key: 'tax', label: 'Tax' },
   { key: 'netProfit', label: 'Net profit', emphasis: true },
+  { key: 'dividend', label: 'Dividend' },
 ]
 
 interface PLRow {
@@ -39,10 +47,18 @@ interface PLRow {
   expandable?: ExpandableKey
   isExpanded?: boolean
   valueKind: 'money' | 'percent'
-  getYearValue: (year: YearStatement) => number
+  getYearValue: (yearIndex: number) => number
 }
 
-export function ProfitAndLossTable({ project, costForecast }: { project: Project; costForecast: CostForecast }) {
+export function ProfitAndLossTable({
+  project,
+  costForecast,
+  capitalForecast,
+}: {
+  project: Project
+  costForecast: CostForecast
+  capitalForecast: CapitalForecast
+}) {
   const [expanded, setExpanded] = useState<Set<ExpandableKey>>(new Set())
   const years = costForecast.years
 
@@ -65,22 +81,30 @@ export function ProfitAndLossTable({ project, costForecast }: { project: Project
       .filter((entry) => entry.total !== 0)
   }
 
+  const capitalYears = capitalForecast.years
+
   const handleExport = () => {
     const header = ['', ...years.map((year) => year.label)]
-    const body: string[][] = BASE_ROWS.map((row) => [
+    const body: string[][] = COST_ROWS.map((row) => [
       row.label,
       ...years.map((year) => formatMoneySigned(year[row.key], project.meta)),
     ])
+    body.push(['EBIT', ...years.map((year) => formatMoneySigned(year.ebit, project.meta))])
+    for (const row of CAPITAL_ROWS) {
+      body.push([row.label, ...capitalYears.map((year) => formatMoneySigned(year[row.key], project.meta))])
+    }
     body.push(['EBITDA margin', ...years.map((year) => formatPercent(year.ebitdaMarginPct))])
     body.push([
       'Net margin',
-      ...years.map((year) => formatPercent(year.netRevenue > 0 ? (year.netProfit / year.netRevenue) * 100 : 0)),
+      ...capitalYears.map((year, i) =>
+        formatPercent((years[i]?.netRevenue ?? 0) > 0 ? (year.netProfit / (years[i]?.netRevenue ?? 1)) * 100 : 0),
+      ),
     ])
     downloadCsv(`${project.meta.schoolName} - profit and loss.csv`, [header, ...body])
   }
 
   const rows: PLRow[] = []
-  for (const base of BASE_ROWS) {
+  for (const base of COST_ROWS) {
     rows.push({
       key: base.key,
       label: base.label,
@@ -88,7 +112,7 @@ export function ProfitAndLossTable({ project, costForecast }: { project: Project
       expandable: base.expandable,
       isExpanded: base.expandable ? expanded.has(base.expandable) : undefined,
       valueKind: 'money',
-      getYearValue: (year) => year[base.key],
+      getYearValue: (yearIndex) => years[yearIndex]?.[base.key] ?? 0,
     })
     if (base.expandable === 'payroll' && expanded.has('payroll')) {
       for (const section of StaffSectionSchema.options) {
@@ -97,7 +121,7 @@ export function ProfitAndLossTable({ project, costForecast }: { project: Project
           label: STAFF_SECTION_LABELS[section] ?? section,
           indent: true,
           valueKind: 'money',
-          getYearValue: (year) => payrollBySection(year.yearIndex).find((entry) => entry.section === section)?.total ?? 0,
+          getYearValue: (yearIndex) => payrollBySection(yearIndex).find((entry) => entry.section === section)?.total ?? 0,
         })
       }
     }
@@ -108,22 +132,42 @@ export function ProfitAndLossTable({ project, costForecast }: { project: Project
           label: OPEX_GROUP_LABELS[group],
           indent: true,
           valueKind: 'money',
-          getYearValue: (year) => year.opexByGroup[group] ?? 0,
+          getYearValue: (yearIndex) => years[yearIndex]?.opexByGroup[group] ?? 0,
         })
       }
     }
   }
   rows.push({
+    key: 'ebit',
+    label: 'EBIT',
+    emphasis: true,
+    valueKind: 'money',
+    getYearValue: (yearIndex) => years[yearIndex]?.ebit ?? 0,
+  })
+  for (const capitalRow of CAPITAL_ROWS) {
+    rows.push({
+      key: capitalRow.key,
+      label: capitalRow.label,
+      emphasis: capitalRow.emphasis,
+      valueKind: 'money',
+      getYearValue: (yearIndex) => capitalYears[yearIndex]?.[capitalRow.key] ?? 0,
+    })
+  }
+  rows.push({
     key: 'ebitdaMargin',
     label: 'EBITDA margin',
     valueKind: 'percent',
-    getYearValue: (year) => year.ebitdaMarginPct,
+    getYearValue: (yearIndex) => years[yearIndex]?.ebitdaMarginPct ?? 0,
   })
   rows.push({
     key: 'netMargin',
     label: 'Net margin',
     valueKind: 'percent',
-    getYearValue: (year) => (year.netRevenue > 0 ? (year.netProfit / year.netRevenue) * 100 : 0),
+    getYearValue: (yearIndex) => {
+      const netRevenue = years[yearIndex]?.netRevenue ?? 0
+      const netProfit = capitalYears[yearIndex]?.netProfit ?? 0
+      return netRevenue > 0 ? (netProfit / netRevenue) * 100 : 0
+    },
   })
 
   const columns: GridColumnDef<PLRow>[] = [
@@ -159,9 +203,9 @@ export function ProfitAndLossTable({ project, costForecast }: { project: Project
         kind: 'readonly',
         width: 128,
         minWidth: 112,
-        getValue: (row) => row.getYearValue(year),
+        getValue: (row) => row.getYearValue(year.yearIndex),
         render: (row) => {
-          const raw = row.getYearValue(year)
+          const raw = row.getYearValue(year.yearIndex)
           return row.valueKind === 'percent' ? (
             <span>{formatPercent(raw)}</span>
           ) : (

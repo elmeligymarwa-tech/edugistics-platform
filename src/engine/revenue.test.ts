@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ProjectSchema, type Project } from '../domain/schema'
-import { computeForecast, computeEnrolment, stmLiability } from './revenue'
+import { computeForecast, computeEnrolment, stmLiability, discountRate } from './revenue'
 
 /** Minimal valid project. Override any branch in the test itself. */
 function makeProject(overrides: Record<string, unknown> = {}): Project {
@@ -429,6 +429,30 @@ describe('discounts', () => {
   })
 })
 
+describe('retention and gross entrants', () => {
+  it('bills registration on replacements, not only on net growth', () => {
+    const project = makeProject({
+      calendar: { academicYearStart: 2027, financialYearStartMonth: 9, forecastYears: 3, termsPerYear: 3 },
+      capacity: {
+        Y1: {
+          classrooms: 4, studentsPerClassroom: 25, teachers: 4,
+          teachingAssistants: 0, coTeachers: 0, maxCapacityPct: 100,
+          maxStudents: null, openFromYearIndex: 0, occupancyPctByYear: [100],
+        },
+      },
+      revenueAssumptions: {
+        ...makeProject().revenueAssumptions,
+        retentionPct: { Y1: 90 },
+      },
+    })
+    const rows = computeEnrolment(project)
+    // 100 students held flat. Ten per cent leave, so ten must be replaced.
+    expect(rows[1]![0]!.students).toBe(100)
+    expect(rows[1]![0]!.leavers).toBeCloseTo(10, 6)
+    expect(rows[1]![0]!.newEntrants).toBeCloseTo(10, 6)
+  })
+})
+
 describe('tax', () => {
   it('separates inclusive from exclusive treatment on the same fee', () => {
     const inclusive = makeProject({
@@ -465,6 +489,32 @@ describe('tax', () => {
     )
     expect(computeForecast(exclusive).years[0]!.grossRevenue).toBe(4_000_000)
     expect(computeForecast(exclusive).years[0]!.taxCollected).toBeCloseTo(560_000, 6)
+  })
+})
+
+describe('discount allocation', () => {
+  it('gives each student one discount rather than blending rates', () => {
+    const project = makeProject({
+      capacity: {
+        Y1: {
+          classrooms: 4, studentsPerClassroom: 25, teachers: 4,
+          teachingAssistants: 0, coTeachers: 0, maxCapacityPct: 100,
+          maxStudents: null, openFromYearIndex: 0, occupancyPctByYear: [100],
+        },
+      },
+      revenueAssumptions: {
+        ...makeProject().revenueAssumptions,
+        discounts: {
+          siblingPct: 10, siblingEligiblePct: 100,
+          staffChildPct: 50, staffChildPlaces: 10,
+          scholarshipPct: 100, scholarshipPlaces: 5,
+          earlyPaymentPct: 0, earlyPaymentTakeUpPct: 0,
+        },
+      },
+    })
+    // 5 free, 10 at half, the remaining 85 at ten per cent, over 100 students.
+    const expected = (5 * 1 + 10 * 0.5 + 85 * 0.1) / 100
+    expect(discountRate(project, 100)).toBeCloseTo(expected, 6)
   })
 })
 
