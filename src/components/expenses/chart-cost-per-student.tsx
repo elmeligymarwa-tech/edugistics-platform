@@ -5,7 +5,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { Project } from '@/domain/schema'
 import type { CostForecast } from '@/engine/costs'
-import { formatCompactMoney } from '@/lib/format'
+import { formatCompactMoneySigned } from '@/lib/format'
 import { ChartTooltip } from '@/components/revenue/chart-tooltip'
 
 export function ChartCostPerStudent({
@@ -16,7 +16,7 @@ export function ChartCostPerStudent({
   costForecast: CostForecast
 }) {
   const data = costForecast.years.map((year) => ({ label: year.label, costPerStudent: year.costPerStudent }))
-  const tickFormatter = (value: number) => formatCompactMoney(value, project.meta)
+  const tickFormatter = (value: number) => formatCompactMoneySigned(value, project.meta)
 
   return (
     <Card>

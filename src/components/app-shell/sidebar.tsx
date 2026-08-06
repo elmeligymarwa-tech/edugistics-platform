@@ -5,7 +5,7 @@ import { SidebarNav } from './sidebar-nav'
 
 export function Sidebar() {
   return (
-    <aside className="hidden w-64 shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col">
+    <aside className="hidden w-64 shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col print:hidden">
       <div className="border-b border-sidebar-border px-4 py-4">
         <Link href="/dashboard" className="block w-fit" aria-label="Edugistics — Dashboard">
           <Image

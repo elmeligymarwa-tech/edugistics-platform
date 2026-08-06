@@ -1,32 +1,57 @@
 import type { ProjectMeta } from '@/domain/schema'
 
-type CurrencyMeta = Pick<ProjectMeta, 'currencyCode' | 'currencySymbol' | 'decimalPlaces' | 'locale'>
+type CurrencyMeta = Pick<ProjectMeta, 'currencyCode' | 'decimalPlaces' | 'locale'>
 
-/** Full currency figure, e.g. "£12,345". Falls back to symbol + grouped number if the currency code isn't ISO-recognised. */
-export function formatMoney(value: number, meta: CurrencyMeta): string {
-  try {
-    return new Intl.NumberFormat(meta.locale, {
-      style: 'currency',
-      currency: meta.currencyCode,
-      minimumFractionDigits: meta.decimalPlaces,
-      maximumFractionDigits: meta.decimalPlaces,
-    }).format(value)
-  } catch {
-    const number = new Intl.NumberFormat(meta.locale, {
-      minimumFractionDigits: meta.decimalPlaces,
-      maximumFractionDigits: meta.decimalPlaces,
-    }).format(value)
-    return `${meta.currencySymbol}${number}`
-  }
+/**
+ * A currency figure and whether it represents a loss. Every negative value
+ * renders bracketed with no minus sign — `text` already carries that
+ * convention, so callers colour from `negative` rather than re-testing the
+ * source number (which would drift from whatever rounding/threshold the
+ * formatter applied).
+ */
+export interface FormattedCurrency {
+  text: string
+  negative: boolean
 }
 
-/** Compact currency figure for axes and tiles, e.g. "£12.3K" / "£4.2M". */
-export function formatCompactMoney(value: number, meta: CurrencyMeta): string {
-  const abs = Math.abs(value)
-  const sign = value < 0 ? '-' : ''
-  if (abs >= 1_000_000) return `${sign}${meta.currencySymbol}${(abs / 1_000_000).toFixed(1)}M`
-  if (abs >= 1_000) return `${sign}${meta.currencySymbol}${(abs / 1_000).toFixed(1)}K`
-  return formatMoney(value, meta)
+function moneyBody(abs: number, meta: CurrencyMeta): string {
+  return abs.toLocaleString(meta.locale, {
+    minimumFractionDigits: meta.decimalPlaces,
+    maximumFractionDigits: meta.decimalPlaces,
+  })
+}
+
+function compactMoneyBody(abs: number, meta: CurrencyMeta): string {
+  if (abs >= 1_000_000_000) return `${(abs / 1_000_000_000).toFixed(2)}bn`
+  if (abs >= 1_000_000) return `${(abs / 1_000_000).toFixed(1)}m`
+  if (abs >= 1_000) return `${Math.round(abs / 1_000).toLocaleString(meta.locale)}k`
+  return moneyBody(abs, meta)
+}
+
+function wrapCurrency(code: string, body: string, negative: boolean): FormattedCurrency {
+  return { text: negative ? `${code} (${body})` : `${code} ${body}`, negative }
+}
+
+/** Full currency figure using the three-letter ISO code, e.g. "EGP 12,345". A loss reads "EGP (12,345)". */
+export function formatMoney(value: number, meta: CurrencyMeta): FormattedCurrency {
+  const negative = value < 0
+  return wrapCurrency(meta.currencyCode, moneyBody(Math.abs(value), meta), negative)
+}
+
+/** Compact currency figure for tiles, tables and tooltips, e.g. "EGP 12.3k" / "EGP 4.2m". A loss reads "EGP (4.2m)". */
+export function formatCompactMoney(value: number, meta: CurrencyMeta): FormattedCurrency {
+  const negative = value < 0
+  return wrapCurrency(meta.currencyCode, compactMoneyBody(Math.abs(value), meta), negative)
+}
+
+/** Signed currency figure with a minus sign and no brackets/colour — for CSV exports and other plain-text contexts (e.g. the AI consultant digest). */
+export function formatMoneySigned(value: number, meta: CurrencyMeta): string {
+  return `${value < 0 ? '-' : ''}${meta.currencyCode} ${moneyBody(Math.abs(value), meta)}`
+}
+
+/** Signed compact currency figure with a minus sign and no brackets/colour — for chart axis ticks, where brackets read badly. */
+export function formatCompactMoneySigned(value: number, meta: CurrencyMeta): string {
+  return `${value < 0 ? '-' : ''}${meta.currencyCode} ${compactMoneyBody(Math.abs(value), meta)}`
 }
 
 /** Grouped whole-number figure, e.g. "1,284". */

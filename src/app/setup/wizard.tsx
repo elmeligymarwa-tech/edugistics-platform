@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation'
 import { Check } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { CurrencyText } from '@/components/ui/currency-text'
+import { formatCompactMoney, formatMoney, formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { useProjectStore } from '@/store/project-store'
+import { useProjectForecast, useProjectStore } from '@/store/project-store'
 import { validateStep, WIZARD_STEP_COUNT, type StepValidation } from '@/lib/wizard-validation'
 
 import { Step1SchoolInfo } from './step-1-school-info'
@@ -15,6 +17,7 @@ import { Step3Capacity } from './step-3-capacity'
 import { Step4Fees } from './step-4-fees'
 import { Step5Revenue } from './step-5-revenue'
 import { Step6Staffing } from './step-6-staffing'
+import { WizardStepShell } from './wizard-step-shell'
 
 export const WIZARD_STEPS = [
   { title: 'School information', description: 'Identity, currency and the academic calendar.' },
@@ -53,8 +56,8 @@ export function SetupWizard({ projectId, initialStep }: { projectId: string; ini
   const current = WIZARD_STEPS[step - 1]!
 
   return (
-    <div className="flex flex-col gap-6">
-      <ol className="flex flex-wrap items-center gap-2">
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      <ol className="flex shrink-0 flex-wrap items-center gap-2">
         {WIZARD_STEPS.map((item, index) => {
           const stepNumber = index + 1
           const isActive = stepNumber === step
@@ -94,45 +97,72 @@ export function SetupWizard({ projectId, initialStep }: { projectId: string; ini
         })}
       </ol>
 
-      <div>
-        <h2 className="text-lg font-semibold text-foreground">{current.title}</h2>
-        <p className="mt-0.5 text-sm text-muted-foreground">{current.description}</p>
-      </div>
-
-      <div>
+      <WizardStepShell
+        title={current.title}
+        description={current.description}
+        totals={<WizardLiveTotals projectId={project.id} />}
+        footer={
+          <div className="flex flex-col gap-3">
+            {!validation.valid && validation.errors.length > 0 ? (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                <p className="font-medium">Fix the following before continuing:</p>
+                <ul className="mt-1 list-disc pl-4">
+                  {validation.errors.map((error) => (
+                    <li key={error}>{error}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            <div className="flex items-center justify-between">
+              <Button type="button" variant="outline" onClick={goBack} disabled={step === 1}>
+                Back
+              </Button>
+              {step < WIZARD_STEP_COUNT ? (
+                <Button type="button" onClick={goNext} disabled={!validation.valid}>
+                  Next
+                </Button>
+              ) : (
+                <Button type="button" onClick={finish} disabled={!validation.valid}>
+                  Finish setup
+                </Button>
+              )}
+            </div>
+          </div>
+        }
+      >
         {step === 1 ? <Step1SchoolInfo project={project} /> : null}
         {step === 2 ? <Step2Curriculum project={project} /> : null}
         {step === 3 ? <Step3Capacity project={project} /> : null}
         {step === 4 ? <Step4Fees project={project} /> : null}
         {step === 5 ? <Step5Revenue project={project} /> : null}
         {step === 6 ? <Step6Staffing project={project} /> : null}
-      </div>
-
-      {!validation.valid && validation.errors.length > 0 ? (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-          <p className="font-medium">Fix the following before continuing:</p>
-          <ul className="mt-1 list-disc pl-4">
-            {validation.errors.map((error) => (
-              <li key={error}>{error}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      <div className="flex items-center justify-between border-t border-border pt-4">
-        <Button type="button" variant="outline" onClick={goBack} disabled={step === 1}>
-          Back
-        </Button>
-        {step < WIZARD_STEP_COUNT ? (
-          <Button type="button" onClick={goNext} disabled={!validation.valid}>
-            Next
-          </Button>
-        ) : (
-          <Button type="button" onClick={finish} disabled={!validation.valid}>
-            Finish setup
-          </Button>
-        )}
-      </div>
+      </WizardStepShell>
     </div>
+  )
+}
+
+/** Running student and revenue totals shown in every step's fixed header, so an operator sees the effect of an edit without leaving the step. Reads year-one forecast figures, matching the Dashboard's own convention. */
+function WizardLiveTotals({ projectId }: { projectId: string }) {
+  const forecast = useProjectForecast(projectId)
+  const project = useProjectStore((state) => state.projects[projectId])
+  const yearOne = forecast?.years[0]
+
+  if (!project || !yearOne) return null
+
+  return (
+    <>
+      <div className="text-right">
+        <p className="text-xs text-muted-foreground">Students</p>
+        <p className="text-sm font-semibold tabular-nums text-foreground">
+          {formatNumber(yearOne.students, project.meta.locale)}
+        </p>
+      </div>
+      <div className="text-right" title={formatMoney(yearOne.netRevenue, project.meta).text}>
+        <p className="text-xs text-muted-foreground">Revenue</p>
+        <p className="text-sm font-semibold tabular-nums">
+          <CurrencyText value={formatCompactMoney(yearOne.netRevenue, project.meta)} />
+        </p>
+      </div>
+    </>
   )
 }

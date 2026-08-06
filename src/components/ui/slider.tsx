@@ -27,11 +27,11 @@ function Slider({ className, value, defaultValue, onValueChange, ...props }: Sli
     >
       <SliderPrimitive.Control className="flex w-full items-center py-1.5">
         <SliderPrimitive.Track className="relative h-1.5 w-full grow overflow-hidden rounded-full bg-muted">
-          <SliderPrimitive.Indicator className="absolute h-full rounded-full bg-primary" />
+          <SliderPrimitive.Indicator className="absolute h-full rounded-full bg-primary motion-safe:transition-all motion-safe:duration-150" />
           <SliderPrimitive.Thumb
             data-slot="slider-thumb"
             className={cn(
-              'block size-4 rounded-full border-2 border-primary bg-background shadow-sm outline-none transition-colors',
+              'block size-4 rounded-full border-2 border-primary bg-background shadow-sm outline-none transition-colors motion-safe:transition-[left,right,top,bottom] motion-safe:duration-150',
               'focus-visible:ring-3 focus-visible:ring-ring/50',
               'disabled:pointer-events-none disabled:opacity-50',
             )}

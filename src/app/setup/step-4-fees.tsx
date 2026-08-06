@@ -1,15 +1,10 @@
 'use client'
 
-import { useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 
-import { Badge } from '@/components/ui/badge'
+import { DataGrid, toNumberOrZero, type GridColumnDef, type GridColumnGroup } from '@/components/grid'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Field, FieldLabel } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import {
   BillingFrequencySchema,
   ChargeBasisSchema,
@@ -40,6 +35,10 @@ const CHARGE_BASIS_LABELS: Record<string, string> = {
   oneOffOnEntry: 'One-off on entry',
 }
 const ESCALATION_GROUP_LABELS: Record<string, string> = { tuition: 'Tuition', other: 'Other' }
+const YES_NO_OPTIONS = [
+  { value: 'true', label: 'Yes' },
+  { value: 'false', label: 'No' },
+]
 
 function createFeeCategory(name: string): FeeCategory {
   return {
@@ -59,9 +58,6 @@ function createFeeCategory(name: string): FeeCategory {
 export function Step4Fees({ project }: { project: Project }) {
   const updateFees = useProjectStore((state) => state.updateFees)
   const groups = orderedYearGroups(project)
-  const [view, setView] = useState<'cards' | 'table'>('cards')
-  const [upliftCategory, setUpliftCategory] = useState<string>('all')
-  const [upliftPct, setUpliftPct] = useState(0)
 
   const addCategory = () => {
     updateFees(project.id, { categories: [...project.fees.categories, createFeeCategory('New category')] })
@@ -97,21 +93,157 @@ export function Step4Fees({ project }: { project: Project }) {
     })
   }
 
-  const applyUplift = () => {
-    if (upliftPct === 0) return
-    const targetIds =
-      upliftCategory === 'all' ? project.fees.categories.map((category) => category.id) : [upliftCategory]
-    const amounts: FeeStructure['amounts'] = {}
-    for (const group of groups) {
-      const current = { ...(project.fees.amounts[group] ?? {}) }
-      for (const id of targetIds) {
-        const base = current[id] ?? 0
-        if (base > 0) current[id] = base * (1 + upliftPct / 100)
-      }
-      amounts[group] = current
-    }
-    updateFees(project.id, { amounts: { ...project.fees.amounts, ...amounts } })
-  }
+  const categoryColumns: GridColumnDef<FeeCategory>[] = [
+    {
+      id: 'name',
+      label: 'Name',
+      kind: 'text',
+      width: 200,
+      minWidth: 160,
+      pinned: 'left',
+      getValue: (category) => category.name,
+      onCommit: (category, value) => updateCategory(category.id, { name: typeof value === 'string' ? value : '' }),
+      render: (category) => (
+        <div className="flex w-full items-center gap-1.5">
+          <span className="min-w-0 flex-1 truncate">{category.name}</span>
+          <button
+            type="button"
+            aria-label={`Remove ${category.name}`}
+            onClick={() => removeCategory(category.id)}
+            className="shrink-0 text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 className="size-3.5" />
+          </button>
+        </div>
+      ),
+    },
+    {
+      id: 'taxTreatment',
+      label: 'Tax treatment',
+      kind: 'select',
+      width: 140,
+      minWidth: 128,
+      selectOptions: TaxTreatmentSchema.options.map((option) => ({ value: option, label: TAX_TREATMENT_LABELS[option] ?? option })),
+      getValue: (category) => category.taxTreatment,
+      onCommit: (category, value) =>
+        updateCategory(category.id, { taxTreatment: value as FeeCategory['taxTreatment'] }),
+    },
+    {
+      id: 'billingFrequency',
+      label: 'Billing',
+      kind: 'select',
+      width: 120,
+      minWidth: 108,
+      selectOptions: BillingFrequencySchema.options.map((option) => ({
+        value: option,
+        label: BILLING_FREQUENCY_LABELS[option] ?? option,
+      })),
+      getValue: (category) => category.billingFrequency,
+      onCommit: (category, value) =>
+        updateCategory(category.id, { billingFrequency: value as FeeCategory['billingFrequency'] }),
+    },
+    {
+      id: 'chargeBasis',
+      label: 'Charge basis',
+      kind: 'select',
+      width: 140,
+      minWidth: 128,
+      selectOptions: ChargeBasisSchema.options.map((option) => ({ value: option, label: CHARGE_BASIS_LABELS[option] ?? option })),
+      getValue: (category) => category.chargeBasis,
+      onCommit: (category, value) => updateCategory(category.id, { chargeBasis: value as FeeCategory['chargeBasis'] }),
+    },
+    {
+      id: 'escalationGroup',
+      label: 'Escalation group',
+      kind: 'select',
+      width: 128,
+      minWidth: 116,
+      selectOptions: EscalationGroupSchema.options.map((option) => ({
+        value: option,
+        label: ESCALATION_GROUP_LABELS[option] ?? option,
+      })),
+      getValue: (category) => category.escalationGroup,
+      onCommit: (category, value) =>
+        updateCategory(category.id, { escalationGroup: value as FeeCategory['escalationGroup'] }),
+    },
+    {
+      id: 'uptakePct',
+      label: 'Uptake %',
+      kind: 'percent',
+      width: 100,
+      minWidth: 92,
+      disabled: (category) => category.mandatory,
+      getValue: (category) => category.uptakePct,
+      onCommit: (category, value) => updateCategory(category.id, { uptakePct: toNumberOrZero(value) }),
+    },
+    {
+      id: 'mandatory',
+      label: 'Mandatory',
+      kind: 'select',
+      width: 104,
+      minWidth: 96,
+      selectOptions: YES_NO_OPTIONS,
+      getValue: (category) => String(category.mandatory),
+      onCommit: (category, value) => updateCategory(category.id, { mandatory: value === 'true' }),
+    },
+    {
+      id: 'discountable',
+      label: 'Discountable',
+      kind: 'select',
+      width: 112,
+      minWidth: 100,
+      selectOptions: YES_NO_OPTIONS,
+      getValue: (category) => String(category.discountable),
+      onCommit: (category, value) => updateCategory(category.id, { discountable: value === 'true' }),
+    },
+    {
+      id: 'includedInStm',
+      label: 'Included in STM',
+      kind: 'select',
+      width: 128,
+      minWidth: 112,
+      selectOptions: YES_NO_OPTIONS,
+      getValue: (category) => String(category.includedInStm),
+      onCommit: (category, value) => updateCategory(category.id, { includedInStm: value === 'true' }),
+    },
+  ]
+
+  const amountColumns: (GridColumnDef<YearGroupId> | GridColumnGroup<YearGroupId>)[] = [
+    {
+      id: 'group',
+      label: 'Year group',
+      kind: 'readonly',
+      width: 140,
+      minWidth: 120,
+      pinned: 'left',
+      getValue: (group) => YEAR_GROUP_LABELS[group],
+    },
+    ...EscalationGroupSchema.options
+      .map((escalationGroup): GridColumnGroup<YearGroupId> | null => {
+        const categoriesInGroup = project.fees.categories.filter((category) => category.escalationGroup === escalationGroup)
+        if (categoriesInGroup.length === 0) return null
+        return {
+          id: `escalation-${escalationGroup}`,
+          label: ESCALATION_GROUP_LABELS[escalationGroup] ?? escalationGroup,
+          collapsible: true,
+          defaultCollapsed: false,
+          columns: categoriesInGroup.map(
+            (category): GridColumnDef<YearGroupId> => ({
+              id: category.id,
+              label: category.mandatory ? category.name : `${category.name} (optional)`,
+              kind: 'numeric',
+              width: 128,
+              minWidth: 104,
+              allowFillDown: true,
+              allowUplift: true,
+              getValue: (group) => project.fees.amounts[group]?.[category.id] ?? 0,
+              onCommit: (group, value) => setAmount(group, category.id, toNumberOrZero(value)),
+            }),
+          ),
+        }
+      })
+      .filter((group): group is GridColumnGroup<YearGroupId> => group !== null),
+  ]
 
   return (
     <div className="flex flex-col gap-4">
@@ -127,265 +259,38 @@ export function Step4Fees({ project }: { project: Project }) {
           {project.fees.categories.length === 0 ? (
             <p className="text-sm text-muted-foreground">No fee categories yet. Add one to get started.</p>
           ) : (
-            <div className="flex flex-col gap-3">
-              {project.fees.categories.map((category) => (
-                <div key={category.id} className="rounded-lg border border-border p-3">
-                  <div className="flex flex-wrap items-end gap-3">
-                    <Field className="min-w-40 flex-1">
-                      <FieldLabel htmlFor={`${category.id}-name`}>Name</FieldLabel>
-                      <Input
-                        id={`${category.id}-name`}
-                        value={category.name}
-                        onChange={(event) => updateCategory(category.id, { name: event.target.value })}
-                      />
-                    </Field>
-
-                    <Field className="w-40">
-                      <FieldLabel htmlFor={`${category.id}-tax`}>Tax treatment</FieldLabel>
-                      <Select
-                        id={`${category.id}-tax`}
-                        value={category.taxTreatment}
-                        items={TaxTreatmentSchema.options.map((option) => ({
-                          value: option,
-                          label: TAX_TREATMENT_LABELS[option] ?? option,
-                        }))}
-                        onValueChange={(value) =>
-                          updateCategory(category.id, {
-                            taxTreatment: value as FeeCategory['taxTreatment'],
-                          })
-                        }
-                      />
-                    </Field>
-
-                    <Field className="w-36">
-                      <FieldLabel htmlFor={`${category.id}-billing`}>Billing</FieldLabel>
-                      <Select
-                        id={`${category.id}-billing`}
-                        value={category.billingFrequency}
-                        items={BillingFrequencySchema.options.map((option) => ({
-                          value: option,
-                          label: BILLING_FREQUENCY_LABELS[option] ?? option,
-                        }))}
-                        onValueChange={(value) =>
-                          updateCategory(category.id, {
-                            billingFrequency: value as FeeCategory['billingFrequency'],
-                          })
-                        }
-                      />
-                    </Field>
-
-                    <Field className="w-40">
-                      <FieldLabel htmlFor={`${category.id}-basis`}>Charge basis</FieldLabel>
-                      <Select
-                        id={`${category.id}-basis`}
-                        value={category.chargeBasis}
-                        items={ChargeBasisSchema.options.map((option) => ({
-                          value: option,
-                          label: CHARGE_BASIS_LABELS[option] ?? option,
-                        }))}
-                        onValueChange={(value) =>
-                          updateCategory(category.id, { chargeBasis: value as FeeCategory['chargeBasis'] })
-                        }
-                      />
-                    </Field>
-
-                    <Field className="w-32">
-                      <FieldLabel htmlFor={`${category.id}-escalation`}>Escalation group</FieldLabel>
-                      <Select
-                        id={`${category.id}-escalation`}
-                        value={category.escalationGroup}
-                        items={EscalationGroupSchema.options.map((option) => ({
-                          value: option,
-                          label: ESCALATION_GROUP_LABELS[option] ?? option,
-                        }))}
-                        onValueChange={(value) =>
-                          updateCategory(category.id, {
-                            escalationGroup: value as FeeCategory['escalationGroup'],
-                          })
-                        }
-                      />
-                    </Field>
-
-                    <Field className="w-24">
-                      <FieldLabel htmlFor={`${category.id}-uptake`}>Uptake %</FieldLabel>
-                      <Input
-                        id={`${category.id}-uptake`}
-                        type="number"
-                        min={0}
-                        max={100}
-                        disabled={category.mandatory}
-                        value={category.uptakePct}
-                        onChange={(event) =>
-                          updateCategory(category.id, { uptakePct: Number(event.target.value) })
-                        }
-                      />
-                    </Field>
-
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`Remove ${category.name}`}
-                      onClick={() => removeCategory(category.id)}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap gap-4">
-                    <label className="flex items-center gap-2 text-sm text-foreground">
-                      <Switch
-                        checked={category.mandatory}
-                        onCheckedChange={(checked) => updateCategory(category.id, { mandatory: checked })}
-                      />
-                      Mandatory
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-foreground">
-                      <Switch
-                        checked={category.discountable}
-                        onCheckedChange={(checked) => updateCategory(category.id, { discountable: checked })}
-                      />
-                      Discountable
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-foreground">
-                      <Switch
-                        checked={category.includedInStm}
-                        onCheckedChange={(checked) => updateCategory(category.id, { includedInStm: checked })}
-                      />
-                      Included in STM
-                    </label>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <DataGrid
+              rows={project.fees.categories}
+              getRowId={(category) => category.id}
+              columns={categoryColumns}
+              mode="edit"
+              gridId="wizard-step4-categories"
+              ariaLabel="Fee categories"
+            />
           )}
         </CardContent>
       </Card>
-
-      {project.fees.categories.length > 0 && groups.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Bulk actions</CardTitle>
-          </CardHeader>
-          <CardContent className="flex-row flex-wrap items-end gap-3 pt-0">
-            <Field className="w-56">
-              <FieldLabel htmlFor="upliftCategory">Category</FieldLabel>
-              <Select
-                id="upliftCategory"
-                value={upliftCategory}
-                items={[
-                  { value: 'all', label: 'All categories' },
-                  ...project.fees.categories.map((category) => ({ value: category.id, label: category.name })),
-                ]}
-                onValueChange={setUpliftCategory}
-              />
-            </Field>
-            <Field className="w-32">
-              <FieldLabel htmlFor="upliftPct">Uplift %</FieldLabel>
-              <Input
-                id="upliftPct"
-                type="number"
-                value={upliftPct}
-                onChange={(event) => setUpliftPct(Number(event.target.value))}
-              />
-            </Field>
-            <Button type="button" onClick={applyUplift}>
-              Apply uplift
-            </Button>
-
-            <div className="ml-auto flex gap-1">
-              <Button
-                type="button"
-                size="sm"
-                variant={view === 'cards' ? 'default' : 'outline'}
-                onClick={() => setView('cards')}
-              >
-                Cards
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={view === 'table' ? 'default' : 'outline'}
-                onClick={() => setView('table')}
-              >
-                Bulk edit table
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
 
       {groups.length === 0 || project.fees.categories.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           Select year groups and add at least one fee category to enter amounts.
         </p>
-      ) : view === 'table' ? (
+      ) : (
         <Card>
-          <CardContent className="max-h-[32rem] overflow-auto pt-4">
-            <table className="data-table w-full min-w-max border-collapse text-sm">
-              <thead>
-                <tr>
-                  <th className="sticky left-0 bg-card p-2 text-left font-medium text-muted-foreground">
-                    Category
-                  </th>
-                  {groups.map((group) => (
-                    <th key={group} className="p-2 text-left font-medium text-muted-foreground">
-                      {YEAR_GROUP_LABELS[group]}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {project.fees.categories.map((category) => (
-                  <tr key={category.id} className="border-t border-border">
-                    <td className="sticky left-0 bg-card p-2 font-medium text-foreground">{category.name}</td>
-                    {groups.map((group) => (
-                      <td key={group} className="p-2">
-                        <Input
-                          type="number"
-                          min={0}
-                          className="w-28"
-                          value={project.fees.amounts[group]?.[category.id] ?? 0}
-                          onChange={(event) => setAmount(group, category.id, Number(event.target.value))}
-                        />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <CardHeader>
+            <CardTitle>Fee amounts</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <DataGrid
+              rows={groups}
+              getRowId={(group) => group}
+              columns={amountColumns}
+              mode="edit"
+              gridId="wizard-step4-amounts"
+              ariaLabel="Fee amounts"
+            />
           </CardContent>
         </Card>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {groups.map((group) => (
-            <Card key={group}>
-              <CardHeader>
-                <CardTitle>{YEAR_GROUP_LABELS[group]}</CardTitle>
-              </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-3 pt-0 sm:grid-cols-3 lg:grid-cols-4">
-                {project.fees.categories.map((category) => (
-                  <Field key={category.id}>
-                    <FieldLabel htmlFor={`${group}-${category.id}`}>
-                      {category.name}
-                      {category.mandatory ? null : <Badge className="ml-1.5">optional</Badge>}
-                    </FieldLabel>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs text-muted-foreground">{project.meta.currencySymbol}</span>
-                      <Input
-                        id={`${group}-${category.id}`}
-                        type="number"
-                        min={0}
-                        value={project.fees.amounts[group]?.[category.id] ?? 0}
-                        onChange={(event) => setAmount(group, category.id, Number(event.target.value))}
-                      />
-                    </div>
-                  </Field>
-                ))}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
       )}
     </div>
   )

@@ -1,25 +1,29 @@
 'use client'
 
-import { Fragment, useState } from 'react'
+import { useState } from 'react'
 import { ChevronDown, ChevronRight, Download } from 'lucide-react'
 
+import { DataGrid, type GridColumnDef } from '@/components/grid'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { NumericCell } from '@/components/ui/numeric-cell'
 import { OpexGroupSchema } from '@/domain/costs'
 import { StaffSectionSchema, type Project } from '@/domain/schema'
-import type { CostForecast } from '@/engine/costs'
+import type { CostForecast, YearStatement } from '@/engine/costs'
+import { cn } from '@/lib/utils'
 import { downloadCsv } from '@/lib/csv'
 import { OPEX_GROUP_LABELS } from '@/lib/expenses-data'
-import { formatMoney, formatPercent } from '@/lib/format'
+import { formatMoney, formatMoneySigned, formatPercent } from '@/lib/format'
 import { STAFF_SECTION_LABELS } from '@/lib/wizard-data'
 
 type RowKey = 'netRevenue' | 'payroll' | 'opex' | 'stm' | 'ebitda' | 'depreciation' | 'ebit' | 'tax' | 'netProfit'
+type ExpandableKey = 'payroll' | 'opex'
 
-const ROWS: Array<{ key: RowKey; label: string; emphasis?: boolean; expandable?: 'payroll' | 'opex' }> = [
+const BASE_ROWS: Array<{ key: RowKey; label: string; emphasis?: boolean; expandable?: ExpandableKey }> = [
   { key: 'netRevenue', label: 'Net revenue' },
   { key: 'payroll', label: 'Payroll', expandable: 'payroll' },
   { key: 'opex', label: 'Operating expenses', expandable: 'opex' },
-  { key: 'stm', label: 'STM' },
+  { key: 'stm', label: 'STM share' },
   { key: 'ebitda', label: 'EBITDA', emphasis: true },
   { key: 'depreciation', label: 'Depreciation' },
   { key: 'ebit', label: 'EBIT', emphasis: true },
@@ -27,11 +31,22 @@ const ROWS: Array<{ key: RowKey; label: string; emphasis?: boolean; expandable?:
   { key: 'netProfit', label: 'Net profit', emphasis: true },
 ]
 
+interface PLRow {
+  key: string
+  label: string
+  emphasis?: boolean
+  indent?: boolean
+  expandable?: ExpandableKey
+  isExpanded?: boolean
+  valueKind: 'money' | 'percent'
+  getYearValue: (year: YearStatement) => number
+}
+
 export function ProfitAndLossTable({ project, costForecast }: { project: Project; costForecast: CostForecast }) {
-  const [expanded, setExpanded] = useState<Set<RowKey>>(new Set())
+  const [expanded, setExpanded] = useState<Set<ExpandableKey>>(new Set())
   const years = costForecast.years
 
-  const toggle = (key: RowKey) => {
+  const toggle = (key: ExpandableKey) => {
     setExpanded((prev) => {
       const next = new Set(prev)
       if (next.has(key)) next.delete(key)
@@ -52,9 +67,9 @@ export function ProfitAndLossTable({ project, costForecast }: { project: Project
 
   const handleExport = () => {
     const header = ['', ...years.map((year) => year.label)]
-    const body: string[][] = ROWS.map((row) => [
+    const body: string[][] = BASE_ROWS.map((row) => [
       row.label,
-      ...years.map((year) => formatMoney(year[row.key], project.meta)),
+      ...years.map((year) => formatMoneySigned(year[row.key], project.meta)),
     ])
     body.push(['EBITDA margin', ...years.map((year) => formatPercent(year.ebitdaMarginPct))])
     body.push([
@@ -63,6 +78,99 @@ export function ProfitAndLossTable({ project, costForecast }: { project: Project
     ])
     downloadCsv(`${project.meta.schoolName} - profit and loss.csv`, [header, ...body])
   }
+
+  const rows: PLRow[] = []
+  for (const base of BASE_ROWS) {
+    rows.push({
+      key: base.key,
+      label: base.label,
+      emphasis: base.emphasis,
+      expandable: base.expandable,
+      isExpanded: base.expandable ? expanded.has(base.expandable) : undefined,
+      valueKind: 'money',
+      getYearValue: (year) => year[base.key],
+    })
+    if (base.expandable === 'payroll' && expanded.has('payroll')) {
+      for (const section of StaffSectionSchema.options) {
+        rows.push({
+          key: `payroll-${section}`,
+          label: STAFF_SECTION_LABELS[section] ?? section,
+          indent: true,
+          valueKind: 'money',
+          getYearValue: (year) => payrollBySection(year.yearIndex).find((entry) => entry.section === section)?.total ?? 0,
+        })
+      }
+    }
+    if (base.expandable === 'opex' && expanded.has('opex')) {
+      for (const group of OpexGroupSchema.options) {
+        rows.push({
+          key: `opex-${group}`,
+          label: OPEX_GROUP_LABELS[group],
+          indent: true,
+          valueKind: 'money',
+          getYearValue: (year) => year.opexByGroup[group] ?? 0,
+        })
+      }
+    }
+  }
+  rows.push({
+    key: 'ebitdaMargin',
+    label: 'EBITDA margin',
+    valueKind: 'percent',
+    getYearValue: (year) => year.ebitdaMarginPct,
+  })
+  rows.push({
+    key: 'netMargin',
+    label: 'Net margin',
+    valueKind: 'percent',
+    getYearValue: (year) => (year.netRevenue > 0 ? (year.netProfit / year.netRevenue) * 100 : 0),
+  })
+
+  const columns: GridColumnDef<PLRow>[] = [
+    {
+      id: 'label',
+      label: 'Line',
+      kind: 'readonly',
+      width: 220,
+      minWidth: 180,
+      pinned: 'left',
+      getValue: (row) => row.label,
+      render: (row) => (
+        <button
+          type="button"
+          className={cn('flex w-full items-center gap-1.5 text-left', row.indent && 'pl-6', !row.expandable && 'cursor-default')}
+          onClick={row.expandable ? () => toggle(row.expandable!) : undefined}
+        >
+          {row.expandable ? (
+            row.isExpanded ? (
+              <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+            )
+          ) : null}
+          <span className="truncate">{row.label}</span>
+        </button>
+      ),
+    },
+    ...years.map(
+      (year): GridColumnDef<PLRow> => ({
+        id: `year-${year.yearIndex}`,
+        label: year.label,
+        kind: 'readonly',
+        width: 128,
+        minWidth: 112,
+        getValue: (row) => row.getYearValue(year),
+        render: (row) => {
+          const raw = row.getYearValue(year)
+          return row.valueKind === 'percent' ? (
+            <span>{formatPercent(raw)}</span>
+          ) : (
+            <NumericCell value={raw} formatted={formatMoney(raw, project.meta)} />
+          )
+        },
+      }),
+    ),
+  ]
 
   return (
     <Card>
@@ -73,101 +181,16 @@ export function ProfitAndLossTable({ project, costForecast }: { project: Project
           Export CSV
         </Button>
       </CardHeader>
-      <CardContent className="max-h-[32rem] overflow-auto pt-0">
-        <table className="data-table w-full min-w-max border-collapse text-sm">
-          <thead>
-            <tr>
-              <th className="sticky left-0 bg-card p-2 text-left font-medium text-muted-foreground">Line</th>
-              {years.map((year) => (
-                <th key={year.yearIndex} className="p-2 text-right font-medium text-muted-foreground">
-                  {year.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {ROWS.map((row) => {
-              const isExpanded = expanded.has(row.key)
-              return (
-                <Fragment key={row.key}>
-                  <tr className="border-t border-border">
-                    <td
-                      className={`sticky left-0 bg-card p-2 text-foreground ${row.emphasis ? 'font-semibold' : 'font-medium'}`}
-                    >
-                      {row.expandable ? (
-                        <button type="button" className="flex items-center gap-1.5" onClick={() => toggle(row.key)}>
-                          {isExpanded ? (
-                            <ChevronDown className="size-3.5 text-muted-foreground" />
-                          ) : (
-                            <ChevronRight className="size-3.5 text-muted-foreground" />
-                          )}
-                          {row.label}
-                        </button>
-                      ) : (
-                        row.label
-                      )}
-                    </td>
-                    {years.map((year) => (
-                      <td
-                        key={year.yearIndex}
-                        className={`p-2 text-right tabular-nums text-foreground ${row.emphasis ? 'font-semibold' : ''}`}
-                      >
-                        {formatMoney(year[row.key], project.meta)}
-                      </td>
-                    ))}
-                  </tr>
-                  {isExpanded && row.expandable === 'payroll'
-                    ? StaffSectionSchema.options.map((section) => (
-                        <tr key={section} className="border-t border-border/50">
-                          <td className="sticky left-0 bg-card py-1.5 pr-2 pl-8 text-muted-foreground">
-                            {STAFF_SECTION_LABELS[section] ?? section}
-                          </td>
-                          {years.map((year) => (
-                            <td key={year.yearIndex} className="py-1.5 pr-2 text-right tabular-nums text-muted-foreground">
-                              {formatMoney(
-                                payrollBySection(year.yearIndex).find((entry) => entry.section === section)?.total ?? 0,
-                                project.meta,
-                              )}
-                            </td>
-                          ))}
-                        </tr>
-                      ))
-                    : null}
-                  {isExpanded && row.expandable === 'opex'
-                    ? OpexGroupSchema.options.map((group) => (
-                        <tr key={group} className="border-t border-border/50">
-                          <td className="sticky left-0 bg-card py-1.5 pr-2 pl-8 text-muted-foreground">
-                            {OPEX_GROUP_LABELS[group]}
-                          </td>
-                          {years.map((year) => (
-                            <td key={year.yearIndex} className="py-1.5 pr-2 text-right tabular-nums text-muted-foreground">
-                              {formatMoney(year.opexByGroup[group] ?? 0, project.meta)}
-                            </td>
-                          ))}
-                        </tr>
-                      ))
-                    : null}
-                </Fragment>
-              )
-            })}
-            <tr className="border-t border-border">
-              <td className="sticky left-0 bg-card p-2 text-foreground">EBITDA margin</td>
-              {years.map((year) => (
-                <td key={year.yearIndex} className="p-2 text-right tabular-nums text-foreground">
-                  {formatPercent(year.ebitdaMarginPct)}
-                </td>
-              ))}
-            </tr>
-            <tr className="border-t border-border">
-              <td className="sticky left-0 bg-card p-2 text-foreground">Net margin</td>
-              {years.map((year) => (
-                <td key={year.yearIndex} className="p-2 text-right tabular-nums text-foreground">
-                  {formatPercent(year.netRevenue > 0 ? (year.netProfit / year.netRevenue) * 100 : 0)}
-                </td>
-              ))}
-            </tr>
-          </tbody>
-        </table>
+      <CardContent className="pt-0">
+        <DataGrid
+          rows={rows}
+          getRowId={(row) => row.key}
+          columns={columns}
+          mode="display"
+          gridId="statements-profit-and-loss"
+          ariaLabel="Profit and loss"
+          getRowClassName={(row) => (row.emphasis ? 'font-semibold' : undefined)}
+        />
       </CardContent>
     </Card>
   )

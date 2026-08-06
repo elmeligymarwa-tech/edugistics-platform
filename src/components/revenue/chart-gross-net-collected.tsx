@@ -5,7 +5,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { Project } from '@/domain/schema'
 import type { Forecast } from '@/engine/revenue'
-import { formatCompactMoney } from '@/lib/format'
+import { formatCompactMoneySigned } from '@/lib/format'
 import { ChartTooltip, renderChartLegend } from './chart-tooltip'
 
 export function ChartGrossNetCollected({ project, forecast }: { project: Project; forecast: Forecast }) {
@@ -15,7 +15,7 @@ export function ChartGrossNetCollected({ project, forecast }: { project: Project
     net: year.netRevenue,
     collected: year.collectedCash,
   }))
-  const tickFormatter = (value: number) => formatCompactMoney(value, project.meta)
+  const tickFormatter = (value: number) => formatCompactMoneySigned(value, project.meta)
 
   return (
     <Card>

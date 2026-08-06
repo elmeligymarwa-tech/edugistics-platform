@@ -47,7 +47,7 @@ export function StmOverview({
             <p className="text-sm font-medium text-foreground">No STM agreement configured</p>
             <p className="max-w-prose text-sm text-muted-foreground">
               Set up the terms of a third-party revenue-share or management fee agreement — the
-              counterparty, basis and rate — and see the computed liability for each forecast year.
+              counterparty, basis and rate — and see the computed revenue share for each forecast year.
             </p>
           </div>
           <Button size="sm" onClick={addAgreement}>

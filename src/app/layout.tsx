@@ -4,6 +4,7 @@ import { Fraunces, Geist, Geist_Mono } from "next/font/google";
 import { AppShell } from "@/components/app-shell/app-shell";
 import { ServiceWorkerRegistrar } from "@/components/pwa/service-worker-registrar";
 import { ThemeProvider, THEME_INIT_SCRIPT } from "@/components/theme/theme-provider";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -51,8 +52,10 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable} antialiased`}
       >
         <ThemeProvider>
-          <ServiceWorkerRegistrar />
-          <AppShell>{children}</AppShell>
+          <TooltipProvider>
+            <ServiceWorkerRegistrar />
+            <AppShell>{children}</AppShell>
+          </TooltipProvider>
         </ThemeProvider>
       </body>
     </html>

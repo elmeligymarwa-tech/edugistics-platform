@@ -3,13 +3,15 @@
 import { useState } from 'react'
 import { Download } from 'lucide-react'
 
+import { DataGrid, type GridColumnDef } from '@/components/grid'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { CurrencyText } from '@/components/ui/currency-text'
 import { Switch } from '@/components/ui/switch'
 import { orderedYearGroups, type Project } from '@/domain/schema'
 import type { Forecast } from '@/engine/revenue'
 import { downloadCsv } from '@/lib/csv'
-import { formatMoney, formatNumber, formatPercent } from '@/lib/format'
+import { formatMoney, formatMoneySigned, formatNumber, formatPercent } from '@/lib/format'
 import { YEAR_GROUP_LABELS } from '@/lib/wizard-data'
 import { CellDrilldownDialog, type DrilldownContent, type DrilldownRow } from './cell-drilldown-dialog'
 
@@ -21,7 +23,7 @@ const FLOW_METRICS: Array<{ key: FlowMetricKey; label: string }> = [
   { key: 'discounts', label: 'Discounts' },
   { key: 'netRevenue', label: 'Net revenue' },
   { key: 'collectedCash', label: 'Collected cash' },
-  { key: 'stmLiability', label: 'STM liability' },
+  { key: 'stmLiability', label: 'STM share' },
 ]
 
 const TAX_TREATMENT_LABELS: Record<string, string> = {
@@ -40,6 +42,15 @@ const CHARGE_BASIS_LABELS: Record<string, string> = {
   oneOffOnEntry: 'One-off on entry',
 }
 const ESCALATION_GROUP_LABELS: Record<string, string> = { tuition: 'Tuition', other: 'Other' }
+
+interface RevenueRow {
+  key: string
+  label: string
+  emphasis?: boolean
+  valueKind: 'money' | 'number'
+  getYearValue: (yearIndex: number) => number
+  onCellClick: (yearIndex: number) => void
+}
 
 export function ForecastTable({ project, forecast }: { project: Project; forecast: Forecast }) {
   const [rowMode, setRowMode] = useState<RowMode>('yearGroup')
@@ -154,7 +165,7 @@ export function ForecastTable({ project, forecast }: { project: Project; forecas
       { label: 'Net revenue', value: formatMoney(year.netRevenue, project.meta) },
       { label: 'Tax collected', value: formatMoney(year.taxCollected, project.meta) },
       { label: 'Collected cash', value: formatMoney(year.collectedCash, project.meta) },
-      { label: 'STM liability', value: formatMoney(year.stmLiability, project.meta) },
+      { label: 'STM share', value: formatMoney(year.stmLiability, project.meta) },
       { label: 'Students', value: formatNumber(year.students, project.meta.locale) },
       { label: 'Revenue per student', value: formatMoney(year.revenuePerStudent, project.meta) },
     ]
@@ -172,7 +183,7 @@ export function ForecastTable({ project, forecast }: { project: Project; forecas
       { label: 'Discounts', value: formatMoney(year.discounts, project.meta) },
       { label: 'Net revenue', value: formatMoney(year.netRevenue, project.meta) },
       { label: 'Collected cash', value: formatMoney(year.collectedCash, project.meta) },
-      { label: 'STM liability', value: formatMoney(year.stmLiability, project.meta) },
+      { label: 'STM share', value: formatMoney(year.stmLiability, project.meta) },
       { label: 'Students', value: formatNumber(year.students, project.meta.locale) },
     ]
     const basis = cumulativeBasisRow(yearIndex)
@@ -203,14 +214,14 @@ export function ForecastTable({ project, forecast }: { project: Project; forecas
     const body: string[][] = []
 
     for (const row of rows) {
-      body.push([row.label, ...forecast.years.map((_, y) => formatMoney(breakdownValue(row.id, y), project.meta))])
+      body.push([row.label, ...forecast.years.map((_, y) => formatMoneySigned(breakdownValue(row.id, y), project.meta))])
     }
     body.push([
       'Total gross revenue',
-      ...forecast.years.map((_, y) => formatMoney(totalValue(y), project.meta)),
+      ...forecast.years.map((_, y) => formatMoneySigned(totalValue(y), project.meta)),
     ])
     for (const metric of FLOW_METRICS) {
-      body.push([metric.label, ...forecast.years.map((_, y) => formatMoney(flowValue(metric.key, y), project.meta))])
+      body.push([metric.label, ...forecast.years.map((_, y) => formatMoneySigned(flowValue(metric.key, y), project.meta))])
     }
     body.push([
       'Students (year-end)',
@@ -218,11 +229,92 @@ export function ForecastTable({ project, forecast }: { project: Project; forecas
     ])
     body.push([
       'Revenue per student',
-      ...forecast.years.map((year) => formatMoney(year.revenuePerStudent, project.meta)),
+      ...forecast.years.map((year) => formatMoneySigned(year.revenuePerStudent, project.meta)),
     ])
 
     downloadCsv(`${project.meta.schoolName} - revenue forecast.csv`, [header, ...body])
   }
+
+  const breakdownRows: RevenueRow[] = [
+    ...rows.map(
+      (row): RevenueRow => ({
+        key: row.id,
+        label: row.label,
+        valueKind: 'money',
+        getYearValue: (yearIndex) => breakdownValue(row.id, yearIndex),
+        onCellClick: (yearIndex) => openBreakdownDrilldown(row.id, row.label, yearIndex),
+      }),
+    ),
+    {
+      key: 'total',
+      label: 'Total gross revenue',
+      emphasis: true,
+      valueKind: 'money',
+      getYearValue: (yearIndex) => totalValue(yearIndex),
+      onCellClick: (yearIndex) => openTotalDrilldown(yearIndex),
+    },
+  ]
+
+  const summaryRows: RevenueRow[] = [
+    ...FLOW_METRICS.map(
+      (metric): RevenueRow => ({
+        key: metric.key,
+        label: metric.label,
+        valueKind: 'money',
+        getYearValue: (yearIndex) => flowValue(metric.key, yearIndex),
+        onCellClick: (yearIndex) => openFlowDrilldown(metric.key, metric.label, yearIndex),
+      }),
+    ),
+    {
+      key: 'students',
+      label: 'Students (year-end)',
+      valueKind: 'number',
+      getYearValue: (yearIndex) => forecast.years[yearIndex]?.students ?? 0,
+      onCellClick: (yearIndex) => openStockDrilldown('students', 'Students (year-end)', yearIndex),
+    },
+    {
+      key: 'revenuePerStudent',
+      label: 'Revenue per student',
+      valueKind: 'money',
+      getYearValue: (yearIndex) => forecast.years[yearIndex]?.revenuePerStudent ?? 0,
+      onCellClick: (yearIndex) => openStockDrilldown('revenuePerStudent', 'Revenue per student', yearIndex),
+    },
+  ]
+
+  const columns: GridColumnDef<RevenueRow>[] = [
+    {
+      id: 'label',
+      label: rowMode === 'yearGroup' ? 'Year group' : 'Fee category',
+      kind: 'readonly',
+      width: 200,
+      minWidth: 160,
+      pinned: 'left',
+      getValue: (row) => row.label,
+    },
+    ...forecast.years.map(
+      (year, yearIndex): GridColumnDef<RevenueRow> => ({
+        id: `year-${year.yearIndex}`,
+        label: year.label,
+        kind: 'readonly',
+        width: 128,
+        minWidth: 112,
+        getValue: (row) => row.getYearValue(yearIndex),
+        render: (row) => {
+          const raw = row.getYearValue(yearIndex)
+          const formatted = row.valueKind === 'money' ? formatMoney(raw, project.meta) : null
+          return (
+            <button
+              type="button"
+              className="w-full text-right tabular-nums outline-none hover:text-primary focus-visible:text-primary"
+              onClick={() => row.onCellClick(yearIndex)}
+            >
+              {formatted ? <CurrencyText value={formatted} /> : formatNumber(raw, project.meta.locale)}
+            </button>
+          )
+        },
+      }),
+    ),
+  ]
 
   return (
     <Card>
@@ -257,7 +349,7 @@ export function ForecastTable({ project, forecast }: { project: Project; forecas
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="max-h-[32rem] overflow-auto pt-0">
+      <CardContent className="flex flex-col gap-4 pt-0">
         {rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             {rowMode === 'yearGroup'
@@ -265,102 +357,28 @@ export function ForecastTable({ project, forecast }: { project: Project; forecas
               : 'Add fee categories in setup to see a forecast breakdown.'}
           </p>
         ) : (
-          <table className="data-table w-full min-w-max border-collapse text-sm">
-            <thead>
-              <tr>
-                <th className="sticky left-0 bg-card p-2 text-left font-medium text-muted-foreground">
-                  {rowMode === 'yearGroup' ? 'Year group' : 'Fee category'}
-                </th>
-                {forecast.years.map((year) => (
-                  <th key={year.yearIndex} className="p-2 text-right font-medium text-muted-foreground">
-                    {year.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.id} className="border-t border-border">
-                  <td className="sticky left-0 bg-card p-2 font-medium text-foreground">{row.label}</td>
-                  {forecast.years.map((year, y) => (
-                    <td key={year.yearIndex} className="p-0 text-right">
-                      <button
-                        type="button"
-                        className="w-full cursor-pointer px-2 py-2 tabular-nums text-foreground outline-none hover:bg-muted focus-visible:bg-muted"
-                        onClick={() => openBreakdownDrilldown(row.id, row.label, y)}
-                      >
-                        {formatMoney(breakdownValue(row.id, y), project.meta)}
-                      </button>
-                    </td>
-                  ))}
-                </tr>
-              ))}
-              <tr className="border-t border-border">
-                <td className="sticky left-0 bg-card p-2 font-semibold text-foreground">Total gross revenue</td>
-                {forecast.years.map((year, y) => (
-                  <td key={year.yearIndex} className="p-0 text-right">
-                    <button
-                      type="button"
-                      className="w-full cursor-pointer px-2 py-2 font-semibold tabular-nums text-foreground outline-none hover:bg-muted focus-visible:bg-muted"
-                      onClick={() => openTotalDrilldown(y)}
-                    >
-                      {formatMoney(totalValue(y), project.meta)}
-                    </button>
-                  </td>
-                ))}
-              </tr>
-
-              <tr>
-                <td colSpan={forecast.years.length + 1} className="pt-4 pb-1 text-xs font-medium text-muted-foreground">
-                  Financial summary
-                </td>
-              </tr>
-              {FLOW_METRICS.map((metric) => (
-                <tr key={metric.key} className="border-t border-border">
-                  <td className="sticky left-0 bg-card p-2 text-foreground">{metric.label}</td>
-                  {forecast.years.map((year, y) => (
-                    <td key={year.yearIndex} className="p-0 text-right">
-                      <button
-                        type="button"
-                        className="w-full cursor-pointer px-2 py-2 tabular-nums text-foreground outline-none hover:bg-muted focus-visible:bg-muted"
-                        onClick={() => openFlowDrilldown(metric.key, metric.label, y)}
-                      >
-                        {formatMoney(flowValue(metric.key, y), project.meta)}
-                      </button>
-                    </td>
-                  ))}
-                </tr>
-              ))}
-              <tr className="border-t border-border">
-                <td className="sticky left-0 bg-card p-2 text-foreground">Students (year-end)</td>
-                {forecast.years.map((year, y) => (
-                  <td key={year.yearIndex} className="p-0 text-right">
-                    <button
-                      type="button"
-                      className="w-full cursor-pointer px-2 py-2 tabular-nums text-foreground outline-none hover:bg-muted focus-visible:bg-muted"
-                      onClick={() => openStockDrilldown('students', 'Students (year-end)', y)}
-                    >
-                      {formatNumber(year.students, project.meta.locale)}
-                    </button>
-                  </td>
-                ))}
-              </tr>
-              <tr className="border-t border-border">
-                <td className="sticky left-0 bg-card p-2 text-foreground">Revenue per student</td>
-                {forecast.years.map((year, y) => (
-                  <td key={year.yearIndex} className="p-0 text-right">
-                    <button
-                      type="button"
-                      className="w-full cursor-pointer px-2 py-2 tabular-nums text-foreground outline-none hover:bg-muted focus-visible:bg-muted"
-                      onClick={() => openStockDrilldown('revenuePerStudent', 'Revenue per student', y)}
-                    >
-                      {formatMoney(year.revenuePerStudent, project.meta)}
-                    </button>
-                  </td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
+          <>
+            <DataGrid
+              rows={breakdownRows}
+              getRowId={(row) => row.key}
+              columns={columns}
+              mode="display"
+              gridId="revenue-forecast-breakdown"
+              ariaLabel="Revenue breakdown"
+              getRowClassName={(row) => (row.emphasis ? 'font-semibold' : undefined)}
+            />
+            <div>
+              <p className="mb-1.5 text-xs font-medium text-muted-foreground">Financial summary</p>
+              <DataGrid
+                rows={summaryRows}
+                getRowId={(row) => row.key}
+                columns={columns}
+                mode="display"
+                gridId="revenue-forecast-summary"
+                ariaLabel="Financial summary"
+              />
+            </div>
+          </>
         )}
       </CardContent>
 

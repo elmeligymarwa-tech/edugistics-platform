@@ -2,12 +2,9 @@
 
 import { Plus, Sparkles, Trash2 } from 'lucide-react'
 
-import { Badge } from '@/components/ui/badge'
+import { DataGrid, toNumberOrZero, type GridColumnDef } from '@/components/grid'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
-import { Field, FieldLabel } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
 import { OpexGroupSchema, type OpexCategory } from '@/domain/costs'
 import { OPEX_BASIS_LABELS, OPEX_GROUP_LABELS, STARTER_OPEX_CATEGORIES } from '@/lib/expenses-data'
 import { useProjectStore } from '@/store/project-store'
@@ -48,13 +45,98 @@ export function OpexCategoryEditor({ projectId, opex }: { projectId: string; ope
       opex.map((category) => (category.id === id ? { ...category, ...patch } : category)),
     )
 
-  const removeCategory = (id: string) =>
-    updateOpex(projectId, opex.filter((category) => category.id !== id))
+  const removeCategory = (id: string) => updateOpex(projectId, opex.filter((category) => category.id !== id))
+
+  const columns: GridColumnDef<OpexCategory>[] = [
+    {
+      id: 'name',
+      label: 'Name',
+      kind: 'text',
+      width: 200,
+      minWidth: 160,
+      pinned: 'left',
+      getValue: (category) => category.name,
+      onCommit: (category, value) => updateCategory(category.id, { name: typeof value === 'string' ? value : '' }),
+      render: (category) => (
+        <div className="flex w-full items-center gap-1.5">
+          <span className="min-w-0 flex-1 truncate">{category.name}</span>
+          <button
+            type="button"
+            aria-label={`Remove ${category.name}`}
+            onClick={() => removeCategory(category.id)}
+            className="shrink-0 text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 className="size-3.5" />
+          </button>
+        </div>
+      ),
+    },
+    {
+      id: 'group',
+      label: 'Group',
+      kind: 'select',
+      width: 140,
+      minWidth: 120,
+      selectOptions: GROUP_OPTIONS,
+      getValue: (category) => category.group,
+      onCommit: (category, value) => updateCategory(category.id, { group: value as OpexCategory['group'] }),
+    },
+    {
+      id: 'basis',
+      label: 'Basis',
+      kind: 'select',
+      width: 140,
+      minWidth: 128,
+      selectOptions: BASIS_OPTIONS,
+      getValue: (category) => category.basis,
+      onCommit: (category, value) => updateCategory(category.id, { basis: value as OpexCategory['basis'] }),
+    },
+    {
+      id: 'amount',
+      label: 'Amount',
+      kind: 'numeric',
+      width: 128,
+      minWidth: 104,
+      allowFillDown: true,
+      allowUplift: true,
+      getValue: (category) => category.amount,
+      onCommit: (category, value) => updateCategory(category.id, { amount: toNumberOrZero(value) }),
+    },
+    {
+      id: 'escalationPct',
+      label: 'Escalation %',
+      kind: 'percent',
+      width: 116,
+      minWidth: 100,
+      allowFillDown: true,
+      getValue: (category) => (Array.isArray(category.escalationPct) ? (category.escalationPct[0] ?? 0) : category.escalationPct),
+      onCommit: (category, value) => updateCategory(category.id, { escalationPct: toNumberOrZero(value) }),
+    },
+    {
+      id: 'startYearIndex',
+      label: 'Start year',
+      kind: 'numeric',
+      width: 100,
+      minWidth: 92,
+      getValue: (category) => category.startYearIndex + 1,
+      onCommit: (category, value) => updateCategory(category.id, { startYearIndex: Math.max(0, toNumberOrZero(value) - 1) }),
+    },
+    {
+      id: 'endYearIndex',
+      label: 'End year',
+      kind: 'numeric',
+      width: 100,
+      minWidth: 92,
+      getValue: (category) => (category.endYearIndex !== null ? category.endYearIndex + 1 : null),
+      onCommit: (category, value) =>
+        updateCategory(category.id, { endYearIndex: typeof value === 'number' ? Math.max(0, Math.round(value) - 1) : null }),
+    },
+  ]
 
   return (
     <Card>
       <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-foreground">Expense categories</h3>
+        <h3 className="text-sm font-semibold text-heading">Expense categories</h3>
         <div className="flex gap-2">
           <Button type="button" size="sm" variant="outline" onClick={addStarterCategories}>
             <Sparkles data-icon="inline-start" />
@@ -66,112 +148,18 @@ export function OpexCategoryEditor({ projectId, opex }: { projectId: string; ope
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3 pt-0">
+      <CardContent className="pt-0">
         {opex.length === 0 ? (
           <p className="text-sm text-muted-foreground">No expense categories yet.</p>
         ) : (
-          opex.map((category) => (
-            <div key={category.id} className="rounded-lg border border-border p-3">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Input
-                    className="h-7 w-56"
-                    value={category.name}
-                    onChange={(event) => updateCategory(category.id, { name: event.target.value })}
-                  />
-                  <Badge variant="outline">{OPEX_GROUP_LABELS[category.group]}</Badge>
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`Remove ${category.name}`}
-                  onClick={() => removeCategory(category.id)}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </div>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-                <Field>
-                  <FieldLabel htmlFor={`${category.id}-group`}>Group</FieldLabel>
-                  <Select
-                    id={`${category.id}-group`}
-                    items={GROUP_OPTIONS}
-                    value={category.group}
-                    onValueChange={(value) =>
-                      updateCategory(category.id, { group: value as OpexCategory['group'] })
-                    }
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor={`${category.id}-basis`}>Basis</FieldLabel>
-                  <Select
-                    id={`${category.id}-basis`}
-                    items={BASIS_OPTIONS}
-                    value={category.basis}
-                    onValueChange={(value) =>
-                      updateCategory(category.id, { basis: value as OpexCategory['basis'] })
-                    }
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor={`${category.id}-amount`}>
-                    {category.basis === 'pctOfRevenue' ? 'Percentage' : 'Amount'}
-                  </FieldLabel>
-                  <Input
-                    id={`${category.id}-amount`}
-                    type="number"
-                    min={0}
-                    value={category.amount}
-                    onChange={(event) =>
-                      updateCategory(category.id, { amount: Number(event.target.value) })
-                    }
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor={`${category.id}-escalation`}>Escalation %</FieldLabel>
-                  <Input
-                    id={`${category.id}-escalation`}
-                    type="number"
-                    min={0}
-                    value={
-                      Array.isArray(category.escalationPct) ? (category.escalationPct[0] ?? 0) : category.escalationPct
-                    }
-                    onChange={(event) =>
-                      updateCategory(category.id, { escalationPct: Number(event.target.value) })
-                    }
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor={`${category.id}-start`}>Start year</FieldLabel>
-                  <Input
-                    id={`${category.id}-start`}
-                    type="number"
-                    min={0}
-                    value={category.startYearIndex}
-                    onChange={(event) =>
-                      updateCategory(category.id, { startYearIndex: Number(event.target.value) })
-                    }
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor={`${category.id}-end`}>End year</FieldLabel>
-                  <Input
-                    id={`${category.id}-end`}
-                    type="number"
-                    min={0}
-                    placeholder="No end"
-                    value={category.endYearIndex ?? ''}
-                    onChange={(event) =>
-                      updateCategory(category.id, {
-                        endYearIndex: event.target.value === '' ? null : Number(event.target.value),
-                      })
-                    }
-                  />
-                </Field>
-              </div>
-            </div>
-          ))
+          <DataGrid
+            rows={opex}
+            getRowId={(category) => category.id}
+            columns={columns}
+            mode="edit"
+            gridId="expenses-opex"
+            ariaLabel="Expense categories"
+          />
         )}
       </CardContent>
     </Card>

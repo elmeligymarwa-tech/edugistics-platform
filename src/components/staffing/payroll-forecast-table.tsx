@@ -1,14 +1,17 @@
 'use client'
 
-import { Fragment, useState } from 'react'
+import { useState } from 'react'
 import { ChevronDown, ChevronRight, Download } from 'lucide-react'
 
+import { DataGrid, type GridColumnDef, type GridRowGroup } from '@/components/grid'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { NumericCell } from '@/components/ui/numeric-cell'
 import { StaffSectionSchema, type Project } from '@/domain/schema'
-import type { CostForecast, PayrollLine } from '@/engine/costs'
+import type { CostForecast, PayrollLine, YearPayroll } from '@/engine/costs'
+import { cn } from '@/lib/utils'
 import { downloadCsv } from '@/lib/csv'
-import { formatMoney, formatNumber } from '@/lib/format'
+import { formatMoney, formatMoneySigned, formatNumber } from '@/lib/format'
 import { STAFF_SECTION_LABELS } from '@/lib/wizard-data'
 
 type DetailKey = 'salaries' | 'allowances' | 'onCosts' | 'recruitment' | 'training'
@@ -25,13 +28,19 @@ function lineFor(lines: PayrollLine[], positionId: string): PayrollLine | undefi
   return lines.find((line) => line.positionId === positionId)
 }
 
-export function PayrollForecastTable({
-  project,
-  costForecast,
-}: {
-  project: Project
-  costForecast: CostForecast
-}) {
+interface PayrollRow {
+  key: string
+  label: string
+  indent?: boolean
+  expandable?: boolean
+  isExpanded?: boolean
+  positionId?: string
+  emphasis?: boolean
+  valueKind: 'money' | 'number'
+  getYearValue: (year: YearPayroll) => number
+}
+
+export function PayrollForecastTable({ project, costForecast }: { project: Project; costForecast: CostForecast }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const years = costForecast.payroll
 
@@ -55,20 +64,108 @@ export function PayrollForecastTable({
       for (const position of positions) {
         body.push([
           position.title,
-          ...years.map((year) => formatMoney(lineFor(year.lines, position.id)?.total ?? 0, project.meta)),
+          ...years.map((year) => formatMoneySigned(lineFor(year.lines, position.id)?.total ?? 0, project.meta)),
         ])
         for (const detail of DETAIL_ROWS) {
           body.push([
             `  ${detail.label}`,
-            ...years.map((year) => formatMoney(lineFor(year.lines, position.id)?.[detail.key] ?? 0, project.meta)),
+            ...years.map((year) => formatMoneySigned(lineFor(year.lines, position.id)?.[detail.key] ?? 0, project.meta)),
           ])
         }
       }
     }
-    body.push(['Total payroll', ...years.map((year) => formatMoney(year.total, project.meta))])
+    body.push(['Total payroll', ...years.map((year) => formatMoneySigned(year.total, project.meta))])
 
     downloadCsv(`${project.meta.schoolName} - payroll forecast.csv`, [header, ...body])
   }
+
+  const rowGroups: GridRowGroup<PayrollRow>[] = []
+  for (const section of StaffSectionSchema.options) {
+    const positions = project.staffing.positions.filter((position) => position.section === section)
+    if (positions.length === 0) continue
+    const sectionRows: PayrollRow[] = []
+    for (const position of positions) {
+      const isExpanded = expanded.has(position.id)
+      sectionRows.push({
+        key: position.id,
+        label: position.title,
+        expandable: true,
+        isExpanded,
+        positionId: position.id,
+        valueKind: 'money',
+        getYearValue: (year) => lineFor(year.lines, position.id)?.total ?? 0,
+      })
+      if (isExpanded) {
+        for (const detail of DETAIL_ROWS) {
+          sectionRows.push({
+            key: `${position.id}-${detail.key}`,
+            label: detail.label,
+            indent: true,
+            valueKind: 'money',
+            getYearValue: (year) => lineFor(year.lines, position.id)?.[detail.key] ?? 0,
+          })
+        }
+        sectionRows.push({
+          key: `${position.id}-headcount`,
+          label: 'Headcount',
+          indent: true,
+          valueKind: 'number',
+          getYearValue: (year) => lineFor(year.lines, position.id)?.headcount ?? 0,
+        })
+      }
+    }
+    rowGroups.push({ id: section, label: STAFF_SECTION_LABELS[section] ?? section, rows: sectionRows })
+  }
+
+  const totalRow: PayrollRow[] = [
+    { key: 'total', label: 'Total payroll', emphasis: true, valueKind: 'money', getYearValue: (year) => year.total },
+  ]
+
+  const columns: GridColumnDef<PayrollRow>[] = [
+    {
+      id: 'label',
+      label: 'Position',
+      kind: 'readonly',
+      width: 220,
+      minWidth: 180,
+      pinned: 'left',
+      getValue: (row) => row.label,
+      render: (row) => (
+        <button
+          type="button"
+          className={cn('flex w-full items-center gap-1.5 text-left', row.indent && 'pl-6', !row.expandable && 'cursor-default')}
+          onClick={row.expandable ? () => toggle(row.positionId!) : undefined}
+        >
+          {row.expandable ? (
+            row.isExpanded ? (
+              <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+            )
+          ) : null}
+          <span className="truncate">{row.label}</span>
+        </button>
+      ),
+    },
+    ...years.map(
+      (year): GridColumnDef<PayrollRow> => ({
+        id: `year-${year.yearIndex}`,
+        label: `Year ${year.yearIndex + 1}`,
+        kind: 'readonly',
+        width: 112,
+        minWidth: 100,
+        getValue: (row) => row.getYearValue(year),
+        render: (row) => {
+          const raw = row.getYearValue(year)
+          return row.valueKind === 'number' ? (
+            <span>{formatNumber(raw, project.meta.locale)}</span>
+          ) : (
+            <NumericCell value={raw} formatted={formatMoney(raw, project.meta)} />
+          )
+        },
+      }),
+    ),
+  ]
 
   return (
     <Card>
@@ -79,109 +176,24 @@ export function PayrollForecastTable({
           Export CSV
         </Button>
       </CardHeader>
-      <CardContent className="max-h-[32rem] overflow-auto pt-0">
-        <table className="data-table w-full min-w-max border-collapse text-sm">
-          <thead>
-            <tr>
-              <th className="sticky left-0 bg-card p-2 text-left font-medium text-muted-foreground">
-                Position
-              </th>
-              {years.map((year) => (
-                <th key={year.yearIndex} className="p-2 text-right font-medium text-muted-foreground">
-                  Year {year.yearIndex + 1}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {StaffSectionSchema.options.map((section) => {
-              const positions = project.staffing.positions.filter(
-                (position) => position.section === section,
-              )
-              if (positions.length === 0) return null
-              return (
-                <Fragment key={section}>
-                  <tr className="border-t border-border">
-                    <td
-                      colSpan={years.length + 1}
-                      className="sticky left-0 bg-card p-2 text-xs font-semibold text-muted-foreground uppercase"
-                    >
-                      {STAFF_SECTION_LABELS[section] ?? section}
-                    </td>
-                  </tr>
-                  {positions.map((position) => {
-                    const isExpanded = expanded.has(position.id)
-                    return (
-                      <Fragment key={position.id}>
-                        <tr className="border-t border-border">
-                          <td className="sticky left-0 bg-card p-2 font-medium text-foreground">
-                            <button
-                              type="button"
-                              className="flex items-center gap-1.5"
-                              onClick={() => toggle(position.id)}
-                            >
-                              {isExpanded ? (
-                                <ChevronDown className="size-3.5 text-muted-foreground" />
-                              ) : (
-                                <ChevronRight className="size-3.5 text-muted-foreground" />
-                              )}
-                              {position.title}
-                            </button>
-                          </td>
-                          {years.map((year) => (
-                            <td key={year.yearIndex} className="p-2 text-right tabular-nums text-foreground">
-                              {formatMoney(lineFor(year.lines, position.id)?.total ?? 0, project.meta)}
-                            </td>
-                          ))}
-                        </tr>
-                        {isExpanded
-                          ? DETAIL_ROWS.map((detail) => (
-                              <tr key={`${position.id}-${detail.key}`} className="border-t border-border/50">
-                                <td className="sticky left-0 bg-card py-1.5 pr-2 pl-8 text-muted-foreground">
-                                  {detail.label}
-                                </td>
-                                {years.map((year) => (
-                                  <td
-                                    key={year.yearIndex}
-                                    className="py-1.5 pr-2 text-right tabular-nums text-muted-foreground"
-                                  >
-                                    {formatMoney(lineFor(year.lines, position.id)?.[detail.key] ?? 0, project.meta)}
-                                  </td>
-                                ))}
-                              </tr>
-                            ))
-                          : null}
-                        {isExpanded ? (
-                          <tr key={`${position.id}-headcount`} className="border-t border-border/50">
-                            <td className="sticky left-0 bg-card py-1.5 pr-2 pl-8 text-muted-foreground">
-                              Headcount
-                            </td>
-                            {years.map((year) => (
-                              <td
-                                key={year.yearIndex}
-                                className="py-1.5 pr-2 text-right tabular-nums text-muted-foreground"
-                              >
-                                {formatNumber(lineFor(year.lines, position.id)?.headcount ?? 0, project.meta.locale)}
-                              </td>
-                            ))}
-                          </tr>
-                        ) : null}
-                      </Fragment>
-                    )
-                  })}
-                </Fragment>
-              )
-            })}
-            <tr className="border-t border-border">
-              <td className="sticky left-0 bg-card p-2 font-semibold text-foreground">Total payroll</td>
-              {years.map((year) => (
-                <td key={year.yearIndex} className="p-2 text-right font-semibold tabular-nums text-foreground">
-                  {formatMoney(year.total, project.meta)}
-                </td>
-              ))}
-            </tr>
-          </tbody>
-        </table>
+      <CardContent className="flex flex-col gap-3 pt-0">
+        <DataGrid
+          rows={rowGroups}
+          getRowId={(row) => row.key}
+          columns={columns}
+          mode="display"
+          gridId="staffing-payroll-forecast"
+          ariaLabel="Payroll forecast"
+        />
+        <DataGrid
+          rows={totalRow}
+          getRowId={(row) => row.key}
+          columns={columns}
+          mode="display"
+          gridId="staffing-payroll-total"
+          ariaLabel="Total payroll"
+          getRowClassName={(row) => (row.emphasis ? 'font-semibold' : undefined)}
+        />
       </CardContent>
     </Card>
   )

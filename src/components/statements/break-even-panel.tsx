@@ -1,3 +1,4 @@
+import { CurrencyText } from '@/components/ui/currency-text'
 import { StatTile } from '@/components/ui/stat-tile'
 import type { Project } from '@/domain/schema'
 import type { CostForecast } from '@/engine/costs'
@@ -12,10 +13,13 @@ export function BreakEvenPanel({ project, costForecast }: { project: Project; co
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
       <StatTile label="Break-even year" value={breakEvenLabel} />
-      <StatTile label="Cash low point" value={formatMoney(costForecast.cashLowPoint, project.meta)} />
+      <StatTile
+        label="Cash low point"
+        value={<CurrencyText value={formatMoney(costForecast.cashLowPoint, project.meta)} />}
+      />
       <StatTile
         label="Peak funding requirement"
-        value={formatMoney(costForecast.peakFundingRequirement, project.meta)}
+        value={<CurrencyText value={formatMoney(costForecast.peakFundingRequirement, project.meta)} />}
       />
     </div>
   )

@@ -2,16 +2,23 @@
 
 import { Download } from 'lucide-react'
 
+import { DataGrid, type GridColumnDef } from '@/components/grid'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { Project } from '@/domain/schema'
-import type { CostForecast, YearStatement } from '@/engine/costs'
+import type { CostForecast } from '@/engine/costs'
 import { downloadCsv } from '@/lib/csv'
-import { formatMoney } from '@/lib/format'
+import { formatMoney, formatMoneySigned } from '@/lib/format'
 
 type RowKey = 'cashCollected' | 'cashCostsPaid' | 'capexSpend' | 'taxPaid' | 'netCashMovement' | 'closingCash'
 
-const ROWS: Array<{ key: RowKey; label: string; emphasis?: boolean }> = [
+interface CashFlowRow {
+  key: RowKey
+  label: string
+  emphasis?: boolean
+}
+
+const ROWS: CashFlowRow[] = [
   { key: 'cashCollected', label: 'Cash collected' },
   { key: 'cashCostsPaid', label: 'Cash costs paid' },
   { key: 'capexSpend', label: 'Capital expenditure' },
@@ -27,12 +34,33 @@ export function CashFlowTable({ project, costForecast }: { project: Project; cos
     const header = ['', ...years.map((year) => year.label)]
     const body: string[][] = ROWS.map((row) => [
       row.label,
-      ...years.map((year) => formatMoney(year[row.key], project.meta)),
+      ...years.map((year) => formatMoneySigned(year[row.key], project.meta)),
     ])
     downloadCsv(`${project.meta.schoolName} - cash flow.csv`, [header, ...body])
   }
 
-  const rowValue = (row: (typeof ROWS)[number], year: YearStatement) => year[row.key]
+  const columns: GridColumnDef<CashFlowRow>[] = [
+    {
+      id: 'label',
+      label: 'Line',
+      kind: 'readonly',
+      width: 200,
+      minWidth: 160,
+      pinned: 'left',
+      getValue: (row) => row.label,
+    },
+    ...years.map(
+      (year): GridColumnDef<CashFlowRow> => ({
+        id: `year-${year.yearIndex}`,
+        label: year.label,
+        kind: 'readonly',
+        width: 128,
+        minWidth: 112,
+        getValue: (row) => year[row.key],
+        format: (value) => (typeof value === 'number' ? formatMoney(value, project.meta) : ''),
+      }),
+    ),
+  ]
 
   return (
     <Card>
@@ -43,38 +71,16 @@ export function CashFlowTable({ project, costForecast }: { project: Project; cos
           Export CSV
         </Button>
       </CardHeader>
-      <CardContent className="max-h-[32rem] overflow-auto pt-0">
-        <table className="data-table w-full min-w-max border-collapse text-sm">
-          <thead>
-            <tr>
-              <th className="sticky left-0 bg-card p-2 text-left font-medium text-muted-foreground">Line</th>
-              {years.map((year) => (
-                <th key={year.yearIndex} className="p-2 text-right font-medium text-muted-foreground">
-                  {year.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {ROWS.map((row) => (
-              <tr key={row.key} className="border-t border-border">
-                <td
-                  className={`sticky left-0 bg-card p-2 text-foreground ${row.emphasis ? 'font-semibold' : 'font-medium'}`}
-                >
-                  {row.label}
-                </td>
-                {years.map((year) => (
-                  <td
-                    key={year.yearIndex}
-                    className={`p-2 text-right tabular-nums text-foreground ${row.emphasis ? 'font-semibold' : ''}`}
-                  >
-                    {formatMoney(rowValue(row, year), project.meta)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <CardContent className="pt-0">
+        <DataGrid
+          rows={ROWS}
+          getRowId={(row) => row.key}
+          columns={columns}
+          mode="display"
+          gridId="statements-cash-flow"
+          ariaLabel="Cash flow"
+          getRowClassName={(row) => (row.emphasis ? 'font-semibold' : undefined)}
+        />
       </CardContent>
     </Card>
   )

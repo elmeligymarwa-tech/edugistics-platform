@@ -1,4 +1,4 @@
-import { formatMoney, formatNumber } from '@/lib/format'
+import { formatMoney, formatNumber, type FormattedCurrency } from '@/lib/format'
 import type { ComparisonColumn } from './comparison-types'
 
 export type YearMetricKey = 'students' | 'netRevenue' | 'stmLiability' | 'ebitda' | 'netProfit'
@@ -12,7 +12,7 @@ export const YEAR_METRICS: Array<{
 }> = [
   { key: 'students', label: 'Students', kind: 'number', invert: false },
   { key: 'netRevenue', label: 'Net revenue', kind: 'money', invert: false },
-  { key: 'stmLiability', label: 'STM liability', kind: 'money', invert: true },
+  { key: 'stmLiability', label: 'STM share', kind: 'money', invert: true },
   { key: 'ebitda', label: 'EBITDA', kind: 'money', invert: false },
   { key: 'netProfit', label: 'Net profit', kind: 'money', invert: false },
 ]
@@ -34,7 +34,11 @@ export function yearMetricValue(column: ComparisonColumn, key: YearMetricKey, ye
   }
 }
 
-export function formatMetricValue(kind: 'money' | 'number', value: number, column: ComparisonColumn): string {
+export function formatMetricValue(
+  kind: 'money' | 'number',
+  value: number,
+  column: ComparisonColumn,
+): FormattedCurrency | string {
   return kind === 'money' ? formatMoney(value, column.project.meta) : formatNumber(value, column.project.meta.locale)
 }
 

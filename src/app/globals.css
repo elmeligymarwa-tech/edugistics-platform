@@ -81,6 +81,11 @@
   --border: color-mix(in oklch, var(--palette-ink) 10%, transparent);
   --input: color-mix(in oklch, var(--palette-ink) 15%, transparent);
   --ring: var(--palette-brand);
+  /* Every heading, page title, section title and card title reads this —
+   * navy in light mode, the lighter navy primitive in dark mode, never the
+   * default grey foreground. Derives from --palette-brand, so it needs no
+   * separate .dark override. */
+  --heading: var(--palette-brand);
   --chart-1: var(--palette-chart-1);
   --chart-2: var(--palette-chart-2);
   --chart-3: var(--palette-chart-3);
@@ -118,6 +123,7 @@
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
+  --color-heading: var(--heading);
   --color-destructive: var(--destructive);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
@@ -143,22 +149,24 @@
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 
-  /* Type scale — deliberately tighter than Tailwind's stock scale, tuned
-   * for a dense financial UI where numbers sit next to labels in tables. */
-  --text-xs: 0.6875rem;
-  --text-xs--line-height: 1rem;
-  --text-sm: 0.8125rem;
-  --text-sm--line-height: 1.25rem;
-  --text-base: 0.9375rem;
-  --text-base--line-height: 1.5rem;
-  --text-lg: 1.0625rem;
-  --text-lg--line-height: 1.5rem;
-  --text-xl: 1.25rem;
-  --text-xl--line-height: 1.75rem;
-  --text-2xl: 1.5rem;
-  --text-2xl--line-height: 2rem;
-  --text-3xl: 1.875rem;
-  --text-3xl--line-height: 2.25rem;
+  /* Type scale — shifted up roughly two rungs from the original, still
+   * denser than Tailwind's stock scale but readable when projected in a
+   * client meeting. Numbers keep tabular-nums so they stay aligned in
+   * tables at the larger sizes. */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.25rem;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.5rem;
+  --text-base: 1.0625rem;
+  --text-base--line-height: 1.625rem;
+  --text-lg: 1.1875rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.375rem;
+  --text-xl--line-height: 1.875rem;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 2.25rem;
+  --text-3xl: 2.125rem;
+  --text-3xl--line-height: 2.5rem;
 }
 
 @layer base {
@@ -168,9 +176,30 @@
   body {
     @apply bg-background text-foreground;
     font-variant-numeric: tabular-nums;
+    /* One step heavier than regular (400) so body copy reads comfortably
+     * when projected. Geist is loaded as a variable font, so any weight in
+     * its range renders correctly without a discrete static cut. */
+    font-weight: 450;
   }
   html {
     @apply font-sans;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply text-heading;
+  }
+  /* Native number-input steppers are too small to hit reliably — every
+   * numeric field either pairs with a slider or stays a plain typed box,
+   * never the tiny up/down arrows. */
+  input[type='number'] {
+    -moz-appearance: textfield;
+  }
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
   }
 }
 

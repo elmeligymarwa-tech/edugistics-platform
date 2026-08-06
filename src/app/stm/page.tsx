@@ -30,7 +30,7 @@ export default function StmPage() {
         <EmptyState
           icon={Handshake}
           title="No project yet"
-          description="Complete setup to configure STM agreements and see the computed liability."
+          description="Complete setup to configure STM agreements and see the computed revenue share."
           action={{ label: 'Go to setup', href: '/setup' }}
         />
       ) : null}

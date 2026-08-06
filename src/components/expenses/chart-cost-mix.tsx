@@ -7,7 +7,7 @@ import { OpexGroupSchema, type OpexCategory } from '@/domain/costs'
 import type { Project } from '@/domain/schema'
 import type { CostForecast } from '@/engine/costs'
 import { OPEX_GROUP_LABELS } from '@/lib/expenses-data'
-import { formatCompactMoney } from '@/lib/format'
+import { formatCompactMoneySigned } from '@/lib/format'
 import { ChartTooltip, renderChartLegend } from '@/components/revenue/chart-tooltip'
 
 const GROUP_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)']
@@ -54,7 +54,7 @@ export function ChartCostMix({
     ...shown.map((group, index) => ({ key: group, name: OPEX_GROUP_LABELS[group], color: GROUP_COLORS[index]! })),
     ...(overflow.length > 0 ? [{ key: 'other', name: 'Other', color: 'var(--muted-foreground)' }] : []),
   ]
-  const tickFormatter = (value: number) => formatCompactMoney(value, project.meta)
+  const tickFormatter = (value: number) => formatCompactMoneySigned(value, project.meta)
 
   return (
     <Card>

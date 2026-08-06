@@ -1,6 +1,7 @@
 'use client'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { CurrencyText } from '@/components/ui/currency-text'
 import { StatTile } from '@/components/ui/stat-tile'
 import type { Project } from '@/domain/schema'
 import type { CostForecast } from '@/engine/costs'
@@ -13,9 +14,15 @@ export function StmImpactPanel({ project, costForecast }: { project: Project; co
   return (
     <div className="flex flex-col gap-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        <StatTile label="Total STM liability" value={formatMoney(totalStmLiability, project.meta)} />
-        <StatTile label="EBITDA over horizon" value={formatMoney(totalEbitda, project.meta)} />
-        <StatTile label="Net profit over horizon" value={formatMoney(costForecast.totals.netProfit, project.meta)} />
+        <StatTile
+          label="Total STM revenue share"
+          value={<CurrencyText value={formatMoney(totalStmLiability, project.meta)} />}
+        />
+        <StatTile label="EBITDA over horizon" value={<CurrencyText value={formatMoney(totalEbitda, project.meta)} />} />
+        <StatTile
+          label="Net profit over horizon"
+          value={<CurrencyText value={formatMoney(costForecast.totals.netProfit, project.meta)} />}
+        />
       </div>
 
       <Card>
@@ -27,7 +34,7 @@ export function StmImpactPanel({ project, costForecast }: { project: Project; co
             <thead>
               <tr>
                 <th className="p-2 text-left font-medium text-muted-foreground">Year</th>
-                <th className="p-2 text-right font-medium text-muted-foreground">STM liability</th>
+                <th className="p-2 text-right font-medium text-muted-foreground">STM share</th>
                 <th className="p-2 text-right font-medium text-muted-foreground">EBITDA</th>
                 <th className="p-2 text-right font-medium text-muted-foreground">Net profit</th>
               </tr>
@@ -36,14 +43,14 @@ export function StmImpactPanel({ project, costForecast }: { project: Project; co
               {costForecast.years.map((year) => (
                 <tr key={year.yearIndex} className="border-t border-border">
                   <td className="p-2 text-foreground">{year.label}</td>
-                  <td className="p-2 text-right tabular-nums text-foreground">
-                    {formatMoney(year.stm, project.meta)}
+                  <td className="p-2 text-right tabular-nums">
+                    <CurrencyText value={formatMoney(year.stm, project.meta)} />
                   </td>
-                  <td className="p-2 text-right tabular-nums text-foreground">
-                    {formatMoney(year.ebitda, project.meta)}
+                  <td className="p-2 text-right tabular-nums">
+                    <CurrencyText value={formatMoney(year.ebitda, project.meta)} />
                   </td>
-                  <td className="p-2 text-right tabular-nums text-foreground">
-                    {formatMoney(year.netProfit, project.meta)}
+                  <td className="p-2 text-right tabular-nums">
+                    <CurrencyText value={formatMoney(year.netProfit, project.meta)} />
                   </td>
                 </tr>
               ))}
@@ -51,14 +58,14 @@ export function StmImpactPanel({ project, costForecast }: { project: Project; co
             <tfoot>
               <tr className="border-t border-border font-medium">
                 <td className="p-2 text-foreground">Total</td>
-                <td className="p-2 text-right tabular-nums text-foreground">
-                  {formatMoney(totalStmLiability, project.meta)}
+                <td className="p-2 text-right tabular-nums">
+                  <CurrencyText value={formatMoney(totalStmLiability, project.meta)} />
                 </td>
-                <td className="p-2 text-right tabular-nums text-foreground">
-                  {formatMoney(totalEbitda, project.meta)}
+                <td className="p-2 text-right tabular-nums">
+                  <CurrencyText value={formatMoney(totalEbitda, project.meta)} />
                 </td>
-                <td className="p-2 text-right tabular-nums text-foreground">
-                  {formatMoney(costForecast.totals.netProfit, project.meta)}
+                <td className="p-2 text-right tabular-nums">
+                  <CurrencyText value={formatMoney(costForecast.totals.netProfit, project.meta)} />
                 </td>
               </tr>
             </tfoot>

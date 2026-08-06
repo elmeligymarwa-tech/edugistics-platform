@@ -7,11 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import { Slider } from '@/components/ui/slider'
+import { SliderNumberField } from '@/components/ui/slider-number-field'
 import { Switch } from '@/components/ui/switch'
 import type { Project, StmAgreement } from '@/domain/schema'
 import type { Forecast } from '@/engine/revenue'
-import { formatMoney, formatPercent } from '@/lib/format'
+import { formatMoneySigned } from '@/lib/format'
 import { useProjectStore } from '@/store/project-store'
 
 type StmTier = StmAgreement['tiers'][number]
@@ -120,17 +120,14 @@ export function StmAgreementEditor({
         </div>
 
         <Field>
-          <div className="flex items-center justify-between gap-3">
-            <FieldLabel htmlFor="stm-rate">Rate</FieldLabel>
-            <span className="text-sm font-semibold tabular-nums text-foreground">
-              {formatPercent(stm.ratePct, 1)}
-            </span>
-          </div>
-          <Slider
+          <FieldLabel htmlFor="stm-rate">Rate</FieldLabel>
+          <SliderNumberField
             id="stm-rate"
+            aria-label="STM rate %"
             min={0}
             max={50}
             step={0.5}
+            suffix="%"
             value={stm.ratePct}
             onValueChange={(value) => patch({ ratePct: value })}
           />
@@ -155,7 +152,7 @@ export function StmAgreementEditor({
             <div className="flex flex-col gap-2">
               {stm.tiers.map((tier, index) => (
                 <div key={index} className="flex items-end gap-2 rounded-lg border border-border p-2">
-                  <Field className="flex-1">
+                  <Field className="w-32">
                     <FieldLabel htmlFor={`stm-tier-${index}-from`}>From</FieldLabel>
                     <Input
                       id={`stm-tier-${index}-from`}
@@ -167,21 +164,22 @@ export function StmAgreementEditor({
                   </Field>
                   <Field className="flex-1">
                     <FieldLabel htmlFor={`stm-tier-${index}-rate`}>Rate %</FieldLabel>
-                    <Input
+                    <SliderNumberField
                       id={`stm-tier-${index}-rate`}
-                      type="number"
+                      aria-label={`Tier ${index + 1} rate %`}
                       min={0}
                       max={100}
                       step={0.5}
+                      suffix="%"
                       value={tier.ratePct}
-                      onChange={(event) => updateTier(index, { ratePct: Number(event.target.value) })}
+                      onValueChange={(value) => updateTier(index, { ratePct: value })}
                     />
                   </Field>
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    aria-label={`Remove band starting at ${formatMoney(tier.thresholdFrom, project.meta)}`}
+                    aria-label={`Remove band starting at ${formatMoneySigned(tier.thresholdFrom, project.meta)}`}
                     onClick={() => removeTier(index)}
                   >
                     <Trash2 className="size-4" />
@@ -210,7 +208,7 @@ export function StmAgreementEditor({
               onChange={(event) => patch({ minimumGuarantee: Number(event.target.value) })}
             />
           ) : (
-            <FieldDescription>No floor. The computed liability can fall to zero.</FieldDescription>
+            <FieldDescription>No floor. The computed revenue share can fall to zero.</FieldDescription>
           )}
         </div>
       </CardContent>

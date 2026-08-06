@@ -7,6 +7,7 @@ import { CapexEditor } from '@/components/expenses/capex-editor'
 import { ChartCostMix } from '@/components/expenses/chart-cost-mix'
 import { ChartCostPerStudent } from '@/components/expenses/chart-cost-per-student'
 import { ExpenseForecastTable } from '@/components/expenses/expense-forecast-table'
+import { FinancingEditor } from '@/components/expenses/financing-editor'
 import { OpexCategoryEditor } from '@/components/expenses/opex-category-editor'
 import { EmptyState } from '@/components/module-shell/empty-state'
 import { ModuleLoading } from '@/components/module-shell/module-loading'
@@ -34,6 +35,7 @@ export default function ExpensesPage() {
         <div className="flex flex-col gap-6">
           <OpexCategoryEditor projectId={project.id} opex={costModel.opex} />
           <CapexEditor project={project} capex={costModel.capex} costForecast={costForecast} />
+          <FinancingEditor projectId={project.id} financing={costModel.financing} />
           <ExpenseForecastTable project={project} opex={costModel.opex} costForecast={costForecast} />
           <div className="grid gap-6 lg:grid-cols-2">
             <ChartCostMix project={project} opex={costModel.opex} costForecast={costForecast} />

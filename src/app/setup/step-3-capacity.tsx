@@ -2,15 +2,16 @@
 
 import { useEffect, useState } from 'react'
 
-import { Badge } from '@/components/ui/badge'
+import { DataGrid, toNumberOrZero, type GridColumnDef, type GridColumnGroup } from '@/components/grid'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Slider } from '@/components/ui/slider'
+import { SliderNumberField } from '@/components/ui/slider-number-field'
 import { Switch } from '@/components/ui/switch'
-import { orderedYearGroups, type Project, type SchoolPlan, type YearGroupCapacity, type YearGroupId } from '@/domain/schema'
+import { orderedYearGroups, type Project, type SchoolPlan, type YearGroupId } from '@/domain/schema'
 import { computeEnrolment, type YearGroupEnrolment } from '@/engine/revenue'
+import { formatNumber } from '@/lib/format'
 import { YEAR_GROUP_LABELS } from '@/lib/wizard-data'
 import { useProjectStore } from '@/store/project-store'
 
@@ -82,18 +83,159 @@ export function Step3Capacity({ project }: { project: Project }) {
           Select at least one year group in the previous step to configure capacity.
         </p>
       ) : (
-        groups.map((group) => (
-          <CapacityCard
-            key={group}
-            project={project}
-            group={group}
-            ceiling={ceilingByGroup.get(group) ?? 0}
-            planEnabled={plan.enabled}
-            allocatedByYear={enrolment.map((row) => row.find((e) => e.yearGroup === group)?.students ?? 0)}
-          />
-        ))
+        <CapacityGrid
+          project={project}
+          groups={groups}
+          planEnabled={plan.enabled}
+          enrolment={enrolment}
+        />
       )}
     </div>
+  )
+}
+
+interface CapacityRow {
+  group: YearGroupId
+  allocatedByYear: number[]
+}
+
+function CapacityGrid({
+  project,
+  groups,
+  planEnabled,
+  enrolment,
+}: {
+  project: Project
+  groups: YearGroupId[]
+  planEnabled: boolean
+  enrolment: YearGroupEnrolment[][]
+}) {
+  const updateCapacity = useProjectStore((state) => state.updateCapacity)
+  const forecastYears = project.calendar.forecastYears
+
+  const rows: CapacityRow[] = groups.map((group) => ({
+    group,
+    allocatedByYear: enrolment.map((row) => row.find((entry) => entry.yearGroup === group)?.students ?? 0),
+  }))
+
+  const patch = (group: YearGroupId, values: Partial<Project['capacity'][string]>) =>
+    updateCapacity(project.id, group, values)
+
+  const numericColumn = (
+    id: string,
+    label: string,
+    field: 'classrooms' | 'studentsPerClassroom' | 'teachers' | 'teachingAssistants' | 'coTeachers',
+  ): GridColumnDef<CapacityRow> => ({
+    id,
+    label,
+    kind: 'numeric',
+    width: 128,
+    minWidth: 104,
+    allowFillDown: true,
+    allowUplift: true,
+    getValue: (row) => project.capacity[row.group]?.[field] ?? 0,
+    onCommit: (row, value) => patch(row.group, { [field]: toNumberOrZero(value) }),
+  })
+
+  const columns: (GridColumnDef<CapacityRow> | GridColumnGroup<CapacityRow>)[] = [
+    {
+      id: 'group',
+      label: 'Year group',
+      kind: 'readonly',
+      width: 140,
+      minWidth: 120,
+      pinned: 'left',
+      getValue: (row) => YEAR_GROUP_LABELS[row.group],
+    },
+    numericColumn('classrooms', 'Classrooms', 'classrooms'),
+    numericColumn('studentsPerClassroom', 'Students / classroom', 'studentsPerClassroom'),
+    numericColumn('teachers', 'Teachers', 'teachers'),
+    numericColumn('teachingAssistants', 'Teaching assistants', 'teachingAssistants'),
+    numericColumn('coTeachers', 'Co-teachers', 'coTeachers'),
+    {
+      id: 'maxCapacityPct',
+      label: 'Max capacity %',
+      kind: 'percent',
+      width: 128,
+      minWidth: 104,
+      allowFillDown: true,
+      allowUplift: true,
+      getValue: (row) => project.capacity[row.group]?.maxCapacityPct ?? 100,
+      onCommit: (row, value) => patch(row.group, { maxCapacityPct: toNumberOrZero(value) }),
+    },
+    {
+      id: 'maxStudents',
+      label: 'Max students',
+      kind: 'numeric',
+      width: 128,
+      minWidth: 104,
+      allowFillDown: true,
+      getValue: (row) => project.capacity[row.group]?.maxStudents ?? null,
+      onCommit: (row, value) =>
+        patch(row.group, { maxStudents: typeof value === 'number' ? Math.max(0, Math.round(value)) : null }),
+    },
+    {
+      id: 'openFromYearIndex',
+      label: 'Opens from year',
+      kind: 'numeric',
+      width: 128,
+      minWidth: 112,
+      getValue: (row) => (project.capacity[row.group]?.openFromYearIndex ?? 0) + 1,
+      onCommit: (row, value) => patch(row.group, { openFromYearIndex: Math.max(0, toNumberOrZero(value) - 1) }),
+    },
+    {
+      id: 'occupancy',
+      label: 'Occupancy %',
+      collapsible: true,
+      defaultCollapsed: false,
+      columns: Array.from({ length: forecastYears }, (_, yearIndex): GridColumnDef<CapacityRow> => ({
+        id: `occupancy-${yearIndex}`,
+        label: `Year ${yearIndex + 1}`,
+        kind: 'percent',
+        width: 96,
+        minWidth: 88,
+        allowFillDown: true,
+        allowUplift: true,
+        getValue: (row) => project.capacity[row.group]?.occupancyPctByYear[yearIndex] ?? 0,
+        onCommit: (row, value) => {
+          const current = project.capacity[row.group]?.occupancyPctByYear ?? []
+          const next = [...current]
+          while (next.length <= yearIndex) next.push(0)
+          next[yearIndex] = toNumberOrZero(value)
+          patch(row.group, { occupancyPctByYear: next })
+        },
+      })),
+    },
+    ...(planEnabled
+      ? [
+          {
+            id: 'allocated',
+            label: 'Allocated (from plan)',
+            collapsible: true,
+            defaultCollapsed: true,
+            columns: Array.from({ length: forecastYears }, (_, yearIndex): GridColumnDef<CapacityRow> => ({
+              id: `allocated-${yearIndex}`,
+              label: `Year ${yearIndex + 1}`,
+              kind: 'readonly',
+              width: 96,
+              minWidth: 88,
+              getValue: (row) => row.allocatedByYear[yearIndex] ?? 0,
+              format: (value) => (typeof value === 'number' ? formatNumber(value, project.meta.locale) : ''),
+            })),
+          } satisfies GridColumnGroup<CapacityRow>,
+        ]
+      : []),
+  ]
+
+  return (
+    <DataGrid
+      rows={rows}
+      getRowId={(row) => row.group}
+      columns={columns}
+      mode="edit"
+      gridId="wizard-step3-capacity"
+      ariaLabel="Year group capacity"
+    />
   )
 }
 
@@ -182,11 +324,14 @@ function SchoolPlanPanel({
           </div>
 
           <Field>
-            <FieldLabel>Taper — {Math.round(plan.taperPct)}%</FieldLabel>
-            <Slider
+            <FieldLabel htmlFor="taperPct">Taper</FieldLabel>
+            <SliderNumberField
+              id="taperPct"
+              aria-label="Taper %"
               min={0}
               max={100}
               step={1}
+              suffix="%"
               value={plan.taperPct}
               onValueChange={(value) => patchPlan({ taperPct: value })}
             />
@@ -339,25 +484,31 @@ function SchoolOccupancyRamp({ project }: { project: Project }) {
             </div>
 
             {mode === 'linear' ? (
-              <div className="flex flex-wrap items-end gap-2">
-                <Field className="w-32">
-                  <FieldLabel>Starting occupancy %</FieldLabel>
-                  <Input
-                    type="number"
+              <div className="flex flex-wrap items-end gap-4">
+                <Field className="w-56">
+                  <FieldLabel htmlFor="linearStart">Starting occupancy %</FieldLabel>
+                  <SliderNumberField
+                    id="linearStart"
+                    aria-label="Starting occupancy %"
                     min={0}
                     max={100}
+                    step={0.5}
+                    suffix="%"
                     value={linearStart}
-                    onChange={(event) => setLinearStart(Number(event.target.value))}
+                    onValueChange={setLinearStart}
                   />
                 </Field>
-                <Field className="w-32">
-                  <FieldLabel>Target occupancy %</FieldLabel>
-                  <Input
-                    type="number"
+                <Field className="w-56">
+                  <FieldLabel htmlFor="linearTarget">Target occupancy %</FieldLabel>
+                  <SliderNumberField
+                    id="linearTarget"
+                    aria-label="Target occupancy %"
                     min={0}
                     max={100}
+                    step={0.5}
+                    suffix="%"
                     value={linearTarget}
-                    onChange={(event) => setLinearTarget(Number(event.target.value))}
+                    onValueChange={setLinearTarget}
                   />
                 </Field>
                 <Field className="w-32">
@@ -375,16 +526,19 @@ function SchoolOccupancyRamp({ project }: { project: Project }) {
                 </Button>
               </div>
             ) : (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-4">
                 {Array.from({ length: forecastYears }, (_, index) => (
-                  <Field key={index} className="w-20">
-                    <FieldLabel>Year {index + 1}</FieldLabel>
-                    <Input
-                      type="number"
+                  <Field key={index} className="w-56">
+                    <FieldLabel htmlFor={`manual-occupancy-${index}`}>Year {index + 1}</FieldLabel>
+                    <SliderNumberField
+                      id={`manual-occupancy-${index}`}
+                      aria-label={`Year ${index + 1} occupancy %`}
                       min={0}
                       max={100}
+                      step={0.5}
+                      suffix="%"
                       value={ramp[index] ?? ramp[ramp.length - 1] ?? 0}
-                      onChange={(event) => setManualValue(index, Number(event.target.value))}
+                      onValueChange={(value) => setManualValue(index, value)}
                     />
                   </Field>
                 ))}
@@ -400,123 +554,6 @@ function SchoolOccupancyRamp({ project }: { project: Project }) {
             Off. Each year group uses its own saved occupancy ramp until this is switched on.
           </p>
         )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function CapacityCard({
-  project,
-  group,
-  ceiling,
-  planEnabled,
-  allocatedByYear,
-}: {
-  project: Project
-  group: YearGroupId
-  ceiling: number
-  planEnabled: boolean
-  allocatedByYear: number[]
-}) {
-  const updateCapacity = useProjectStore((state) => state.updateCapacity)
-  const capacity = project.capacity[group]
-
-  if (!capacity) return null
-
-  const patch = (values: Partial<YearGroupCapacity>) => updateCapacity(project.id, group, values)
-  const classroomCapacity = capacity.classrooms * capacity.studentsPerClassroom
-
-  return (
-    <Card>
-      <CardHeader className="flex-row items-center justify-between">
-        <CardTitle>{YEAR_GROUP_LABELS[group]}</CardTitle>
-        <Badge variant="brand">{Math.round(ceiling).toLocaleString()} max students</Badge>
-      </CardHeader>
-      <CardContent className="pt-0">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <Field>
-            <FieldLabel htmlFor={`${group}-classrooms`}>Classrooms</FieldLabel>
-            <Input
-              id={`${group}-classrooms`}
-              type="number"
-              min={0}
-              value={capacity.classrooms}
-              onChange={(event) => patch({ classrooms: Number(event.target.value) })}
-            />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor={`${group}-perClassroom`}>Students / classroom</FieldLabel>
-            <Input
-              id={`${group}-perClassroom`}
-              type="number"
-              min={0}
-              value={capacity.studentsPerClassroom}
-              onChange={(event) => patch({ studentsPerClassroom: Number(event.target.value) })}
-            />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor={`${group}-teachers`}>Teachers</FieldLabel>
-            <Input
-              id={`${group}-teachers`}
-              type="number"
-              min={0}
-              value={capacity.teachers}
-              onChange={(event) => patch({ teachers: Number(event.target.value) })}
-            />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor={`${group}-tas`}>Teaching assistants</FieldLabel>
-            <Input
-              id={`${group}-tas`}
-              type="number"
-              min={0}
-              value={capacity.teachingAssistants}
-              onChange={(event) => patch({ teachingAssistants: Number(event.target.value) })}
-            />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor={`${group}-coteachers`}>Co-teachers</FieldLabel>
-            <Input
-              id={`${group}-coteachers`}
-              type="number"
-              min={0}
-              value={capacity.coTeachers}
-              onChange={(event) => patch({ coTeachers: Number(event.target.value) })}
-            />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor={`${group}-maxstudents`}>Maximum students</FieldLabel>
-            <Input
-              id={`${group}-maxstudents`}
-              type="number"
-              min={0}
-              step={1}
-              placeholder={classroomCapacity.toLocaleString()}
-              value={capacity.maxStudents ?? ''}
-              onChange={(event) => {
-                const raw = event.target.value
-                patch({ maxStudents: raw === '' ? null : Math.max(0, Math.round(Number(raw))) })
-              }}
-            />
-            <FieldDescription>
-              {capacity.classrooms} × {capacity.studentsPerClassroom} = {classroomCapacity.toLocaleString()}{' '}
-              classrooms × students
-            </FieldDescription>
-          </Field>
-        </div>
-
-        {planEnabled ? (
-          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
-            <span className="text-xs font-medium text-muted-foreground">
-              Allocated students (from the school plan):
-            </span>
-            {allocatedByYear.map((students, index) => (
-              <Badge key={index} variant="outline">
-                Year {index + 1}: {Math.round(students).toLocaleString()}
-              </Badge>
-            ))}
-          </div>
-        ) : null}
       </CardContent>
     </Card>
   )

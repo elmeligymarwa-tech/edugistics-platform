@@ -2,10 +2,16 @@
 
 import { useState } from 'react'
 
+import { DataGrid, type GridColumnDef } from '@/components/grid'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { ComparisonColumn } from './comparison-types'
-import { YEAR_METRICS, type YearMetricKey, formatMetricValue, isImprovement, yearMetricValue } from './scenario-metrics'
+import { ValueWithDelta } from './scenario-checkpoint-table'
+import { YEAR_METRICS, type YearMetricKey, formatMetricValue, yearMetricValue } from './scenario-metrics'
+
+interface YearRow {
+  yearIndex: number
+}
 
 export function ScenarioYearByYearTable({
   columns,
@@ -18,6 +24,44 @@ export function ScenarioYearByYearTable({
   const metric = YEAR_METRICS.find((entry) => entry.key === metricKey) ?? YEAR_METRICS[0]!
   const baselineColumn = columns.find((column) => column.id === baselineId) ?? columns[0]
   const maxYears = Math.max(...columns.map((column) => column.costForecast.years.length), 0)
+  const rows: YearRow[] = Array.from({ length: maxYears }, (_, yearIndex) => ({ yearIndex }))
+
+  const gridColumns: GridColumnDef<YearRow>[] = [
+    {
+      id: 'year',
+      label: 'Year',
+      kind: 'readonly',
+      width: 96,
+      minWidth: 88,
+      pinned: 'left',
+      getValue: (row) => `Year ${row.yearIndex + 1}`,
+    },
+    ...columns.map(
+      (column): GridColumnDef<YearRow> => ({
+        id: column.id,
+        label: column.id === baselineColumn?.id ? `${column.label} (baseline)` : column.label,
+        kind: 'readonly',
+        width: 144,
+        minWidth: 128,
+        getValue: (row) => yearMetricValue(column, metric.key, row.yearIndex),
+        render: (row) => {
+          const value = yearMetricValue(column, metric.key, row.yearIndex)
+          if (value === null) return <span className="text-muted-foreground">—</span>
+          const isBaseline = column.id === baselineColumn?.id
+          const baselineValue = baselineColumn ? yearMetricValue(baselineColumn, metric.key, row.yearIndex) : null
+          const delta = !isBaseline && baselineValue !== null ? value - baselineValue : null
+          return (
+            <ValueWithDelta
+              delta={delta}
+              invert={metric.invert}
+              formatValue={() => formatMetricValue(metric.kind, value, column)}
+              formatDelta={(delta) => formatMetricValue(metric.kind, delta, column)}
+            />
+          )
+        },
+      }),
+    ),
+  ]
 
   return (
     <Card>
@@ -37,53 +81,16 @@ export function ScenarioYearByYearTable({
           ))}
         </div>
       </CardHeader>
-      <CardContent className="max-h-[32rem] overflow-auto pt-0">
-        <table className="data-table w-full min-w-max border-collapse text-sm">
-          <thead>
-            <tr>
-              <th className="sticky left-0 bg-card p-2 text-left font-medium text-muted-foreground">Year</th>
-              {columns.map((column) => (
-                <th key={column.id} className="p-2 text-right font-medium text-muted-foreground">
-                  {column.label}
-                  {column.id === baselineColumn?.id ? ' (baseline)' : ''}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {Array.from({ length: maxYears }, (_, yearIndex) => (
-              <tr key={yearIndex} className="border-t border-border">
-                <td className="sticky left-0 bg-card p-2 text-foreground">Year {yearIndex + 1}</td>
-                {columns.map((column) => {
-                  const value = yearMetricValue(column, metric.key, yearIndex)
-                  const isBaseline = column.id === baselineColumn?.id
-                  if (value === null) {
-                    return (
-                      <td key={column.id} className="p-2 text-right text-muted-foreground">
-                        —
-                      </td>
-                    )
-                  }
-                  const baselineValue = baselineColumn ? yearMetricValue(baselineColumn, metric.key, yearIndex) : null
-                  const delta = !isBaseline && baselineValue !== null ? value - baselineValue : null
-                  return (
-                    <td key={column.id} className="p-2 text-right tabular-nums text-foreground">
-                      <div>{formatMetricValue(metric.kind, value, column)}</div>
-                      {delta !== null && delta !== 0 ? (
-                        <div
-                          className={`text-xs ${isImprovement(delta, metric.invert) ? 'text-success' : 'text-destructive'}`}
-                        >
-                          {delta > 0 ? '+' : ''}
-                          {formatMetricValue(metric.kind, delta, column)}
-                        </div>
-                      ) : null}
-                    </td>
-                  )
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <CardContent className="pt-0">
+        <DataGrid
+          rows={rows}
+          getRowId={(row) => String(row.yearIndex)}
+          columns={gridColumns}
+          mode="display"
+          gridId="scenarios-year-by-year"
+          ariaLabel="Compare by forecast year"
+          rowHeight={44}
+        />
       </CardContent>
     </Card>
   )

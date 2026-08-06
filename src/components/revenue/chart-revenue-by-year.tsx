@@ -5,12 +5,12 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { Project } from '@/domain/schema'
 import type { Forecast } from '@/engine/revenue'
-import { formatCompactMoney } from '@/lib/format'
+import { formatCompactMoneySigned } from '@/lib/format'
 import { ChartTooltip } from './chart-tooltip'
 
 export function ChartRevenueByYear({ project, forecast }: { project: Project; forecast: Forecast }) {
   const data = forecast.years.map((year) => ({ label: year.label, netRevenue: year.netRevenue }))
-  const tickFormatter = (value: number) => formatCompactMoney(value, project.meta)
+  const tickFormatter = (value: number) => formatCompactMoneySigned(value, project.meta)
 
   return (
     <Card>

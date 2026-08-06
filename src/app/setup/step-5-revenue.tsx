@@ -2,10 +2,12 @@
 
 import { useEffect } from 'react'
 
+import { DataGrid, toNumberOrZero, type GridColumnDef } from '@/components/grid'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { SliderNumberField } from '@/components/ui/slider-number-field'
 import { Switch } from '@/components/ui/switch'
 import {
   EnrolmentModelSchema,
@@ -90,26 +92,30 @@ export function Step5Revenue({ project }: { project: Project }) {
               }
             />
           </Field>
-          <Field>
+          <Field className="sm:col-span-2">
             <FieldLabel htmlFor="tuitionEscalation">Tuition escalation %</FieldLabel>
-            <Input
+            <SliderNumberField
               id="tuitionEscalation"
-              type="number"
+              aria-label="Tuition escalation %"
+              min={0}
+              max={100}
+              step={0.5}
+              suffix="%"
               value={typeof a.tuitionEscalationPct === 'number' ? a.tuitionEscalationPct : 0}
-              onChange={(event) =>
-                updateRevenueAssumptions(project.id, { tuitionEscalationPct: Number(event.target.value) })
-              }
+              onValueChange={(value) => updateRevenueAssumptions(project.id, { tuitionEscalationPct: value })}
             />
           </Field>
-          <Field>
+          <Field className="sm:col-span-2">
             <FieldLabel htmlFor="otherEscalation">Other fee escalation %</FieldLabel>
-            <Input
+            <SliderNumberField
               id="otherEscalation"
-              type="number"
+              aria-label="Other fee escalation %"
+              min={0}
+              max={100}
+              step={0.5}
+              suffix="%"
               value={typeof a.otherFeeEscalationPct === 'number' ? a.otherFeeEscalationPct : 0}
-              onChange={(event) =>
-                updateRevenueAssumptions(project.id, { otherFeeEscalationPct: Number(event.target.value) })
-              }
+              onValueChange={(value) => updateRevenueAssumptions(project.id, { otherFeeEscalationPct: value })}
             />
           </Field>
           <Field>
@@ -139,17 +145,19 @@ export function Step5Revenue({ project }: { project: Project }) {
           <CardHeader>
             <CardTitle>Retention</CardTitle>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-3 pt-0 sm:grid-cols-4 lg:grid-cols-7">
+          <CardContent className="grid grid-cols-1 gap-3 pt-0 sm:grid-cols-2 lg:grid-cols-4">
             {groups.map((group) => (
               <Field key={group}>
                 <FieldLabel htmlFor={`retention-${group}`}>{YEAR_GROUP_LABELS[group]}</FieldLabel>
-                <Input
+                <SliderNumberField
                   id={`retention-${group}`}
-                  type="number"
+                  aria-label={`${YEAR_GROUP_LABELS[group]} retention %`}
                   min={0}
                   max={100}
+                  step={0.5}
+                  suffix="%"
                   value={a.retentionPct[group] ?? 100}
-                  onChange={(event) => setRetention(group, Number(event.target.value))}
+                  onValueChange={(value) => setRetention(group, value)}
                 />
               </Field>
             ))}
@@ -162,37 +170,36 @@ export function Step5Revenue({ project }: { project: Project }) {
           <CardHeader>
             <CardTitle>New intake per forecast year</CardTitle>
           </CardHeader>
-          <CardContent className="max-h-[32rem] overflow-auto pt-0">
-            <table className="data-table w-full min-w-max border-collapse text-sm">
-              <thead>
-                <tr>
-                  <th className="p-2 text-left font-medium text-muted-foreground">Year group</th>
-                  {Array.from({ length: project.calendar.forecastYears }, (_, index) => (
-                    <th key={index} className="p-2 text-left font-medium text-muted-foreground">
-                      Year {index + 1}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {groups.map((group) => (
-                  <tr key={group} className="border-t border-border">
-                    <td className="p-2 font-medium text-foreground">{YEAR_GROUP_LABELS[group]}</td>
-                    {Array.from({ length: project.calendar.forecastYears }, (_, index) => (
-                      <td key={index} className="p-2">
-                        <Input
-                          type="number"
-                          min={0}
-                          className="w-24"
-                          value={a.newIntake[group]?.[index] ?? 0}
-                          onChange={(event) => setIntake(group, index, Number(event.target.value))}
-                        />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <CardContent className="pt-0">
+            <DataGrid
+              rows={groups}
+              getRowId={(group) => group}
+              columns={[
+                {
+                  id: 'group',
+                  label: 'Year group',
+                  kind: 'readonly',
+                  width: 140,
+                  minWidth: 120,
+                  pinned: 'left',
+                  getValue: (group) => YEAR_GROUP_LABELS[group],
+                },
+                ...Array.from({ length: project.calendar.forecastYears }, (_, index): GridColumnDef<YearGroupId> => ({
+                  id: `intake-${index}`,
+                  label: `Year ${index + 1}`,
+                  kind: 'numeric',
+                  width: 104,
+                  minWidth: 92,
+                  allowFillDown: true,
+                  allowUplift: true,
+                  getValue: (group) => a.newIntake[group]?.[index] ?? 0,
+                  onCommit: (group, value) => setIntake(group, index, toNumberOrZero(value)),
+                })),
+              ]}
+              mode="edit"
+              gridId="wizard-step5-intake"
+              ariaLabel="New intake per forecast year"
+            />
           </CardContent>
         </Card>
       ) : null}
@@ -201,38 +208,44 @@ export function Step5Revenue({ project }: { project: Project }) {
         <CardHeader>
           <CardTitle>Discounts</CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-x-4 gap-y-4 pt-0 sm:grid-cols-4">
+        <CardContent className="grid grid-cols-1 gap-x-4 gap-y-4 pt-0 sm:grid-cols-2">
           <Field>
             <FieldLabel htmlFor="siblingPct">Sibling discount %</FieldLabel>
-            <Input
+            <SliderNumberField
               id="siblingPct"
-              type="number"
+              aria-label="Sibling discount %"
               min={0}
               max={100}
+              step={0.5}
+              suffix="%"
               value={a.discounts.siblingPct}
-              onChange={(event) => patchDiscounts({ siblingPct: Number(event.target.value) })}
+              onValueChange={(value) => patchDiscounts({ siblingPct: value })}
             />
           </Field>
           <Field>
             <FieldLabel htmlFor="siblingEligiblePct">Eligible for sibling %</FieldLabel>
-            <Input
+            <SliderNumberField
               id="siblingEligiblePct"
-              type="number"
+              aria-label="Eligible for sibling %"
               min={0}
               max={100}
+              step={0.5}
+              suffix="%"
               value={a.discounts.siblingEligiblePct}
-              onChange={(event) => patchDiscounts({ siblingEligiblePct: Number(event.target.value) })}
+              onValueChange={(value) => patchDiscounts({ siblingEligiblePct: value })}
             />
           </Field>
           <Field>
             <FieldLabel htmlFor="staffChildPct">Staff child discount %</FieldLabel>
-            <Input
+            <SliderNumberField
               id="staffChildPct"
-              type="number"
+              aria-label="Staff child discount %"
               min={0}
               max={100}
+              step={0.5}
+              suffix="%"
               value={a.discounts.staffChildPct}
-              onChange={(event) => patchDiscounts({ staffChildPct: Number(event.target.value) })}
+              onValueChange={(value) => patchDiscounts({ staffChildPct: value })}
             />
           </Field>
           <Field>
@@ -247,13 +260,15 @@ export function Step5Revenue({ project }: { project: Project }) {
           </Field>
           <Field>
             <FieldLabel htmlFor="scholarshipPct">Scholarship discount %</FieldLabel>
-            <Input
+            <SliderNumberField
               id="scholarshipPct"
-              type="number"
+              aria-label="Scholarship discount %"
               min={0}
               max={100}
+              step={0.5}
+              suffix="%"
               value={a.discounts.scholarshipPct}
-              onChange={(event) => patchDiscounts({ scholarshipPct: Number(event.target.value) })}
+              onValueChange={(value) => patchDiscounts({ scholarshipPct: value })}
             />
           </Field>
           <Field>
@@ -268,24 +283,28 @@ export function Step5Revenue({ project }: { project: Project }) {
           </Field>
           <Field>
             <FieldLabel htmlFor="earlyPaymentPct">Early payment discount %</FieldLabel>
-            <Input
+            <SliderNumberField
               id="earlyPaymentPct"
-              type="number"
+              aria-label="Early payment discount %"
               min={0}
               max={100}
+              step={0.5}
+              suffix="%"
               value={a.discounts.earlyPaymentPct}
-              onChange={(event) => patchDiscounts({ earlyPaymentPct: Number(event.target.value) })}
+              onValueChange={(value) => patchDiscounts({ earlyPaymentPct: value })}
             />
           </Field>
           <Field>
             <FieldLabel htmlFor="earlyPaymentTakeUpPct">Early payment take-up %</FieldLabel>
-            <Input
+            <SliderNumberField
               id="earlyPaymentTakeUpPct"
-              type="number"
+              aria-label="Early payment take-up %"
               min={0}
               max={100}
+              step={0.5}
+              suffix="%"
               value={a.discounts.earlyPaymentTakeUpPct}
-              onChange={(event) => patchDiscounts({ earlyPaymentTakeUpPct: Number(event.target.value) })}
+              onValueChange={(value) => patchDiscounts({ earlyPaymentTakeUpPct: value })}
             />
           </Field>
         </CardContent>
@@ -300,67 +319,76 @@ export function Step5Revenue({ project }: { project: Project }) {
             <p className="mb-2 text-xs font-medium text-muted-foreground">
               Term split (must total 100%, currently {termSplitTotal.toFixed(1)}%)
             </p>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-4">
               {a.collections.termSplit.map((value, index) => (
-                <Field key={index} className="w-24">
-                  <FieldLabel>Term {index + 1}</FieldLabel>
-                  <Input
-                    type="number"
+                <Field key={index} className="w-56">
+                  <FieldLabel htmlFor={`term-split-${index}`}>Term {index + 1}</FieldLabel>
+                  <SliderNumberField
+                    id={`term-split-${index}`}
+                    aria-label={`Term ${index + 1} share %`}
                     min={0}
                     max={100}
+                    step={0.5}
+                    suffix="%"
                     value={value}
-                    onChange={(event) => setTermSplit(index, Number(event.target.value))}
+                    onValueChange={(next) => setTermSplit(index, next)}
                   />
                 </Field>
               ))}
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field>
               <FieldLabel htmlFor="payInFullPct">Pay-in-full uptake %</FieldLabel>
-              <Input
+              <SliderNumberField
                 id="payInFullPct"
-                type="number"
+                aria-label="Pay-in-full uptake %"
                 min={0}
                 max={100}
+                step={0.5}
+                suffix="%"
                 value={a.collections.payInFullPct}
-                onChange={(event) => patchCollections({ payInFullPct: Number(event.target.value) })}
+                onValueChange={(value) => patchCollections({ payInFullPct: value })}
               />
             </Field>
             <Field>
               <FieldLabel htmlFor="badDebtPct">Bad debt %</FieldLabel>
-              <Input
+              <SliderNumberField
                 id="badDebtPct"
-                type="number"
+                aria-label="Bad debt %"
                 min={0}
                 max={100}
+                step={0.5}
+                suffix="%"
                 value={a.collections.badDebtPct}
-                onChange={(event) => patchCollections({ badDebtPct: Number(event.target.value) })}
+                onValueChange={(value) => patchCollections({ badDebtPct: value })}
               />
             </Field>
             <Field>
               <FieldLabel htmlFor="dsoDays">Days sales outstanding</FieldLabel>
-              <Input
+              <SliderNumberField
                 id="dsoDays"
-                type="number"
+                aria-label="Days sales outstanding"
                 min={0}
                 max={365}
+                step={1}
+                suffix="days"
                 value={a.collections.dsoDays}
-                onChange={(event) => patchCollections({ dsoDays: Number(event.target.value) })}
+                onValueChange={(value) => patchCollections({ dsoDays: value })}
               />
             </Field>
             <Field>
               <FieldLabel htmlFor="taxRatePct">Tax rate %</FieldLabel>
-              <Input
+              <SliderNumberField
                 id="taxRatePct"
-                type="number"
+                aria-label="Tax rate %"
                 min={0}
                 max={100}
+                step={0.5}
+                suffix="%"
                 value={a.taxRatePct}
-                onChange={(event) =>
-                  updateRevenueAssumptions(project.id, { taxRatePct: Number(event.target.value) })
-                }
+                onValueChange={(value) => updateRevenueAssumptions(project.id, { taxRatePct: value })}
               />
             </Field>
           </div>

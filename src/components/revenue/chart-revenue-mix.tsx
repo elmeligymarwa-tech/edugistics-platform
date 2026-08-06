@@ -5,7 +5,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { Project } from '@/domain/schema'
 import type { Forecast } from '@/engine/revenue'
-import { formatCompactMoney } from '@/lib/format'
+import { formatCompactMoneySigned } from '@/lib/format'
 import { ChartTooltip, renderChartLegend } from './chart-tooltip'
 
 const CATEGORY_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)']
@@ -46,7 +46,7 @@ export function ChartRevenueMix({ project, forecast }: { project: Project; forec
     })),
     ...(overflow.length > 0 ? [{ key: 'other', name: 'Other', color: 'var(--muted-foreground)' }] : []),
   ]
-  const tickFormatter = (value: number) => formatCompactMoney(value, project.meta)
+  const tickFormatter = (value: number) => formatCompactMoneySigned(value, project.meta)
 
   return (
     <Card>

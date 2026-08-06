@@ -11,6 +11,7 @@ const CSS_COLOR_TOKENS = [
   '--border',
   '--primary',
   '--card',
+  '--destructive',
 ] as const
 
 export type PdfColorToken = (typeof CSS_COLOR_TOKENS)[number]

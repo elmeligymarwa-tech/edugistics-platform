@@ -5,7 +5,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { Project } from '@/domain/schema'
 import type { CostForecast } from '@/engine/costs'
-import { formatCompactMoney } from '@/lib/format'
+import { formatCompactMoneySigned } from '@/lib/format'
 import { ChartTooltip, renderChartLegend } from '@/components/revenue/chart-tooltip'
 
 export function ChartRevenueVsCost({ project, costForecast }: { project: Project; costForecast: CostForecast }) {
@@ -14,7 +14,7 @@ export function ChartRevenueVsCost({ project, costForecast }: { project: Project
     netRevenue: year.netRevenue,
     totalCost: year.payroll + year.opex + year.stm + year.depreciation,
   }))
-  const tickFormatter = (value: number) => formatCompactMoney(value, project.meta)
+  const tickFormatter = (value: number) => formatCompactMoneySigned(value, project.meta)
 
   return (
     <Card>

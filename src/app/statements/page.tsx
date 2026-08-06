@@ -5,6 +5,7 @@ import { FileText } from 'lucide-react'
 import { PageHeader } from '@/components/app-shell/page-header'
 import { EmptyState } from '@/components/module-shell/empty-state'
 import { ModuleLoading } from '@/components/module-shell/module-loading'
+import { ReviewAction } from '@/components/consultant/review-action'
 import { BreakEvenPanel } from '@/components/statements/break-even-panel'
 import { CashFlowTable } from '@/components/statements/cash-flow-table'
 import { ProfitAndLossTable } from '@/components/statements/profit-and-loss-table'
@@ -17,7 +18,11 @@ export default function StatementsPage() {
 
   return (
     <>
-      <PageHeader title="Statements" description="Generated financial statements by year." />
+      <PageHeader
+        title="Statements"
+        description="Generated financial statements by year."
+        actions={project && costForecast ? <ReviewAction project={project} forecast={costForecast} /> : null}
+      />
       {!hasHydrated ? <ModuleLoading /> : null}
       {hasHydrated && !project ? (
         <EmptyState

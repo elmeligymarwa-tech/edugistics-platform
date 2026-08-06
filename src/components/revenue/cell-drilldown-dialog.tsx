@@ -1,8 +1,11 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import type { FormattedCurrency } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 export interface DrilldownRow {
   label: string
-  value: string
+  /** Pass the `{text, negative}` object from formatMoney/formatCompactMoney for currency rows so colour comes from the formatter, not a plain string. */
+  value: string | FormattedCurrency
   emphasis?: boolean
 }
 
@@ -28,22 +31,28 @@ export function CellDrilldownDialog({
             {content.description ? <DialogDescription>{content.description}</DialogDescription> : null}
           </DialogHeader>
           <dl className="flex flex-col divide-y divide-border">
-            {content.rows.map((row, index) => (
-              <div key={index} className="flex items-center justify-between gap-4 py-2 text-sm">
-                <dt className={row.emphasis ? 'font-medium text-foreground' : 'text-muted-foreground'}>
-                  {row.label}
-                </dt>
-                <dd
-                  className={
-                    row.emphasis
-                      ? 'font-semibold text-foreground tabular-nums'
-                      : 'text-foreground tabular-nums'
-                  }
-                >
-                  {row.value}
-                </dd>
-              </div>
-            ))}
+            {content.rows.map((row, index) => {
+              const { value } = row
+              const isFormattedCurrency = typeof value === 'object'
+              const text = isFormattedCurrency ? value.text : value
+              const negative = isFormattedCurrency && value.negative
+              return (
+                <div key={index} className="flex items-center justify-between gap-4 py-2 text-sm">
+                  <dt className={row.emphasis ? 'font-medium text-foreground' : 'text-muted-foreground'}>
+                    {row.label}
+                  </dt>
+                  <dd
+                    className={cn(
+                      'tabular-nums',
+                      row.emphasis ? 'font-semibold' : '',
+                      negative ? 'text-destructive' : 'text-foreground',
+                    )}
+                  >
+                    {text}
+                  </dd>
+                </div>
+              )
+            })}
           </dl>
         </DialogContent>
       ) : null}

@@ -1,0 +1,217 @@
+{
+  "version": 1,
+  "exportedAt": "2026-08-05T00:00:00.000Z",
+  "project": {
+    "id": "sample-verification",
+    "schemaVersion": 1,
+    "meta": {
+      "schoolName": "Sample Verification School",
+      "logoBase64": null,
+      "country": "Egypt",
+      "currencyCode": "EGP",
+      "currencySymbol": "E£",
+      "decimalPlaces": 0,
+      "locale": "en-GB"
+    },
+    "calendar": {
+      "academicYearStart": 2027,
+      "financialYearStartMonth": 9,
+      "forecastYears": 3,
+      "termsPerYear": 3
+    },
+    "yearGroups": [
+      "Y1",
+      "Y2"
+    ],
+    "capacity": {
+      "Y1": {
+        "classrooms": 2,
+        "studentsPerClassroom": 25,
+        "teachers": 2,
+        "teachingAssistants": 0,
+        "coTeachers": 0,
+        "maxCapacityPct": 100,
+        "maxStudents": null,
+        "openFromYearIndex": 0,
+        "occupancyPctByYear": [
+          100
+        ]
+      },
+      "Y2": {
+        "classrooms": 2,
+        "studentsPerClassroom": 25,
+        "teachers": 2,
+        "teachingAssistants": 0,
+        "coTeachers": 0,
+        "maxCapacityPct": 100,
+        "maxStudents": null,
+        "openFromYearIndex": 0,
+        "occupancyPctByYear": [
+          100
+        ]
+      }
+    },
+    "fees": {
+      "categories": [
+        {
+          "id": "tuition",
+          "name": "Tuition",
+          "mandatory": true,
+          "uptakePct": 100,
+          "includedInStm": true,
+          "discountable": true,
+          "taxTreatment": "exempt",
+          "billingFrequency": "termly",
+          "chargeBasis": "perStudent",
+          "escalationGroup": "tuition"
+        },
+        {
+          "id": "bus",
+          "name": "Bus",
+          "mandatory": false,
+          "uptakePct": 50,
+          "includedInStm": true,
+          "discountable": false,
+          "taxTreatment": "exempt",
+          "billingFrequency": "annual",
+          "chargeBasis": "perStudent",
+          "escalationGroup": "other"
+        }
+      ],
+      "amounts": {
+        "Y1": {
+          "tuition": 100000,
+          "bus": 20000
+        },
+        "Y2": {
+          "tuition": 100000,
+          "bus": 20000
+        }
+      }
+    },
+    "revenueAssumptions": {
+      "schoolPlan": {
+        "enabled": false,
+        "maxSchoolStudents": null,
+        "totalStudentsByYear": [],
+        "taperPct": 40
+      },
+      "enrolmentModel": "occupancy",
+      "schoolOccupancyPctByYear": [],
+      "tuitionEscalationPct": 0,
+      "otherFeeEscalationPct": 0,
+      "newIntake": {},
+      "retentionPct": {},
+      "progression": true,
+      "avgSiblingsPerFamily": 1,
+      "discounts": {
+        "siblingPct": 0,
+        "siblingEligiblePct": 0,
+        "staffChildPct": 0,
+        "staffChildPlaces": 0,
+        "scholarshipPct": 0,
+        "scholarshipPlaces": 0,
+        "earlyPaymentPct": 0,
+        "earlyPaymentTakeUpPct": 0
+      },
+      "collections": {
+        "termSplit": [
+          100
+        ],
+        "payInFullPct": 100,
+        "badDebtPct": 0,
+        "dsoDays": 0
+      },
+      "taxRatePct": 0
+    },
+    "staffing": {
+      "positions": [
+        {
+          "id": "teacher",
+          "title": "Teacher",
+          "section": "teaching",
+          "derivedFromCapacity": true,
+          "manualOverride": false,
+          "headcount": 0,
+          "averageSalary": 200000,
+          "minimumSalary": 160000,
+          "maximumSalary": 260000,
+          "annualIncrementPct": 0,
+          "employerTaxPct": 10,
+          "nationalInsurancePct": 0,
+          "medicalInsurancePct": 0,
+          "pensionPct": 0,
+          "housingAllowance": 0,
+          "transportAllowance": 0,
+          "recruitmentCost": 0,
+          "trainingCost": 0
+        }
+      ]
+    },
+    "stm": {
+      "counterpartyName": "STM Group",
+      "basis": "grossRevenue",
+      "ratePct": 10,
+      "tiers": [],
+      "minimumGuarantee": null,
+      "paymentFrequency": "termly",
+      "startYearIndex": 0,
+      "endYearIndex": null
+    },
+    "createdAt": "2026-08-05T00:00:00.000Z",
+    "updatedAt": "2026-08-05T00:00:00.000Z"
+  },
+  "costModel": {
+    "projectId": "sample-verification",
+    "schemaVersion": 1,
+    "payroll": {
+      "defaultIncrementPct": 0,
+      "derivedRoleMap": {
+        "teacher": "teachers"
+      },
+      "chargeRecruitmentOnNewHiresOnly": true,
+      "turnoverPct": 0,
+      "headcountByYear": {}
+    },
+    "opex": [
+      {
+        "id": "rent",
+        "name": "Rent",
+        "group": "facilities",
+        "basis": "fixed",
+        "amount": 1000000,
+        "escalationPct": 0,
+        "startYearIndex": 0,
+        "endYearIndex": null
+      },
+      {
+        "id": "perstudent",
+        "name": "Learning resources",
+        "group": "academic",
+        "basis": "perStudent",
+        "amount": 1000,
+        "escalationPct": 0,
+        "startYearIndex": 0,
+        "endYearIndex": null
+      }
+    ],
+    "capex": [
+      {
+        "id": "fitout",
+        "name": "Fit out",
+        "amount": 2000000,
+        "yearIndex": 0,
+        "usefulLifeYears": 5,
+        "method": "straightLine"
+      }
+    ],
+    "financing": {
+      "openingCash": 0,
+      "payablesDays": 0,
+      "corporateTaxPct": 20,
+      "carryLossesForward": true
+    },
+    "createdAt": "2026-08-05T00:00:00.000Z",
+    "updatedAt": "2026-08-05T00:00:00.000Z"
+  }
+}

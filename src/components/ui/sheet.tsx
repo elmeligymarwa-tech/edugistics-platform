@@ -52,7 +52,7 @@ function SheetHeader({ className, ...props }: React.ComponentProps<'div'>) {
 }
 
 function SheetTitle({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Title>) {
-  return <DialogPrimitive.Title className={cn('text-lg font-semibold', className)} {...props} />
+  return <DialogPrimitive.Title className={cn('text-lg font-semibold text-heading', className)} {...props} />
 }
 
 export { Sheet, SheetTrigger, SheetClose, SheetContent, SheetHeader, SheetTitle }

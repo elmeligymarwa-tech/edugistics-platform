@@ -4,8 +4,9 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 import type { TooltipContentProps } from 'recharts'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { CurrencyText } from '@/components/ui/currency-text'
 import { renderChartLegend } from '@/components/revenue/chart-tooltip'
-import { formatCompactMoney, formatMoney } from '@/lib/format'
+import { formatCompactMoneySigned, formatMoney } from '@/lib/format'
 import type { ComparisonColumn } from './comparison-types'
 
 const LINE_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)']
@@ -22,7 +23,7 @@ export function ChartScenarioNetProfit({ columns }: { columns: ComparisonColumn[
   })
 
   const tickFormatter = (value: number) =>
-    columns[0] ? formatCompactMoney(value, columns[0].project.meta) : String(value)
+    columns[0] ? formatCompactMoneySigned(value, columns[0].project.meta) : String(value)
 
   const renderTooltip = ({ active, payload, label }: TooltipContentProps) => {
     if (!active || !payload || payload.length === 0) return null
@@ -37,8 +38,8 @@ export function ChartScenarioNetProfit({ columns }: { columns: ComparisonColumn[
               <div key={String(entry.dataKey)} className="flex items-center gap-2">
                 <span aria-hidden className="h-0.5 w-3 shrink-0 rounded-full" style={{ backgroundColor: entry.color }} />
                 <dt className="text-muted-foreground">{entry.name}</dt>
-                <dd className="ml-auto font-semibold tabular-nums text-foreground">
-                  {column ? formatMoney(value, column.project.meta) : value}
+                <dd className="ml-auto font-semibold tabular-nums">
+                  {column ? <CurrencyText value={formatMoney(value, column.project.meta)} /> : value}
                 </dd>
               </div>
             )

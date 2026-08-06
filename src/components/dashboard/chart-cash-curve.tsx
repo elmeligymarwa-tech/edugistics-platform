@@ -6,13 +6,13 @@ import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Too
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { Project } from '@/domain/schema'
 import type { CostForecast } from '@/engine/costs'
-import { formatCompactMoney } from '@/lib/format'
+import { formatCompactMoney, formatCompactMoneySigned } from '@/lib/format'
 import { ChartTooltip } from '@/components/revenue/chart-tooltip'
 
 export function ChartCashCurve({ project, costForecast }: { project: Project; costForecast: CostForecast }) {
   const gradientId = useId()
   const data = costForecast.years.map((year) => ({ label: year.label, closingCash: year.closingCash }))
-  const tickFormatter = (value: number) => formatCompactMoney(value, project.meta)
+  const tickFormatter = (value: number) => formatCompactMoneySigned(value, project.meta)
   const lowPointYear = costForecast.years.find((year) => year.closingCash === costForecast.cashLowPoint)
 
   return (

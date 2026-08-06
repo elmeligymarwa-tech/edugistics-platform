@@ -1,3 +1,4 @@
+import { CurrencyText } from '@/components/ui/currency-text'
 import { StatTile } from '@/components/ui/stat-tile'
 import type { Project } from '@/domain/schema'
 import type { CostForecast } from '@/engine/costs'
@@ -28,10 +29,14 @@ export function PayrollSummaryCards({
         value={formatNumber(headcount, project.meta.locale)}
         hint={finalStatement?.label}
       />
-      <StatTile label="Total payroll" value={formatMoney(totalPayroll, project.meta)} hint={finalStatement?.label} />
+      <StatTile
+        label="Total payroll"
+        value={<CurrencyText value={formatMoney(totalPayroll, project.meta)} />}
+        hint={finalStatement?.label}
+      />
       <StatTile
         label="Average cost per employee"
-        value={formatMoney(averageCostPerEmployee, project.meta)}
+        value={<CurrencyText value={formatMoney(averageCostPerEmployee, project.meta)} />}
         hint={finalStatement?.label}
       />
       <StatTile
