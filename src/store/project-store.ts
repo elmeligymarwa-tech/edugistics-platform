@@ -150,6 +150,49 @@ function normalizeStaffingPositions(data: Record<string, unknown>): Record<strin
   return { ...data, staffing: { ...(staffing as Record<string, unknown>), positions: nextPositions } }
 }
 
+/**
+ * Minimum/maximum salary, pension %, medical insurance %, housing allowance, transport
+ * allowance, recruitment cost and training cost dropped out of the staffing grid's visible
+ * columns, but the fields stay on StaffPositionSchema and the cost engine still reads them —
+ * so a project saved before this change could otherwise go on being charged for a figure
+ * the grid no longer shows or lets you edit. Zeroing them here means that charge disappears
+ * the moment the project loads, as a visible drop in Total cost, rather than silently.
+ * Self-guarding — a no-op once every position has already been cleared.
+ */
+const HIDDEN_STAFFING_FIELDS = [
+  'minimumSalary',
+  'maximumSalary',
+  'medicalInsurancePct',
+  'pensionPct',
+  'housingAllowance',
+  'transportAllowance',
+  'recruitmentCost',
+  'trainingCost',
+] as const
+
+function zeroHiddenStaffingFields(data: Record<string, unknown>): Record<string, unknown> {
+  const staffing = data.staffing
+  if (typeof staffing !== 'object' || staffing === null) return data
+  const positions = (staffing as Record<string, unknown>).positions
+  if (!Array.isArray(positions)) return data
+
+  let changed = false
+  const nextPositions = positions.map((entry) => {
+    if (typeof entry !== 'object' || entry === null) return entry
+    const position = entry as Record<string, unknown>
+    const zeroed: Record<string, unknown> = {}
+    for (const key of HIDDEN_STAFFING_FIELDS) {
+      if (position[key] !== 0) zeroed[key] = 0
+    }
+    if (Object.keys(zeroed).length === 0) return position
+    changed = true
+    return { ...position, ...zeroed }
+  })
+
+  if (!changed) return data
+  return { ...data, staffing: { ...(staffing as Record<string, unknown>), positions: nextPositions } }
+}
+
 /** Upgrades a raw project object to the current schemaVersion. */
 export function migrateProject(data: unknown): unknown {
   if (typeof data !== 'object' || data === null) return data
@@ -162,6 +205,7 @@ export function migrateProject(data: unknown): unknown {
   }
   migrated = normalizeCapacityInputs(migrated)
   migrated = normalizeStaffingPositions(migrated)
+  migrated = zeroHiddenStaffingFields(migrated)
   return { ...migrated, schemaVersion: SCHEMA_VERSION }
 }
 

@@ -22,38 +22,16 @@ import { STAFF_SECTION_LABELS, YEAR_GROUP_LABELS } from '@/lib/wizard-data'
 import { useProjectCostForecast, useProjectStore } from '@/store/project-store'
 import { createStaffPosition } from './create-staff-position'
 
-const PERCENT_FIELDS = new Set<keyof StaffPosition>([
-  'annualIncrementPct',
-  'employerTaxPct',
-  'nationalInsurancePct',
-  'medicalInsurancePct',
-  'pensionPct',
-])
+const PERCENT_FIELDS = new Set<keyof StaffPosition>(['annualIncrementPct', 'employerTaxPct', 'nationalInsurancePct'])
 
-const MONEY_FIELDS = new Set<keyof StaffPosition>([
-  'averageSalary',
-  'minimumSalary',
-  'maximumSalary',
-  'housingAllowance',
-  'transportAllowance',
-  'recruitmentCost',
-  'trainingCost',
-])
+const MONEY_FIELDS = new Set<keyof StaffPosition>(['averageSalary'])
 
 const NUMBER_FIELDS: Array<{ key: keyof StaffPosition; label: string }> = [
-  { key: 'averageSalary', label: 'Average salary' },
-  { key: 'minimumSalary', label: 'Minimum salary' },
-  { key: 'maximumSalary', label: 'Maximum salary' },
-  { key: 'annualIncrementPct', label: 'Annual increment %' },
+  { key: 'averageSalary', label: 'Expected salary' },
+  { key: 'annualIncrementPct', label: 'Annual increase %' },
   { key: 'employerTaxPct', label: 'Employer tax %' },
   { key: 'nationalInsurancePct', label: 'National insurance %' },
-  { key: 'medicalInsurancePct', label: 'Medical insurance %' },
-  { key: 'pensionPct', label: 'Pension %' },
-  { key: 'housingAllowance', label: 'Housing allowance' },
-  { key: 'transportAllowance', label: 'Transport allowance' },
-  { key: 'recruitmentCost', label: 'Recruitment cost' },
-  { key: 'trainingCost', label: 'Training cost' },
-  { key: 'monthsWorked', label: 'Months worked' },
+  { key: 'monthsWorked', label: 'Contract months' },
 ]
 
 /** Pre-filled role suffix per section when bulk-adding by year group, e.g. "FS1 Teacher". Every section can still be typed over. */
@@ -217,6 +195,7 @@ export function PositionEditor({ project }: { project: Project }) {
             <button
               type="button"
               aria-label={`Duplicate ${position.title}`}
+              onMouseDown={(event) => event.stopPropagation()}
               onClick={row.onDuplicate}
               className="shrink-0 text-muted-foreground hover:text-foreground"
             >
@@ -225,6 +204,7 @@ export function PositionEditor({ project }: { project: Project }) {
             <button
               type="button"
               aria-label={`Remove ${position.title}`}
+              onMouseDown={(event) => event.stopPropagation()}
               onClick={row.onRemove}
               className="shrink-0 text-muted-foreground hover:text-destructive"
             >

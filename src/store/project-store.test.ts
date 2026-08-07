@@ -247,6 +247,72 @@ describe('migrateProject', () => {
     expect(migrated.capacity.Y2?.occupancyPctByYear).toEqual([50, 75, 100])
     expect(migrated.revenueAssumptions.schoolOccupancyPctByYear).toEqual([])
   })
+
+  it('zeroes the staffing fields dropped from the grid, leaving the rest of the position untouched', () => {
+    const id = useProjectStore.getState().createProject('Legacy Payroll School')
+    useProjectStore.getState().updateStaffing(id, {
+      positions: [
+        {
+          id: 'pos-1',
+          title: 'Teacher',
+          section: 'teaching',
+          derivedFromCapacity: false,
+          manualOverride: false,
+          headcount: 2,
+          averageSalary: 200000,
+          minimumSalary: 160000,
+          maximumSalary: 260000,
+          annualIncrementPct: 5,
+          employerTaxPct: 10,
+          nationalInsurancePct: 8,
+          medicalInsurancePct: 3,
+          pensionPct: 4,
+          housingAllowance: 12000,
+          transportAllowance: 6000,
+          recruitmentCost: 5000,
+          trainingCost: 2000,
+          monthsWorked: 12,
+        },
+      ],
+    })
+    const exported = JSON.parse(useProjectStore.getState().exportProject(id)) as {
+      project: Record<string, unknown>
+    }
+
+    const migrated = migrateProject(exported.project) as {
+      staffing: { positions: Record<string, unknown>[] }
+    }
+    const position = migrated.staffing.positions[0]!
+
+    expect(position.minimumSalary).toBe(0)
+    expect(position.maximumSalary).toBe(0)
+    expect(position.medicalInsurancePct).toBe(0)
+    expect(position.pensionPct).toBe(0)
+    expect(position.housingAllowance).toBe(0)
+    expect(position.transportAllowance).toBe(0)
+    expect(position.recruitmentCost).toBe(0)
+    expect(position.trainingCost).toBe(0)
+
+    // Fields still shown in the grid are untouched.
+    expect(position.averageSalary).toBe(200000)
+    expect(position.headcount).toBe(2)
+    expect(position.annualIncrementPct).toBe(5)
+    expect(position.employerTaxPct).toBe(10)
+    expect(position.nationalInsurancePct).toBe(8)
+    expect(position.monthsWorked).toBe(12)
+  })
+
+  it('leaves a project with already-zeroed hidden staffing fields untouched', () => {
+    const id = useProjectStore.getState().createProject('Clean Payroll School')
+    const exported = JSON.parse(useProjectStore.getState().exportProject(id)) as {
+      project: Record<string, unknown>
+    }
+    const before = JSON.stringify(exported.project)
+
+    const migrated = migrateProject(JSON.parse(before)) as Record<string, unknown>
+
+    expect(JSON.stringify(migrated)).toBe(before)
+  })
 })
 
 describe('cost model', () => {
