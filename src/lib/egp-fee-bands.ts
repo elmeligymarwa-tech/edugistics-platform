@@ -1,12 +1,11 @@
-import { orderedYearGroups, type Project, type YearGroupId } from '@/domain/schema'
+import type { YearGroupId } from '@/domain/schema'
 
 /**
- * Reference EGP annual tuition bands by market positioning, for the British
- * curriculum Egypt preset (and later the AI consultant). Edit these numbers
- * in this one place as the market moves — nothing else in the app hardcodes
- * an EGP figure. Each range runs foundation stage (low) to final secondary
- * year (high); `interpolateFeeLadder` spreads it across the selected year
- * groups.
+ * Reference EGP annual tuition bands by market positioning, used by the AI
+ * consultant's fee-positioning proposals. Edit these numbers in this one
+ * place as the market moves — nothing else in the app hardcodes an EGP
+ * figure. Each range runs foundation stage (low) to final secondary year
+ * (high); `interpolateFeeLadder` spreads it across the selected year groups.
  */
 export const EGP_ANNUAL_TUITION_BANDS = {
   budget: { low: 100_000, high: 140_000 },
@@ -48,12 +47,4 @@ export function interpolateFeeLadder(
   })
 
   return ladder as Record<YearGroupId, number>
-}
-
-/** Convenience wrapper that orders a project's selected year groups before interpolating. */
-export function interpolateFeeLadderForProject(
-  project: Project,
-  positioning: FeePositioning,
-): Record<YearGroupId, number> {
-  return interpolateFeeLadder(positioning, orderedYearGroups(project))
 }

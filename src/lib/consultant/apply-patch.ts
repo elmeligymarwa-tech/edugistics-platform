@@ -1,17 +1,28 @@
 import type { Project } from '@/domain/schema'
 import type { OpexCategory } from '@/domain/costs'
 import { interpolateFeeLadder } from '@/lib/egp-fee-bands'
-import { mergeAmounts } from '@/lib/presets/apply-preset'
 import { orderedYearGroups } from '@/domain/schema'
 import { useProjectStore } from '@/store/project-store'
 import type { ConsultantPatch } from './route-contract'
 
+/** Additive merge, keyed by year group then category id — never drops an existing entry a patch doesn't touch. */
+function mergeAmounts(
+  existing: Record<string, Record<string, number>>,
+  incoming: Record<string, Record<string, number>>,
+): Record<string, Record<string, number>> {
+  const merged: Record<string, Record<string, number>> = { ...existing }
+  for (const [group, byCategory] of Object.entries(incoming)) {
+    merged[group] = { ...merged[group], ...byCategory }
+  }
+  return merged
+}
+
 /**
  * Applies an accepted consultant patch section through the same store
- * update actions the grids and preset system use — never a raw object
- * replace. Called only from the client, only after the user accepts;
- * the API route never touches the store. Every value has already been
- * safeParse-validated against the real domain schemas server-side.
+ * update actions the grids use — never a raw object replace. Called only
+ * from the client, only after the user accepts; the API route never
+ * touches the store. Every value has already been safeParse-validated
+ * against the real domain schemas server-side.
  */
 export function applyConsultantPatch(patch: ConsultantPatch, project: Project): void {
   const store = useProjectStore.getState()

@@ -4,7 +4,6 @@ import { useRef } from 'react'
 import { Image as ImageIcon, Trash2, Upload } from 'lucide-react'
 
 import { DataGrid, toNumberOrZero, type GridColumnDef } from '@/components/grid'
-import { PresetPanel } from '@/components/setup/preset-panel'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Field, FieldDescription, FieldError, FieldLabel } from '@/components/ui/field'
@@ -87,8 +86,6 @@ export function Step1SchoolInfo({ project }: { project: Project }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <PresetPanel project={project} />
-
       <Card>
         <CardContent className="pt-4">
           <div className="grid gap-4 sm:grid-cols-2">

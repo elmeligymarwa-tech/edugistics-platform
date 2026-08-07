@@ -24,7 +24,7 @@ export const ConsultantMessageSchema = z.object({
 
 export type ConsultantMessage = z.infer<typeof ConsultantMessageSchema>
 
-/** A partial patch reusing exactly the domain shapes it touches — the same envelope the preset system uses, so the proposal panel and preset apply share one mental model. */
+/** A partial patch reusing exactly the domain shapes it touches, so the proposal panel and its apply logic share one mental model. */
 export const ConsultantPatchSchema = z.object({
   meta: ProjectMetaSchema.partial().optional(),
   calendar: CalendarConfigSchema.partial().optional(),
