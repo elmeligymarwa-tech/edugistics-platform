@@ -396,7 +396,7 @@ interface ProjectActions {
   updateMeta: (id: string, patch: Partial<ProjectMeta>) => void
   updateCalendar: (id: string, patch: Partial<CalendarConfig>) => void
   updateYearGroups: (id: string, yearGroups: YearGroupId[]) => void
-  /** Removes a year group and any capacity, fee, intake and retention data tied to it. */
+  /** Removes a year group and any capacity, fee and intake override data tied to it. */
   removeYearGroup: (id: string, yearGroup: YearGroupId) => void
   updateCapacity: (id: string, yearGroup: YearGroupId, patch: Partial<YearGroupCapacity>) => void
   updateFees: (id: string, patch: Partial<FeeStructure>) => void
@@ -630,11 +630,8 @@ export const useProjectStore = create<ProjectStoreState>()(
           const amounts = { ...project.fees.amounts }
           delete amounts[yearGroup]
 
-          const newIntake = { ...project.revenueAssumptions.newIntake }
-          delete newIntake[yearGroup]
-
-          const retentionPct = { ...project.revenueAssumptions.retentionPct }
-          delete retentionPct[yearGroup]
+          const intakeOverrides = { ...project.revenueAssumptions.intakeOverrides }
+          delete intakeOverrides[yearGroup]
 
           return {
             projects: {
@@ -644,7 +641,7 @@ export const useProjectStore = create<ProjectStoreState>()(
                 yearGroups: project.yearGroups.filter((g) => g !== yearGroup),
                 capacity,
                 fees: { ...project.fees, amounts },
-                revenueAssumptions: { ...project.revenueAssumptions, newIntake, retentionPct },
+                revenueAssumptions: { ...project.revenueAssumptions, intakeOverrides },
                 updatedAt: new Date().toISOString(),
               },
             },
@@ -871,7 +868,6 @@ export const useProjectStore = create<ProjectStoreState>()(
             ),
             discounts: {
               ...project.revenueAssumptions.discounts,
-              siblingPct: clampPct(project.revenueAssumptions.discounts.siblingPct + discountDeltaPct),
               staffChildPct: clampPct(project.revenueAssumptions.discounts.staffChildPct + discountDeltaPct),
               scholarshipPct: clampPct(
                 project.revenueAssumptions.discounts.scholarshipPct + discountDeltaPct,

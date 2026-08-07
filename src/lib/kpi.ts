@@ -36,6 +36,20 @@ export function newEntrantsForYear(enrolment: YearGroupEnrolment[]): number {
   return enrolment.reduce((sum, e) => sum + e.newEntrants, 0)
 }
 
+/** Sum of every year group's own capacity ceiling — not a separate, overall school ceiling. */
+export function totalYearGroupCapacity(enrolment: YearGroupEnrolment[]): number {
+  return enrolment.reduce((sum, e) => sum + e.capacityCeiling, 0)
+}
+
+/**
+ * Headroom against the school-wide `Max School Students` planning ceiling. Null when no
+ * ceiling is set (unlimited), so callers can render "No limit set" instead of a number.
+ */
+export function remainingSchoolCapacity(maxSchoolStudents: number | null, currentIntake: number): number | null {
+  if (maxSchoolStudents === null) return null
+  return maxSchoolStudents - currentIntake
+}
+
 /** Share of net revenue paid out under the STM agreement for a forecast year. */
 export function stmRevenueSharePct(year: YearForecast): number {
   return year.netRevenue > 0 ? (year.stmLiability / year.netRevenue) * 100 : 0

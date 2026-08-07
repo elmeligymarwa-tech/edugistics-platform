@@ -421,8 +421,6 @@ describe('scenarios', () => {
     useProjectStore.getState().updateRevenueAssumptions(baseId, {
       tuitionEscalationPct: 3,
       discounts: {
-        siblingPct: 10,
-        siblingEligiblePct: 0,
         staffChildPct: 5,
         staffChildPlaces: 0,
         scholarshipPct: 2,
@@ -472,7 +470,7 @@ describe('scenarios', () => {
 
     expect(project.capacity.Y1?.occupancyPctByYear).toEqual([70, 80])
     expect(project.revenueAssumptions.tuitionEscalationPct).toBe(2)
-    expect(project.revenueAssumptions.discounts.siblingPct).toBe(15)
+    expect(project.revenueAssumptions.discounts.staffChildPct).toBe(10)
     expect(project.staffing.positions[0]?.headcount).toBe(8)
     expect(cost.payroll.defaultIncrementPct).toBe(6)
 

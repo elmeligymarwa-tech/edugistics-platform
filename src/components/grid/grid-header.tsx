@@ -1,8 +1,9 @@
 'use client'
 
 import type { Header, HeaderGroup } from '@tanstack/react-table'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, Info } from 'lucide-react'
 
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 import { GridColumnMenu } from './grid-toolbar'
@@ -78,6 +79,17 @@ function renderHeaderCell<TRow>(
         </button>
       ) : null}
       <span className="truncate" title={label}>{label}</span>
+      {isLeaf && columnDef?.tooltip ? (
+        <Tooltip>
+          <TooltipTrigger
+            aria-label={`What is ${label}?`}
+            className="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            <Info className="size-3.5" aria-hidden="true" />
+          </TooltipTrigger>
+          <TooltipContent>{columnDef.tooltip}</TooltipContent>
+        </Tooltip>
+      ) : null}
       {isLeaf && columnDef && mode === 'edit' ? (
         <GridColumnMenu
           columnLabel={columnDef.label}

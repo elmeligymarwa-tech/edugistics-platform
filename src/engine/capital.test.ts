@@ -36,10 +36,10 @@ function makeProject(overrides: Record<string, unknown> = {}): Project {
       amounts: { Y1: { tuition: 100000 } },
     },
     revenueAssumptions: {
-      enrolmentModel: 'occupancy', tuitionEscalationPct: 0, otherFeeEscalationPct: 0,
-      newIntake: {}, retentionPct: {}, progression: true, avgSiblingsPerFamily: 1,
+      tuitionEscalationPct: 0, otherFeeEscalationPct: 0,
+      intakeGrowthRatePct: 0, intakeOverrides: {},
       discounts: {
-        siblingPct: 0, siblingEligiblePct: 0, staffChildPct: 0, staffChildPlaces: 0,
+        staffChildPct: 0, staffChildPlaces: 0,
         scholarshipPct: 0, scholarshipPlaces: 0, earlyPaymentPct: 0,
         earlyPaymentTakeUpPct: 0,
       },

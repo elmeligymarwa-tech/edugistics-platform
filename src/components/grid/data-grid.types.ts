@@ -10,6 +10,8 @@ export interface GridSelectOption {
 export interface GridColumnDef<TRow> {
   id: string
   label: string
+  /** Shown as a hover tooltip on the column header, next to the label. */
+  tooltip?: string
   kind: GridCellKind
   /** Default width in pixels, overridden by a persisted width if one exists for this gridId. */
   width: number
@@ -43,6 +45,12 @@ export interface GridColumnDef<TRow> {
    * default to only its essential columns while keeping the rest a click away.
    */
   secondary?: boolean
+  /**
+   * `kind: 'percent'` only. Swaps the default slider-in-a-popover trigger for a compact
+   * increment/decrement stepper next to the value — no slider, still full keyboard entry
+   * via the normal click-to-edit cell behaviour.
+   */
+  stepper?: boolean
 }
 
 export interface GridColumnGroup<TRow> {

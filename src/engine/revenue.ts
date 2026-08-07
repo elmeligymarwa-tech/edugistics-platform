@@ -12,7 +12,7 @@ import {
 export interface YearGroupEnrolment {
   yearGroup: YearGroupId
   students: number
-  /** Gross joiners, counting replacements for leavers, not just net growth. */
+  /** Net growth over the prior forecast year; zero when the year group held flat or shrank. */
   newEntrants: number
   leavers: number
   capacityCeiling: number
@@ -178,13 +178,11 @@ export function computeEnrolment(project: Project): YearGroupEnrolment[][] {
       const row: YearGroupEnrolment[] = groups.map((group, g) => {
         const students = allocation[group] ?? 0
         const prior = y === 0 ? 0 : (result[y - 1]?.[g]?.students ?? 0)
-        const retention = (a.retentionPct[group] ?? 100) / 100
-        const retained = prior * retention
         return {
           yearGroup: group,
           students,
-          newEntrants: Math.max(0, students - retained),
-          leavers: prior - retained,
+          newEntrants: Math.max(0, students - prior),
+          leavers: Math.max(0, prior - students),
           capacityCeiling: capacityCeiling(project, group),
         }
       })
@@ -194,39 +192,39 @@ export function computeEnrolment(project: Project): YearGroupEnrolment[][] {
     return result
   }
 
+  /**
+   * Year one always comes from capacity occupancy — the "current intake" set in Step 3.
+   * Every later year compounds the school-wide intake growth rate onto the prior year's
+   * students, capped at that year group's own ceiling, unless a per-cell override in
+   * intakeOverrides pins that (year group, year) figure directly — an override is taken
+   * as-is, uncapped, the same way an over-capacity entry in Step 3 is shown rather than
+   * silently rewritten.
+   */
   for (let y = 0; y < years; y += 1) {
     const row: YearGroupEnrolment[] = []
     for (let g = 0; g < groups.length; g += 1) {
       const group = groups[g] as YearGroupId
       const ceiling = capacityCeiling(project, group)
       const capacity = project.capacity[group]
-      const intake = a.newIntake[group]?.[y] ?? 0
+      const prior = y === 0 ? 0 : (result[y - 1]?.[g]?.students ?? 0)
 
       let students: number
-      let newEntrants: number
-      let leavers = 0
-
-      if (a.enrolmentModel === 'occupancy' || y === 0) {
-        const occ = capacity ? occupancyForYear(rampFor(project, group), y) : 0
+      if (y === 0) {
+        const occ = capacity ? occupancyForYear(rampFor(project, group), 0) : 0
         students = Math.min(ceiling, (ceiling * occ) / 100)
-        const prior = y === 0 ? 0 : (result[y - 1]?.[g]?.students ?? 0)
-        const retention = (a.retentionPct[group] ?? 100) / 100
-        const retained = prior * retention
-        leavers = prior - retained
-        newEntrants = Math.max(0, students - retained)
       } else {
-        const priorGroupPrevYear =
-          a.progression && g > 0 ? (result[y - 1]?.[g - 1]?.students ?? 0) : 0
-        const sameGroupPrevYear = result[y - 1]?.[g]?.students ?? 0
-        const retention = (a.retentionPct[group] ?? 100) / 100
-        const source = a.progression ? priorGroupPrevYear : sameGroupPrevYear
-        const carried = source * retention
-        leavers = source - carried
-        students = Math.min(ceiling, carried + intake)
-        newEntrants = Math.max(0, students - carried)
+        const override = a.intakeOverrides[group]?.[y] ?? null
+        const grown = prior * (1 + a.intakeGrowthRatePct / 100)
+        students = override ?? Math.min(ceiling, grown)
       }
 
-      row.push({ yearGroup: group, students, newEntrants, leavers, capacityCeiling: ceiling })
+      row.push({
+        yearGroup: group,
+        students,
+        newEntrants: Math.max(0, students - prior),
+        leavers: Math.max(0, prior - students),
+        capacityCeiling: ceiling,
+      })
     }
     result.push(row)
   }
@@ -245,14 +243,8 @@ interface RevenueSlice {
   byYearGroup: Record<string, number>
 }
 
-function payingUnits(
-  category: FeeCategory,
-  enrolment: YearGroupEnrolment,
-  avgSiblings: number,
-): number {
+function payingUnits(category: FeeCategory, enrolment: YearGroupEnrolment): number {
   switch (category.chargeBasis) {
-    case 'perFamily':
-      return enrolment.students / Math.max(1, avgSiblings)
     case 'oneOffOnEntry':
       return enrolment.newEntrants
     default:
@@ -294,8 +286,7 @@ function revenueForYear(
 
       const fee = base * escalationFactor(project, category, yearIndex)
       const uptake = category.mandatory ? 100 : category.uptakePct
-      const charged =
-        fee * payingUnits(category, entry, a.avgSiblingsPerFamily) * (uptake / 100)
+      const charged = fee * payingUnits(category, entry) * (uptake / 100)
       if (charged === 0) continue
 
       const { revenue, tax } = netOfTax(charged, category, a.taxRatePct)
@@ -317,9 +308,9 @@ function revenueForYear(
 
 /**
  * Discounts are counted per student, not blended across revenue. A child on a
- * scholarship does not also take a staff or sibling discount, so the three are
- * allocated in priority order against the student roll. Early payment is a
- * settlement discount and applies on top.
+ * scholarship does not also take a staff discount, so the two are allocated in
+ * priority order against the student roll. Early payment is a settlement
+ * discount and applies on top.
  */
 export function discountRate(project: Project, totalStudents: number): number {
   const d = project.revenueAssumptions.discounts
@@ -329,13 +320,8 @@ export function discountRate(project: Project, totalStudents: number): number {
   const scholarship = Math.min(d.scholarshipPlaces, remaining)
   remaining -= scholarship
   const staff = Math.min(d.staffChildPlaces, remaining)
-  remaining -= staff
-  const sibling = Math.min((d.siblingEligiblePct / 100) * totalStudents, remaining)
 
-  const weighted =
-    scholarship * (d.scholarshipPct / 100) +
-    staff * (d.staffChildPct / 100) +
-    sibling * (d.siblingPct / 100)
+  const weighted = scholarship * (d.scholarshipPct / 100) + staff * (d.staffChildPct / 100)
 
   const early = (d.earlyPaymentPct / 100) * (d.earlyPaymentTakeUpPct / 100)
 

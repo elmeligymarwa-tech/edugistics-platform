@@ -24,7 +24,7 @@ export const WIZARD_STEPS = [
   { title: 'Curriculum', description: 'Year groups the school teaches.' },
   { title: 'Capacity', description: 'Classrooms, staffing and occupancy.' },
   { title: 'Fees', description: 'Fee categories and amounts per year group.' },
-  { title: 'Revenue assumptions', description: 'Escalation, retention, discounts and collections.' },
+  { title: 'Revenue assumptions', description: 'Growth, escalation, discounts and collections.' },
   { title: 'Staffing', description: 'Positions, headcount and compensation defaults.' },
 ] as const
 

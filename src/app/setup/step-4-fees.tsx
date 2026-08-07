@@ -31,7 +31,6 @@ const BILLING_FREQUENCY_LABELS: Record<string, string> = {
 }
 const CHARGE_BASIS_LABELS: Record<string, string> = {
   perStudent: 'Per student',
-  perFamily: 'Per family',
   oneOffOnEntry: 'One-off on entry',
 }
 const ESCALATION_GROUP_LABELS: Record<string, string> = { tuition: 'Tuition', other: 'Other' }

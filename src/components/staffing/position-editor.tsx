@@ -247,6 +247,9 @@ export function PositionEditor({ project }: { project: Project }) {
         label,
         kind: PERCENT_FIELDS.has(key) ? 'percent' : 'numeric',
         ...(PERCENT_FIELDS.has(key) ? COLUMN_WIDTH.percent : MONEY_FIELDS.has(key) ? COLUMN_WIDTH.money : COLUMN_WIDTH.count),
+        // Staffing uses an increment/decrement stepper for every percent field, not the
+        // slider popover other percent-kind grids (fees, loans, opex) still use.
+        stepper: PERCENT_FIELDS.has(key),
         allowFillDown: true,
         allowUplift: key !== 'monthsWorked',
         disabled: (row) => row.kind !== 'position',

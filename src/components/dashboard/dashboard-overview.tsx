@@ -17,6 +17,7 @@ import {
 import { CapitalKpiBand } from './capital-kpi-band'
 import { DashboardControls } from './dashboard-controls'
 import { FinanceKpiBand } from './finance-kpi-band'
+import { SchoolCapacityKpiBand } from './school-capacity-kpi-band'
 import { StudentsKpiBand } from './students-kpi-band'
 
 export interface ComparisonTarget {
@@ -118,6 +119,13 @@ export function DashboardOverview({
         scenarios={scenarioOptions}
       />
       <StudentsKpiBand
+        project={project}
+        forecast={forecast}
+        yearIndex={yearIndex}
+        comparison={comparison}
+        onOpenDrilldown={setDrilldown}
+      />
+      <SchoolCapacityKpiBand
         project={project}
         forecast={forecast}
         yearIndex={yearIndex}

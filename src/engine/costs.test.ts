@@ -57,16 +57,11 @@ function makeProject(overrides: Record<string, unknown> = {}): Project {
       amounts: { Y1: { tuition: 100000 } },
     },
     revenueAssumptions: {
-      enrolmentModel: 'occupancy',
       tuitionEscalationPct: 0,
       otherFeeEscalationPct: 0,
-      newIntake: {},
-      retentionPct: {},
-      progression: true,
-      avgSiblingsPerFamily: 1,
+      intakeGrowthRatePct: 0,
+      intakeOverrides: {},
       discounts: {
-        siblingPct: 0,
-        siblingEligiblePct: 0,
         staffChildPct: 0,
         staffChildPlaces: 0,
         scholarshipPct: 0,
@@ -159,12 +154,16 @@ describe('headcount scaling', () => {
           teachingAssistants: 0,
           coTeachers: 0,
           maxCapacityPct: 100,
-          occupancyPctByYear: [25, 50, 100],
+          occupancyPctByYear: [25],
         },
+      },
+      revenueAssumptions: {
+        ...makeProject().revenueAssumptions,
+        intakeGrowthRatePct: 100,
       },
     })
     const payroll = computePayroll(project, makeCost())
-    // 25 students needs 1 class of 4, 50 needs 2, 100 needs all 4.
+    // Year one at 25% (25 students, 1 class of 4), then doubling: 50 needs 2, 100 needs all 4.
     expect(payroll.map((p) => p.headcount)).toEqual([1, 2, 4])
   })
 })
@@ -345,8 +344,13 @@ describe('statements', () => {
           teachingAssistants: 0,
           coTeachers: 0,
           maxCapacityPct: 100,
-          occupancyPctByYear: [10, 100, 100],
+          occupancyPctByYear: [10],
         },
+      },
+      revenueAssumptions: {
+        ...makeProject().revenueAssumptions,
+        // 10% year one, then a 900% growth rate reaches (and caps at) 100% for years two and three.
+        intakeGrowthRatePct: 900,
       },
     })
     const cost = makeCost({
@@ -373,8 +377,13 @@ describe('statements', () => {
           teachingAssistants: 0,
           coTeachers: 0,
           maxCapacityPct: 100,
-          occupancyPctByYear: [10, 60, 100],
+          occupancyPctByYear: [10],
         },
+      },
+      revenueAssumptions: {
+        ...makeProject().revenueAssumptions,
+        // 10% year one, then a 500% growth rate reaches 60% for year two and caps at 100% for year three.
+        intakeGrowthRatePct: 500,
       },
     })
     const cost = makeCost({

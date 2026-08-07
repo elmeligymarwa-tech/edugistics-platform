@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { SlidersHorizontal } from 'lucide-react'
+import { ChevronDown, ChevronUp, SlidersHorizontal } from 'lucide-react'
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { SliderNumberField } from '@/components/ui/slider-number-field'
@@ -247,6 +247,40 @@ export function GridCell<TRow>({
         />
       ) : column.render ? (
         column.render(row)
+      ) : column.kind === 'percent' && !disabled && column.stepper ? (
+        <div className="flex w-full items-center justify-end gap-1">
+          <span className="truncate" title={displayText.length > 12 ? displayText : undefined}>
+            {displayText}
+          </span>
+          <div className="flex shrink-0 flex-col">
+            <button
+              type="button"
+              aria-label={`Increase ${column.label}`}
+              onMouseDown={(event) => event.stopPropagation()}
+              onDoubleClick={(event) => event.stopPropagation()}
+              onClick={() => {
+                const current = typeof value === 'number' ? value : 0
+                column.onCommit?.(row, Math.min(PERCENT_MAX, current + PERCENT_STEP))
+              }}
+              className="flex h-3 w-3.5 items-center justify-center rounded-t text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <ChevronUp className="size-2.5" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              aria-label={`Decrease ${column.label}`}
+              onMouseDown={(event) => event.stopPropagation()}
+              onDoubleClick={(event) => event.stopPropagation()}
+              onClick={() => {
+                const current = typeof value === 'number' ? value : 0
+                column.onCommit?.(row, Math.max(PERCENT_MIN, current - PERCENT_STEP))
+              }}
+              className="flex h-3 w-3.5 items-center justify-center rounded-b text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <ChevronDown className="size-2.5" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
       ) : column.kind === 'percent' && !disabled ? (
         <Popover>
           <PopoverTrigger

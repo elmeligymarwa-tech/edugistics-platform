@@ -102,13 +102,9 @@ export function describeYearGroupData(project: Project, group: YearGroupId): str
     )
   }
 
-  const intake = project.revenueAssumptions.newIntake[group]
-  if (intake && intake.some((value) => value > 0)) {
-    items.push('New intake figures')
-  }
-
-  if (project.revenueAssumptions.retentionPct[group] !== undefined) {
-    items.push('A retention rate')
+  const overrides = project.revenueAssumptions.intakeOverrides[group]
+  if (overrides && overrides.some((value) => value !== null)) {
+    items.push('Student number overrides')
   }
 
   return items

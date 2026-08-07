@@ -29,7 +29,7 @@ export const GLOSSARY_TERMS: GlossaryEntry[] = [
     id: 'net-revenue',
     title: 'Net revenue',
     definition:
-      'Gross fees actually kept after sibling, staff and scholarship discounts are deducted. For example, EGP 1,000,000 of billed tuition with a 10% average discount rate leaves EGP 900,000 of net revenue — the figure every other margin in this model is measured against.',
+      'Gross fees actually kept after staff and scholarship discounts are deducted. For example, EGP 1,000,000 of billed tuition with a 10% average discount rate leaves EGP 900,000 of net revenue — the figure every other margin in this model is measured against.',
   },
   {
     id: 'gross-revenue',
@@ -321,16 +321,10 @@ export const GLOSSARY_TERMS: GlossaryEntry[] = [
       "For an optional fee category — transport or lunch, for example — the percentage of students who actually pay for it, since not everyone opts in. A transport fee with 40% uptake is only charged to 4 out of every 10 students, even though every student is offered it.",
   },
   {
-    id: 'sibling-discount',
-    title: 'Sibling discount',
-    definition:
-      "A reduced fee for families with more than one child at the school, applied to a set share of eligible students. It's a common retention tool, since it rewards families for keeping every child enrolled rather than splitting them across schools.",
-  },
-  {
     id: 'scholarship',
     title: 'Scholarship',
     definition:
-      'A discount awarded to a fixed number of student places, independent of family circumstances like siblings — typically used for merit, need or strategic enrolment goals. Each scholarship place reduces net revenue but can still help fill capacity that would otherwise sit empty.',
+      'A discount awarded to a fixed number of student places — typically used for merit, need or strategic enrolment goals. Each scholarship place reduces net revenue but can still help fill capacity that would otherwise sit empty.',
   },
   {
     id: 'revenue-share',

@@ -104,7 +104,7 @@ export function PresentationView({ project }: { project: Project }) {
       {isVisible('capacity') && groups.length > 0 ? (
         <PresentationSection title="Capacity">
           <PresentationTable
-            headers={['Year group', 'Classrooms', 'Max students per class', 'Capacity']}
+            headers={['Year group', 'Classrooms', 'Students per class', 'Year Group Capacity']}
             rows={groups.map((group) => {
               const capacity = project.capacity[group]
               const classrooms = capacity?.classrooms ?? 0
@@ -136,8 +136,8 @@ export function PresentationView({ project }: { project: Project }) {
         <PresentationSection title="Revenue assumptions">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <PresentationStat
-              label="Enrolment model"
-              value={project.revenueAssumptions.enrolmentModel === 'occupancy' ? 'Occupancy-driven' : 'Cohort progression'}
+              label="Annual growth rate"
+              value={formatPercent(project.revenueAssumptions.intakeGrowthRatePct)}
             />
             <PresentationStat
               label="Tuition escalation"
@@ -147,7 +147,6 @@ export function PresentationView({ project }: { project: Project }) {
                   : 0,
               )}
             />
-            <PresentationStat label="Sibling discount" value={formatPercent(project.revenueAssumptions.discounts.siblingPct)} />
             <PresentationStat label="Scholarship discount" value={formatPercent(project.revenueAssumptions.discounts.scholarshipPct)} />
           </div>
         </PresentationSection>

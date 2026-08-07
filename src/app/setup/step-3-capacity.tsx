@@ -79,7 +79,11 @@ export function Step3Capacity({ project }: { project: Project }) {
 
       <Card>
         <CardContent className="grid grid-cols-2 gap-4 pt-4 sm:grid-cols-4">
-          <SummaryStat label="Capacity" value={Math.round(totalMax).toLocaleString()} term="capacity-ceiling" />
+          <SummaryStat
+            label="Total Year Group Capacity"
+            value={Math.round(totalMax).toLocaleString()}
+            term="capacity-ceiling"
+          />
           <SummaryStat label="Current intake, year 1" value={Math.round(totalYearOne).toLocaleString()} />
           <SummaryStat
             label={`Current intake, year ${forecastYears}`}
@@ -98,13 +102,58 @@ export function Step3Capacity({ project }: { project: Project }) {
           Select at least one year group in the previous step to configure capacity.
         </p>
       ) : (
-        <CapacityGrid
-          project={project}
-          groups={groups}
-          planEnabled={plan.enabled}
-          enrolment={enrolment}
-        />
+        <>
+          <CapacitySummaryBar
+            totalYearGroupCapacity={totalMax}
+            maxSchoolStudents={plan.maxSchoolStudents}
+            locale={project.meta.locale}
+          />
+          <CapacityGrid
+            project={project}
+            groups={groups}
+            planEnabled={plan.enabled}
+            enrolment={enrolment}
+          />
+        </>
       )}
+    </div>
+  )
+}
+
+/**
+ * Live read against the Max School Students planning ceiling (set in Setup, or in the
+ * School plan panel above) — recomputed on every render from the same capacity figures
+ * the grid below edits, so it updates instantly as classrooms or students per class change.
+ */
+function CapacitySummaryBar({
+  totalYearGroupCapacity,
+  maxSchoolStudents,
+  locale,
+}: {
+  totalYearGroupCapacity: number
+  maxSchoolStudents: number | null
+  locale: string
+}) {
+  const overLimit = maxSchoolStudents !== null && totalYearGroupCapacity > maxSchoolStudents
+
+  return (
+    <div
+      className={cn(
+        'flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm font-medium',
+        maxSchoolStudents === null
+          ? 'border-border bg-muted/40 text-muted-foreground'
+          : overLimit
+            ? 'border-destructive/30 bg-destructive/10 text-destructive'
+            : 'border-success/30 bg-success/10 text-success',
+      )}
+    >
+      <span>
+        Year Group Capacity: {formatNumber(totalYearGroupCapacity, locale)} / Max School Students:{' '}
+        {maxSchoolStudents === null ? 'No limit set' : formatNumber(maxSchoolStudents, locale)}
+      </span>
+      {overLimit ? (
+        <span>Over by {formatNumber(totalYearGroupCapacity - (maxSchoolStudents ?? 0), locale)}</span>
+      ) : null}
     </div>
   )
 }
@@ -142,10 +191,11 @@ function CapacityGrid({
     id: string,
     label: string,
     field: 'classrooms' | 'studentsPerClassroom',
-    opts?: { secondary?: boolean; width?: number; minWidth?: number },
+    opts?: { secondary?: boolean; width?: number; minWidth?: number; tooltip?: string },
   ): GridColumnDef<CapacityRow> => ({
     id,
     label,
+    tooltip: opts?.tooltip,
     kind: 'numeric',
     width: opts?.width ?? COLUMN_WIDTH.count.width,
     minWidth: opts?.minWidth ?? COLUMN_WIDTH.count.minWidth,
@@ -166,7 +216,11 @@ function CapacityGrid({
       getValue: (row) => YEAR_GROUP_LABELS[row.group],
     },
     numericColumn('classrooms', 'Classrooms', 'classrooms'),
-    numericColumn('studentsPerClassroom', 'Max students per class', 'studentsPerClassroom', { width: 108, minWidth: 90 }),
+    numericColumn('studentsPerClassroom', 'Students per class', 'studentsPerClassroom', {
+      width: 108,
+      minWidth: 90,
+      tooltip: 'Maximum number of students allowed in each class for this year group.',
+    }),
     {
       id: 'currentIntake',
       label: 'Current intake',
@@ -175,62 +229,74 @@ function CapacityGrid({
       // Narrower than COLUMN_WIDTH.count so up to ten forecast-year sub-columns (the
       // longest supported horizon) still fit alongside the rest of the essential columns
       // within a 1280px-wide viewport.
-      columns: Array.from({ length: forecastYears }, (_, yearIndex): GridColumnDef<CapacityRow> => ({
-        id: `currentIntake-${yearIndex}`,
-        label: `Year ${yearIndex + 1}`,
-        kind: planEnabled ? 'readonly' : 'numeric',
-        width: 68,
-        minWidth: 60,
-        getValue: (row) => {
-          if (planEnabled) return enrolment[yearIndex]?.find((e) => e.yearGroup === row.group)?.students ?? 0
-          const override = intakeOverrides[`${row.group}-${yearIndex}`]
-          if (override !== undefined) return override
-          const capacity = project.capacity[row.group]
-          return intakeFromOccupancy(occupancyAtYear(capacity?.occupancyPctByYear ?? [], yearIndex), capacityFor(capacity))
-        },
-        format: (value) => (typeof value === 'number' ? formatNumber(value, project.meta.locale) : ''),
-        render: planEnabled
-          ? undefined
-          : (row) => {
-              const capacity = project.capacity[row.group]
-              const ceiling = capacityFor(capacity)
-              const override = intakeOverrides[`${row.group}-${yearIndex}`]
-              const value =
-                override ??
-                intakeFromOccupancy(occupancyAtYear(capacity?.occupancyPctByYear ?? [], yearIndex), ceiling)
-              const exceeds = value > ceiling
-              return (
-                <span
-                  className={cn('truncate tabular-nums', exceeds && 'font-semibold text-destructive')}
-                  title={exceeds ? `Exceeds this row's capacity of ${formatNumber(ceiling, project.meta.locale)}` : undefined}
-                >
-                  {formatNumber(value, project.meta.locale)}
-                </span>
-              )
-            },
-        onCommit: planEnabled
-          ? undefined
-          : (row, value) => {
-              const raw = typeof value === 'number' ? Math.max(0, Math.round(value)) : 0
-              const capacity = project.capacity[row.group]
-              const ceiling = capacityFor(capacity)
-              const key = `${row.group}-${yearIndex}`
+      columns: Array.from({ length: forecastYears }, (_, yearIndex): GridColumnDef<CapacityRow> => {
+        // Only year one is ever entered here — every later year is driven by the growth
+        // rate (and any per-cell override) set in Step 5 Revenue, so it must render
+        // read-only rather than accept input the engine no longer reads.
+        const derived = planEnabled || yearIndex > 0
+        if (derived) {
+          return {
+            id: `currentIntake-${yearIndex}`,
+            label: `Year ${yearIndex + 1}`,
+            kind: 'readonly',
+            width: 68,
+            minWidth: 60,
+            getValue: (row) => Math.round(enrolment[yearIndex]?.find((e) => e.yearGroup === row.group)?.students ?? 0),
+            format: (value) => (typeof value === 'number' ? formatNumber(value, project.meta.locale) : ''),
+          }
+        }
+        return {
+          id: `currentIntake-${yearIndex}`,
+          label: `Year ${yearIndex + 1}`,
+          kind: 'numeric',
+          width: 68,
+          minWidth: 60,
+          getValue: (row) => {
+            const override = intakeOverrides[`${row.group}-${yearIndex}`]
+            if (override !== undefined) return override
+            const capacity = project.capacity[row.group]
+            return intakeFromOccupancy(occupancyAtYear(capacity?.occupancyPctByYear ?? [], yearIndex), capacityFor(capacity))
+          },
+          format: (value) => (typeof value === 'number' ? formatNumber(value, project.meta.locale) : ''),
+          render: (row) => {
+            const capacity = project.capacity[row.group]
+            const ceiling = capacityFor(capacity)
+            const override = intakeOverrides[`${row.group}-${yearIndex}`]
+            const value =
+              override ??
+              intakeFromOccupancy(occupancyAtYear(capacity?.occupancyPctByYear ?? [], yearIndex), ceiling)
+            const exceeds = value > ceiling
+            return (
+              <span
+                className={cn('truncate tabular-nums', exceeds && 'font-semibold text-destructive')}
+                title={exceeds ? `Exceeds this row's capacity of ${formatNumber(ceiling, project.meta.locale)}` : undefined}
+              >
+                {formatNumber(value, project.meta.locale)}
+              </span>
+            )
+          },
+          onCommit: (row, value) => {
+            const raw = typeof value === 'number' ? Math.max(0, Math.round(value)) : 0
+            const capacity = project.capacity[row.group]
+            const ceiling = capacityFor(capacity)
+            const key = `${row.group}-${yearIndex}`
 
-              setIntakeOverrides((prev) => {
-                if (raw > ceiling) return { ...prev, [key]: raw }
-                if (!(key in prev)) return prev
-                const next = { ...prev }
-                delete next[key]
-                return next
-              })
+            setIntakeOverrides((prev) => {
+              if (raw > ceiling) return { ...prev, [key]: raw }
+              if (!(key in prev)) return prev
+              const next = { ...prev }
+              delete next[key]
+              return next
+            })
 
-              const current = capacity?.occupancyPctByYear ?? []
-              const nextOccupancy = [...current]
-              while (nextOccupancy.length <= yearIndex) nextOccupancy.push(0)
-              nextOccupancy[yearIndex] = occupancyFromIntake(raw, ceiling)
-              patch(row.group, { occupancyPctByYear: nextOccupancy })
-            },
-      })),
+            const current = capacity?.occupancyPctByYear ?? []
+            const nextOccupancy = [...current]
+            while (nextOccupancy.length <= yearIndex) nextOccupancy.push(0)
+            nextOccupancy[yearIndex] = occupancyFromIntake(raw, ceiling)
+            patch(row.group, { occupancyPctByYear: nextOccupancy })
+          },
+        }
+      }),
     },
     {
       id: 'openFromYearIndex',
@@ -243,7 +309,8 @@ function CapacityGrid({
     },
     {
       id: 'capacity',
-      label: 'Capacity',
+      label: 'Year Group Capacity',
+      tooltip: 'Total capacity available for this year group across all classes. This is not the overall school capacity.',
       kind: 'readonly',
       ...COLUMN_WIDTH.readonly,
       getValue: (row) => capacityFor(project.capacity[row.group]),

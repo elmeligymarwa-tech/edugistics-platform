@@ -52,16 +52,11 @@ function makeProject(overrides: Record<string, unknown> = {}): Project {
       amounts: { Y1: { tuition: 100000 } },
     },
     revenueAssumptions: {
-      enrolmentModel: 'occupancy',
       tuitionEscalationPct: 0,
       otherFeeEscalationPct: 0,
-      newIntake: {},
-      retentionPct: {},
-      progression: true,
-      avgSiblingsPerFamily: 1,
+      intakeGrowthRatePct: 0,
+      intakeOverrides: {},
       discounts: {
-        siblingPct: 0,
-        siblingEligiblePct: 0,
         staffChildPct: 0,
         staffChildPlaces: 0,
         scholarshipPct: 0,
@@ -140,7 +135,7 @@ describe('escalation', () => {
 })
 
 describe('enrolment', () => {
-  it('applies the occupancy ramp and stops at the capacity ceiling', () => {
+  it('takes year one from occupancy, then compounds the growth rate up to the capacity ceiling', () => {
     const project = makeProject({
       calendar: {
         academicYearStart: 2027,
@@ -156,15 +151,20 @@ describe('enrolment', () => {
           teachingAssistants: 2,
           coTeachers: 0,
           maxCapacityPct: 100,
-          occupancyPctByYear: [50, 75, 100],
+          occupancyPctByYear: [50],
         },
+      },
+      revenueAssumptions: {
+        ...makeProject().revenueAssumptions,
+        intakeGrowthRatePct: 50,
       },
     })
     const enrolment = computeEnrolment(project)
+    // Year 1: 50% of 40 = 20. Year 2: 20 x 1.5 = 30. Year 3: 30 x 1.5 = 45, capped at 40.
     expect(enrolment.map((y) => y[0]!.students)).toEqual([20, 30, 40])
   })
 
-  it('progresses cohorts and caps at the ceiling in cohort mode', () => {
+  it('lets a per-cell override replace the calculated figure for just that cell', () => {
     const project = makeProject({
       calendar: {
         academicYearStart: 2027,
@@ -176,21 +176,21 @@ describe('enrolment', () => {
       capacity: {
         Y1: {
           classrooms: 1,
-          studentsPerClassroom: 20,
+          studentsPerClassroom: 50,
           teachers: 1,
           teachingAssistants: 1,
           coTeachers: 0,
           maxCapacityPct: 100,
-          occupancyPctByYear: [100],
+          occupancyPctByYear: [40],
         },
         Y2: {
           classrooms: 1,
-          studentsPerClassroom: 10,
+          studentsPerClassroom: 50,
           teachers: 1,
           teachingAssistants: 1,
           coTeachers: 0,
           maxCapacityPct: 100,
-          occupancyPctByYear: [0],
+          occupancyPctByYear: [40],
         },
       },
       fees: {
@@ -199,15 +199,18 @@ describe('enrolment', () => {
       },
       revenueAssumptions: {
         ...makeProject().revenueAssumptions,
-        enrolmentModel: 'cohort',
-        retentionPct: { Y1: 100, Y2: 90 },
-        newIntake: { Y1: [0, 0], Y2: [0, 0] },
+        intakeGrowthRatePct: 10,
+        intakeOverrides: { Y1: [null, 35] },
       },
     })
     const enrolment = computeEnrolment(project)
-    // Y1 fills to 20 in year one. In year two 90% progress into Y2, capped at 10.
-    expect(enrolment[0]![0]!.students).toBe(20)
-    expect(enrolment[1]![1]!.students).toBe(10)
+    // Year 1 for both groups: 40% of 50 = 20.
+    expect(enrolment[0]!.map((g) => g.students)).toEqual([20, 20])
+    // Year 2: Y1 is pinned to the override (35); Y2 keeps compounding (20 x 1.1 = 22).
+    expect(enrolment[1]![0]!.students).toBe(35)
+    expect(enrolment[1]![1]!.students).toBeCloseTo(22, 6)
+    // Year 3: Y1 compounds onward from its overridden year 2 figure (35 x 1.1 = 38.5).
+    expect(enrolment[2]![0]!.students).toBeCloseTo(38.5, 6)
   })
 })
 
@@ -234,10 +237,12 @@ describe('school wide ramp and student caps', () => {
       },
       revenueAssumptions: {
         ...makeProject().revenueAssumptions,
-        schoolOccupancyPctByYear: [50, 75, 100],
+        schoolOccupancyPctByYear: [50],
+        intakeGrowthRatePct: 50,
       },
     })
     const enrolment = computeEnrolment(project)
+    // Year one only reads index 0 of the school ramp for every group; later years compound.
     expect(enrolment.map((y) => y.map((g) => g.students))).toEqual([
       [20, 20], [30, 30], [40, 40],
     ])
@@ -263,8 +268,12 @@ describe('school wide ramp and student caps', () => {
         Y1: {
           classrooms: 2, studentsPerClassroom: 20, teachers: 2,
           teachingAssistants: 0, coTeachers: 0, maxCapacityPct: 100,
-          maxStudents: null, occupancyPctByYear: [25, 50, 100],
+          maxStudents: null, occupancyPctByYear: [25],
         },
+      },
+      revenueAssumptions: {
+        ...makeProject().revenueAssumptions,
+        intakeGrowthRatePct: 100,
       },
     })
     expect(computeEnrolment(project).map((y) => y[0]!.students)).toEqual([10, 20, 40])
@@ -387,7 +396,7 @@ describe('school plan', () => {
 })
 
 describe('discounts', () => {
-  it('stacks sibling and scholarship discounts against discountable revenue only', () => {
+  it('applies the scholarship discount against discountable revenue only', () => {
     const project = makeProject({
       fees: {
         categories: [
@@ -410,8 +419,6 @@ describe('discounts', () => {
       revenueAssumptions: {
         ...makeProject().revenueAssumptions,
         discounts: {
-          siblingPct: 10,
-          siblingEligiblePct: 20,
           staffChildPct: 0,
           staffChildPlaces: 0,
           scholarshipPct: 100,
@@ -424,13 +431,13 @@ describe('discounts', () => {
     const year = computeForecast(project).years[0]!
     // Bus: 40 students x 50% uptake x 10,000 = 200,000, not discountable.
     expect(year.grossRevenue).toBe(4_200_000)
-    // Discount rate = (0.10 x 0.20) + (1.00 x 4/40) = 0.12 on tuition only.
-    expect(year.discounts).toBeCloseTo(4_000_000 * 0.12, 6)
+    // Discount rate = 1.00 x 4/40 = 0.10 on tuition only.
+    expect(year.discounts).toBeCloseTo(4_000_000 * 0.1, 6)
   })
 })
 
-describe('retention and gross entrants', () => {
-  it('bills registration on replacements, not only on net growth', () => {
+describe('growth and gross entrants', () => {
+  it('counts newEntrants as net growth and leavers as net shrinkage', () => {
     const project = makeProject({
       calendar: { academicYearStart: 2027, financialYearStartMonth: 9, forecastYears: 3, termsPerYear: 3 },
       capacity: {
@@ -442,14 +449,15 @@ describe('retention and gross entrants', () => {
       },
       revenueAssumptions: {
         ...makeProject().revenueAssumptions,
-        retentionPct: { Y1: 90 },
+        intakeGrowthRatePct: -10,
       },
     })
     const rows = computeEnrolment(project)
-    // 100 students held flat. Ten per cent leave, so ten must be replaced.
-    expect(rows[1]![0]!.students).toBe(100)
+    // 100 students in year one, then a 10% contraction: 90 in year two.
+    expect(rows[0]![0]!.students).toBe(100)
+    expect(rows[1]![0]!.students).toBeCloseTo(90, 6)
     expect(rows[1]![0]!.leavers).toBeCloseTo(10, 6)
-    expect(rows[1]![0]!.newEntrants).toBeCloseTo(10, 6)
+    expect(rows[1]![0]!.newEntrants).toBe(0)
   })
 })
 
@@ -505,15 +513,14 @@ describe('discount allocation', () => {
       revenueAssumptions: {
         ...makeProject().revenueAssumptions,
         discounts: {
-          siblingPct: 10, siblingEligiblePct: 100,
           staffChildPct: 50, staffChildPlaces: 10,
           scholarshipPct: 100, scholarshipPlaces: 5,
           earlyPaymentPct: 0, earlyPaymentTakeUpPct: 0,
         },
       },
     })
-    // 5 free, 10 at half, the remaining 85 at ten per cent, over 100 students.
-    const expected = (5 * 1 + 10 * 0.5 + 85 * 0.1) / 100
+    // 5 free, 10 at half, the remaining 85 at zero, over 100 students.
+    const expected = (5 * 1 + 10 * 0.5 + 85 * 0) / 100
     expect(discountRate(project, 100)).toBeCloseTo(expected, 6)
   })
 })

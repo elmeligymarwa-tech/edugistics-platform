@@ -31,10 +31,10 @@ function makeProject(overrides: Record<string, unknown> = {}): Project {
     },
     revenueAssumptions: {
       schoolPlan: { enabled: false, maxSchoolStudents: null, totalStudentsByYear: [], taperPct: 40 },
-      enrolmentModel: 'occupancy', schoolOccupancyPctByYear: [],
+      schoolOccupancyPctByYear: [],
       tuitionEscalationPct: 8, otherFeeEscalationPct: 8,
-      newIntake: {}, retentionPct: {}, progression: true, avgSiblingsPerFamily: 1,
-      discounts: { siblingPct: 0, siblingEligiblePct: 0, staffChildPct: 0, staffChildPlaces: 0, scholarshipPct: 0, scholarshipPlaces: 0, earlyPaymentPct: 0, earlyPaymentTakeUpPct: 0 },
+      intakeGrowthRatePct: 0, intakeOverrides: {},
+      discounts: { staffChildPct: 0, staffChildPlaces: 0, scholarshipPct: 0, scholarshipPlaces: 0, earlyPaymentPct: 0, earlyPaymentTakeUpPct: 0 },
       collections: { termSplit: [100], payInFullPct: 100, badDebtPct: 0, dsoDays: 0 },
       taxRatePct: 0,
     },
