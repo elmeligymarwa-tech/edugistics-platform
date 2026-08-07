@@ -46,15 +46,28 @@ const DEBOUNCE_MS = 500
 const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Record<string, unknown>> = {}
 
 /**
- * The "Max capacity %" input was removed from the capacity grid — maxStudents is now the
- * only hard cap a user can set. Old projects that relied on the classrooms times students
- * per classroom times maxCapacityPct calculation (by leaving maxStudents unset) need that
- * figure baked into maxStudents once so the enrolment ceiling doesn't silently change.
- * Self-guarding on `maxStudents == null`, so it's a no-op on every load after the first.
+ * The capacity grid dropped "Max capacity %" and the separate "Max students" override —
+ * a year group's ceiling is now always classrooms times max students per class. Old
+ * projects that relied on either control need that figure folded into
+ * studentsPerClassroom once, so the ceiling (and therefore every forecast number
+ * downstream of it) doesn't silently change. Separately, the percentage-based
+ * school-wide occupancy ramp was replaced by the school plan; any project that had it
+ * switched on gets that ramp folded into each open year group's own occupancy array
+ * (exactly what it already overrode at read time), then cleared, so per-group Current
+ * intake edits aren't silently shadowed by a control that no longer has a UI.
+ * Self-guarding — a project that's already been through this is left untouched, so it's
+ * a no-op on every load after the first.
  */
-function backfillMaxStudents(data: Record<string, unknown>): Record<string, unknown> {
+function normalizeCapacityInputs(data: Record<string, unknown>): Record<string, unknown> {
   const capacity = data.capacity
   if (typeof capacity !== 'object' || capacity === null) return data
+
+  const revenueAssumptions = data.revenueAssumptions
+  const hasRevenueAssumptions = typeof revenueAssumptions === 'object' && revenueAssumptions !== null
+  const schoolRamp = hasRevenueAssumptions
+    ? (revenueAssumptions as Record<string, unknown>).schoolOccupancyPctByYear
+    : undefined
+  const schoolRampArray = Array.isArray(schoolRamp) ? (schoolRamp as unknown[]).filter((v) => typeof v === 'number') as number[] : []
 
   let changed = false
   const nextCapacity: Record<string, unknown> = {}
@@ -64,17 +77,49 @@ function backfillMaxStudents(data: Record<string, unknown>): Record<string, unkn
       continue
     }
     const row = entry as Record<string, unknown>
-    if (row.maxStudents !== null && row.maxStudents !== undefined) {
-      nextCapacity[group] = row
-      continue
-    }
     const classrooms = typeof row.classrooms === 'number' ? row.classrooms : 0
     const studentsPerClassroom = typeof row.studentsPerClassroom === 'number' ? row.studentsPerClassroom : 0
     const maxCapacityPct = typeof row.maxCapacityPct === 'number' ? row.maxCapacityPct : 100
-    nextCapacity[group] = { ...row, maxStudents: Math.round((classrooms * studentsPerClassroom * maxCapacityPct) / 100) }
-    changed = true
+    const maxStudents = typeof row.maxStudents === 'number' ? row.maxStudents : null
+
+    let nextStudentsPerClassroom = studentsPerClassroom
+    let nextMaxStudents: number | null = maxStudents
+    let nextMaxCapacityPct = maxCapacityPct
+    if (maxStudents !== null || maxCapacityPct !== 100) {
+      const ceiling = maxStudents ?? (classrooms * studentsPerClassroom * maxCapacityPct) / 100
+      nextStudentsPerClassroom = classrooms > 0 ? Math.max(0, Math.round(ceiling / classrooms)) : studentsPerClassroom
+      nextMaxStudents = null
+      nextMaxCapacityPct = 100
+      changed = true
+    }
+
+    let occupancyPctByYear = Array.isArray(row.occupancyPctByYear)
+      ? ((row.occupancyPctByYear as unknown[]).filter((v) => typeof v === 'number') as number[])
+      : []
+    if (schoolRampArray.length > 0) {
+      occupancyPctByYear = schoolRampArray
+      changed = true
+    }
+
+    nextCapacity[group] = {
+      ...row,
+      studentsPerClassroom: nextStudentsPerClassroom,
+      maxStudents: nextMaxStudents,
+      maxCapacityPct: nextMaxCapacityPct,
+      occupancyPctByYear,
+    }
   }
-  return changed ? { ...data, capacity: nextCapacity } : data
+
+  if (!changed) return data
+
+  const nextData: Record<string, unknown> = { ...data, capacity: nextCapacity }
+  if (schoolRampArray.length > 0 && hasRevenueAssumptions) {
+    nextData.revenueAssumptions = {
+      ...(revenueAssumptions as Record<string, unknown>),
+      schoolOccupancyPctByYear: [],
+    }
+  }
+  return nextData
 }
 
 /** Upgrades a raw project object to the current schemaVersion. */
@@ -87,7 +132,7 @@ export function migrateProject(data: unknown): unknown {
     migrated = upgrade ? upgrade(migrated) : migrated
     version += 1
   }
-  migrated = backfillMaxStudents(migrated)
+  migrated = normalizeCapacityInputs(migrated)
   return { ...migrated, schemaVersion: SCHEMA_VERSION }
 }
 

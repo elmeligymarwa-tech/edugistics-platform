@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 
-import { DataGrid, toNumberOrZero, type GridColumnDef, type GridColumnGroup } from '@/components/grid'
+import { COLUMN_WIDTH, DataGrid, toNumberOrZero, type GridColumnDef, type GridColumnGroup } from '@/components/grid'
 import { GlossaryHint } from '@/components/glossary/glossary-hint'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,13 +10,35 @@ import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { SliderNumberField } from '@/components/ui/slider-number-field'
 import { Switch } from '@/components/ui/switch'
-import { orderedYearGroups, type Project, type SchoolPlan, type YearGroupId } from '@/domain/schema'
+import { orderedYearGroups, type Project, type SchoolPlan, type YearGroupCapacity, type YearGroupId } from '@/domain/schema'
 import { computeEnrolment, type YearGroupEnrolment } from '@/engine/revenue'
 import { formatNumber } from '@/lib/format'
 import { YEAR_GROUP_LABELS } from '@/lib/wizard-data'
+import { cn } from '@/lib/utils'
 import { useProjectStore } from '@/store/project-store'
 
-type SchoolRampMode = 'linear' | 'manual'
+/** Physical room capacity — classrooms times max students per class. Every other
+ * capacity control (Max capacity %, the separate Max students override) has been
+ * folded into this, on load, by the store's project migration. */
+function capacityFor(capacity: YearGroupCapacity | undefined): number {
+  return (capacity?.classrooms ?? 0) * (capacity?.studentsPerClassroom ?? 0)
+}
+
+/** Mirrors the engine's own array-bounds clamp so a ramp shorter than the current
+ * forecast horizon still reads as "holds its last value", exactly as computeEnrolment sees it. */
+function occupancyAtYear(occupancyPctByYear: number[], yearIndex: number): number {
+  if (occupancyPctByYear.length === 0) return 0
+  return occupancyPctByYear[Math.min(yearIndex, occupancyPctByYear.length - 1)] ?? 0
+}
+
+function intakeFromOccupancy(occupancyPct: number, capacity: number): number {
+  return Math.round((occupancyPct / 100) * capacity)
+}
+
+function occupancyFromIntake(intake: number, capacity: number): number {
+  if (capacity <= 0) return 0
+  return Math.min(100, Math.max(0, (intake / capacity) * 100))
+}
 
 export function Step3Capacity({ project }: { project: Project }) {
   const updateCapacity = useProjectStore((state) => state.updateCapacity)
@@ -38,7 +60,6 @@ export function Step3Capacity({ project }: { project: Project }) {
   }, [project.id, groupsKey, forecastYears])
 
   const plan = project.revenueAssumptions.schoolPlan
-  const schoolRampActive = project.revenueAssumptions.schoolOccupancyPctByYear.length > 0
   const enrolment = computeEnrolment(project)
   const yearOne = enrolment[0] ?? []
   const finalYear = enrolment[enrolment.length - 1] ?? []
@@ -58,25 +79,18 @@ export function Step3Capacity({ project }: { project: Project }) {
     <div className="flex flex-col gap-4">
       <SchoolPlanPanel project={project} enrolment={enrolment} />
 
-      {!plan.enabled ? <SchoolOccupancyRamp project={project} /> : null}
-
       <Card>
-        <CardContent className="grid grid-cols-2 gap-4 pt-4 sm:grid-cols-5">
-          <SummaryStat label="Maximum students" value={Math.round(totalMax).toLocaleString()} term="capacity-ceiling" />
-          <SummaryStat label="Expected, year 1" value={Math.round(totalYearOne).toLocaleString()} />
+        <CardContent className="grid grid-cols-2 gap-4 pt-4 sm:grid-cols-4">
+          <SummaryStat label="Capacity" value={Math.round(totalMax).toLocaleString()} term="capacity-ceiling" />
+          <SummaryStat label="Current intake, year 1" value={Math.round(totalYearOne).toLocaleString()} />
           <SummaryStat
-            label={`Expected, year ${forecastYears}`}
+            label={`Current intake, year ${forecastYears}`}
             value={Math.round(totalFinalYear).toLocaleString()}
           />
           <SummaryStat
             label="Student : teacher ratio"
             value={totalTeachers > 0 ? `${ratio.toFixed(1)} : 1` : '—'}
             term="student-teacher-ratio"
-          />
-          <SummaryStat
-            label="Occupancy ramp"
-            value={plan.enabled ? 'Top-down plan' : schoolRampActive ? 'School-wide' : 'Per year group'}
-            term="occupancy"
           />
         </CardContent>
       </Card>
@@ -99,7 +113,6 @@ export function Step3Capacity({ project }: { project: Project }) {
 
 interface CapacityRow {
   group: YearGroupId
-  allocatedByYear: number[]
 }
 
 function CapacityGrid({
@@ -116,10 +129,13 @@ function CapacityGrid({
   const updateCapacity = useProjectStore((state) => state.updateCapacity)
   const forecastYears = project.calendar.forecastYears
 
-  const rows: CapacityRow[] = groups.map((group) => ({
-    group,
-    allocatedByYear: enrolment.map((row) => row.find((entry) => entry.yearGroup === group)?.students ?? 0),
-  }))
+  // Entered intakes above a row's capacity are still shown (and flagged coral) rather than
+  // silently rewritten to the capacity figure, since what actually reaches the forecast is
+  // already capped through occupancyPctByYear — this is display-only, for the current
+  // session, keyed by "group-yearIndex".
+  const [intakeOverrides, setIntakeOverrides] = useState<Record<string, number>>({})
+
+  const rows: CapacityRow[] = groups.map((group) => ({ group }))
 
   const patch = (group: YearGroupId, values: Partial<Project['capacity'][string]>) =>
     updateCapacity(project.id, group, values)
@@ -128,14 +144,16 @@ function CapacityGrid({
     id: string,
     label: string,
     field: 'classrooms' | 'studentsPerClassroom' | 'teachers' | 'teachingAssistants' | 'coTeachers',
+    opts?: { secondary?: boolean; width?: number; minWidth?: number },
   ): GridColumnDef<CapacityRow> => ({
     id,
     label,
     kind: 'numeric',
-    width: 128,
-    minWidth: 104,
+    width: opts?.width ?? COLUMN_WIDTH.count.width,
+    minWidth: opts?.minWidth ?? COLUMN_WIDTH.count.minWidth,
     allowFillDown: true,
     allowUplift: true,
+    secondary: opts?.secondary,
     getValue: (row) => project.capacity[row.group]?.[field] ?? 0,
     onCommit: (row, value) => patch(row.group, { [field]: toNumberOrZero(value) }),
   })
@@ -145,90 +163,97 @@ function CapacityGrid({
       id: 'group',
       label: 'Year group',
       kind: 'readonly',
-      width: 140,
-      minWidth: 120,
+      ...COLUMN_WIDTH.shortLabel,
       pinned: 'left',
       getValue: (row) => YEAR_GROUP_LABELS[row.group],
     },
     numericColumn('classrooms', 'Classrooms', 'classrooms'),
-    numericColumn('studentsPerClassroom', 'Students / classroom', 'studentsPerClassroom'),
+    numericColumn('studentsPerClassroom', 'Max students per class', 'studentsPerClassroom', { width: 108, minWidth: 90 }),
+    {
+      id: 'currentIntake',
+      label: 'Current intake',
+      collapsible: true,
+      defaultCollapsed: false,
+      // Narrower than COLUMN_WIDTH.count so up to ten forecast-year sub-columns (the
+      // longest supported horizon) still fit alongside the rest of the essential columns
+      // within a 1280px-wide viewport.
+      columns: Array.from({ length: forecastYears }, (_, yearIndex): GridColumnDef<CapacityRow> => ({
+        id: `currentIntake-${yearIndex}`,
+        label: `Year ${yearIndex + 1}`,
+        kind: planEnabled ? 'readonly' : 'numeric',
+        width: 68,
+        minWidth: 60,
+        getValue: (row) => {
+          if (planEnabled) return enrolment[yearIndex]?.find((e) => e.yearGroup === row.group)?.students ?? 0
+          const override = intakeOverrides[`${row.group}-${yearIndex}`]
+          if (override !== undefined) return override
+          const capacity = project.capacity[row.group]
+          return intakeFromOccupancy(occupancyAtYear(capacity?.occupancyPctByYear ?? [], yearIndex), capacityFor(capacity))
+        },
+        format: (value) => (typeof value === 'number' ? formatNumber(value, project.meta.locale) : ''),
+        render: planEnabled
+          ? undefined
+          : (row) => {
+              const capacity = project.capacity[row.group]
+              const ceiling = capacityFor(capacity)
+              const override = intakeOverrides[`${row.group}-${yearIndex}`]
+              const value =
+                override ??
+                intakeFromOccupancy(occupancyAtYear(capacity?.occupancyPctByYear ?? [], yearIndex), ceiling)
+              const exceeds = value > ceiling
+              return (
+                <span
+                  className={cn('truncate tabular-nums', exceeds && 'font-semibold text-destructive')}
+                  title={exceeds ? `Exceeds this row's capacity of ${formatNumber(ceiling, project.meta.locale)}` : undefined}
+                >
+                  {formatNumber(value, project.meta.locale)}
+                </span>
+              )
+            },
+        onCommit: planEnabled
+          ? undefined
+          : (row, value) => {
+              const raw = typeof value === 'number' ? Math.max(0, Math.round(value)) : 0
+              const capacity = project.capacity[row.group]
+              const ceiling = capacityFor(capacity)
+              const key = `${row.group}-${yearIndex}`
+
+              setIntakeOverrides((prev) => {
+                if (raw > ceiling) return { ...prev, [key]: raw }
+                if (!(key in prev)) return prev
+                const next = { ...prev }
+                delete next[key]
+                return next
+              })
+
+              const current = capacity?.occupancyPctByYear ?? []
+              const nextOccupancy = [...current]
+              while (nextOccupancy.length <= yearIndex) nextOccupancy.push(0)
+              nextOccupancy[yearIndex] = occupancyFromIntake(raw, ceiling)
+              patch(row.group, { occupancyPctByYear: nextOccupancy })
+            },
+      })),
+    },
     numericColumn('teachers', 'Teachers', 'teachers'),
-    numericColumn('teachingAssistants', 'Teaching assistants', 'teachingAssistants'),
-    numericColumn('coTeachers', 'Co-teachers', 'coTeachers'),
-    {
-      id: 'maxStudents',
-      label: 'Max students',
-      kind: 'numeric',
-      width: 128,
-      minWidth: 104,
-      allowFillDown: true,
-      getValue: (row) => project.capacity[row.group]?.maxStudents ?? null,
-      onCommit: (row, value) =>
-        patch(row.group, { maxStudents: typeof value === 'number' ? Math.max(0, Math.round(value)) : null }),
-    },
-    {
-      id: 'classroomCapacity',
-      label: 'Classroom capacity',
-      kind: 'readonly',
-      width: 128,
-      minWidth: 112,
-      getValue: (row) => {
-        const capacity = project.capacity[row.group]
-        return (capacity?.classrooms ?? 0) * (capacity?.studentsPerClassroom ?? 0)
-      },
-      format: (value) => (typeof value === 'number' ? formatNumber(value, project.meta.locale) : ''),
-    },
+    numericColumn('teachingAssistants', 'Teaching assistants', 'teachingAssistants', { secondary: true }),
+    numericColumn('coTeachers', 'Co-teachers', 'coTeachers', { secondary: true }),
     {
       id: 'openFromYearIndex',
       label: 'Opens from year',
       kind: 'numeric',
-      width: 128,
-      minWidth: 112,
+      ...COLUMN_WIDTH.count,
+      secondary: true,
       getValue: (row) => (project.capacity[row.group]?.openFromYearIndex ?? 0) + 1,
       onCommit: (row, value) => patch(row.group, { openFromYearIndex: Math.max(0, toNumberOrZero(value) - 1) }),
     },
     {
-      id: 'occupancy',
-      label: 'Occupancy %',
-      collapsible: true,
-      defaultCollapsed: false,
-      columns: Array.from({ length: forecastYears }, (_, yearIndex): GridColumnDef<CapacityRow> => ({
-        id: `occupancy-${yearIndex}`,
-        label: `Year ${yearIndex + 1}`,
-        kind: 'percent',
-        width: 96,
-        minWidth: 88,
-        allowFillDown: true,
-        allowUplift: true,
-        getValue: (row) => project.capacity[row.group]?.occupancyPctByYear[yearIndex] ?? 0,
-        onCommit: (row, value) => {
-          const current = project.capacity[row.group]?.occupancyPctByYear ?? []
-          const next = [...current]
-          while (next.length <= yearIndex) next.push(0)
-          next[yearIndex] = toNumberOrZero(value)
-          patch(row.group, { occupancyPctByYear: next })
-        },
-      })),
+      id: 'capacity',
+      label: 'Capacity',
+      kind: 'readonly',
+      ...COLUMN_WIDTH.readonly,
+      getValue: (row) => capacityFor(project.capacity[row.group]),
+      format: (value) => (typeof value === 'number' ? formatNumber(value, project.meta.locale) : ''),
     },
-    ...(planEnabled
-      ? [
-          {
-            id: 'allocated',
-            label: 'Allocated (from plan)',
-            collapsible: true,
-            defaultCollapsed: true,
-            columns: Array.from({ length: forecastYears }, (_, yearIndex): GridColumnDef<CapacityRow> => ({
-              id: `allocated-${yearIndex}`,
-              label: `Year ${yearIndex + 1}`,
-              kind: 'readonly',
-              width: 96,
-              minWidth: 88,
-              getValue: (row) => row.allocatedByYear[yearIndex] ?? 0,
-              format: (value) => (typeof value === 'number' ? formatNumber(value, project.meta.locale) : ''),
-            })),
-          } satisfies GridColumnGroup<CapacityRow>,
-        ]
-      : []),
   ]
 
   return (
@@ -410,158 +435,5 @@ function SummaryStat({ label, value, term }: { label: string; value: string; ter
       </p>
       <p className="text-lg font-semibold text-foreground">{value}</p>
     </div>
-  )
-}
-
-function SchoolOccupancyRamp({ project }: { project: Project }) {
-  const updateRevenueAssumptions = useProjectStore((state) => state.updateRevenueAssumptions)
-  const forecastYears = project.calendar.forecastYears
-  const ramp = project.revenueAssumptions.schoolOccupancyPctByYear
-  const enabled = ramp.length > 0
-
-  const [mode, setMode] = useState<SchoolRampMode>('linear')
-  const [linearStart, setLinearStart] = useState(60)
-  const [linearTarget, setLinearTarget] = useState(100)
-  const [rampYears, setRampYears] = useState(Math.min(3, forecastYears))
-
-  useEffect(() => {
-    if (ramp.length > 0 && ramp.length !== forecastYears) {
-      const next = Array.from(
-        { length: forecastYears },
-        (_, index) => ramp[Math.min(index, ramp.length - 1)] ?? 0,
-      )
-      updateRevenueAssumptions(project.id, { schoolOccupancyPctByYear: next })
-    }
-    // Re-runs only when the project or the forecast horizon change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.id, forecastYears, ramp.length])
-
-  const setEnabled = (checked: boolean) => {
-    updateRevenueAssumptions(project.id, {
-      schoolOccupancyPctByYear: checked ? Array.from({ length: forecastYears }, () => 0) : [],
-    })
-  }
-
-  const applyLinear = () => {
-    const years = Math.min(Math.max(1, rampYears), forecastYears)
-    const span = Math.max(1, years - 1)
-    const next = Array.from({ length: forecastYears }, (_, index) => {
-      if (index >= years) return linearTarget
-      return Math.round((linearStart + ((linearTarget - linearStart) * index) / span) * 10) / 10
-    })
-    updateRevenueAssumptions(project.id, { schoolOccupancyPctByYear: next })
-  }
-
-  const setManualValue = (index: number, value: number) => {
-    const next = [...ramp]
-    while (next.length <= index) next.push(next[next.length - 1] ?? 0)
-    next[index] = value
-    updateRevenueAssumptions(project.id, { schoolOccupancyPctByYear: next })
-  }
-
-  return (
-    <Card>
-      <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
-        <div>
-          <CardTitle>School-wide occupancy ramp</CardTitle>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Overrides every year group&apos;s own occupancy ramp while switched on.
-          </p>
-        </div>
-        <label className="flex items-center gap-2 text-sm text-foreground">
-          <Switch checked={enabled} onCheckedChange={setEnabled} />
-          Apply one ramp to the whole school
-        </label>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3 pt-0">
-        {enabled ? (
-          <>
-            <div className="flex gap-1">
-              {(['linear', 'manual'] as const).map((option) => (
-                <Button
-                  key={option}
-                  type="button"
-                  size="xs"
-                  variant={mode === option ? 'default' : 'outline'}
-                  onClick={() => setMode(option)}
-                >
-                  {option === 'linear' ? 'Linear ramp' : 'Manual entry'}
-                </Button>
-              ))}
-            </div>
-
-            {mode === 'linear' ? (
-              <div className="flex flex-wrap items-end gap-4">
-                <Field className="w-56">
-                  <FieldLabel htmlFor="linearStart">Starting occupancy %</FieldLabel>
-                  <SliderNumberField
-                    id="linearStart"
-                    aria-label="Starting occupancy %"
-                    min={0}
-                    max={100}
-                    step={0.5}
-                    suffix="%"
-                    value={linearStart}
-                    onValueChange={setLinearStart}
-                  />
-                </Field>
-                <Field className="w-56">
-                  <FieldLabel htmlFor="linearTarget">Target occupancy %</FieldLabel>
-                  <SliderNumberField
-                    id="linearTarget"
-                    aria-label="Target occupancy %"
-                    min={0}
-                    max={100}
-                    step={0.5}
-                    suffix="%"
-                    value={linearTarget}
-                    onValueChange={setLinearTarget}
-                  />
-                </Field>
-                <Field className="w-32">
-                  <FieldLabel>Years to reach it</FieldLabel>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={forecastYears}
-                    value={rampYears}
-                    onChange={(event) => setRampYears(Number(event.target.value))}
-                  />
-                </Field>
-                <Button type="button" size="sm" onClick={applyLinear}>
-                  Apply ramp
-                </Button>
-              </div>
-            ) : (
-              <div className="flex flex-wrap gap-4">
-                {Array.from({ length: forecastYears }, (_, index) => (
-                  <Field key={index} className="w-56">
-                    <FieldLabel htmlFor={`manual-occupancy-${index}`}>Year {index + 1}</FieldLabel>
-                    <SliderNumberField
-                      id={`manual-occupancy-${index}`}
-                      aria-label={`Year ${index + 1} occupancy %`}
-                      min={0}
-                      max={100}
-                      step={0.5}
-                      suffix="%"
-                      value={ramp[index] ?? ramp[ramp.length - 1] ?? 0}
-                      onValueChange={(value) => setManualValue(index, value)}
-                    />
-                  </Field>
-                ))}
-              </div>
-            )}
-
-            <p className="text-xs text-muted-foreground">
-              Occupancy: {ramp.map((value) => `${Math.round(value)}%`).join(' → ')}
-            </p>
-          </>
-        ) : (
-          <p className="text-xs text-muted-foreground">
-            Off. Each year group uses its own saved occupancy ramp until this is switched on.
-          </p>
-        )}
-      </CardContent>
-    </Card>
   )
 }

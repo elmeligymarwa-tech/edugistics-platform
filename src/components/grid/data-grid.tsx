@@ -10,6 +10,7 @@ import {
   type VisibilityState,
 } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useGridUiStore } from '@/store/grid-ui-store'
@@ -55,7 +56,17 @@ export function DataGrid<TRow>(props: DataGridProps<TRow>) {
     getRowClassName,
   } = props
 
-  const leafColumns = React.useMemo(() => flattenColumns(columns), [columns])
+  // A group that holds only one column has nothing to group — rendering it as a
+  // GridColumnGroup would give TanStack Table two header rows (the group's label, then
+  // the same single leaf's label) for what reads as one column. Unwrapping it here, before
+  // anything else derives from `columns`, means the group header row only ever appears
+  // where a group genuinely spans several columns.
+  const normalizedColumns = React.useMemo(
+    () => columns.map((column) => (isGridColumnGroup(column) && column.columns.length === 1 ? column.columns[0]! : column)),
+    [columns],
+  )
+
+  const leafColumns = React.useMemo(() => flattenColumns(normalizedColumns), [normalizedColumns])
   const pinnedLeftColumnId = leafColumns.find((column) => column.pinned === 'left')?.id
 
   const columnDefById = React.useMemo(() => {
@@ -66,19 +77,23 @@ export function DataGrid<TRow>(props: DataGridProps<TRow>) {
 
   const groupMetaById = React.useMemo(() => {
     const map = new Map<string, { collapsible: boolean }>()
-    for (const column of columns) {
+    for (const column of normalizedColumns) {
       if (isGridColumnGroup(column)) map.set(column.id, { collapsible: Boolean(column.collapsible) })
     }
     return map
-  }, [columns])
+  }, [normalizedColumns])
 
   const leafIdsByGroup = React.useMemo(() => {
     const map = new Map<string, string[]>()
-    for (const column of columns) {
+    for (const column of normalizedColumns) {
       if (isGridColumnGroup(column)) map.set(column.id, column.columns.map((leaf) => leaf.id))
     }
     return map
-  }, [columns])
+  }, [normalizedColumns])
+
+  const hasSecondaryColumns = React.useMemo(() => leafColumns.some((column) => column.secondary), [leafColumns])
+  const showSecondaryColumns = useGridUiStore((state) => state.showSecondaryColumns[gridId] ?? false)
+  const setShowSecondaryColumns = useGridUiStore((state) => state.setShowSecondaryColumns)
 
   const flatRows = React.useMemo(() => flattenRows(rows), [rows])
 
@@ -121,8 +136,13 @@ export function DataGrid<TRow>(props: DataGridProps<TRow>) {
       const leafIds = leafIdsByGroup.get(groupId) ?? []
       for (const id of leafIds.slice(1)) visibility[id] = false
     }
+    if (!showSecondaryColumns) {
+      for (const column of leafColumns) {
+        if (column.secondary) visibility[column.id] = false
+      }
+    }
     return visibility
-  }, [collapsedGroups, leafIdsByGroup])
+  }, [collapsedGroups, leafIdsByGroup, leafColumns, showSecondaryColumns])
 
   const tableColumns = React.useMemo<ColumnDef<TRow, unknown>[]>(() => {
     const toColumnDef = (column: GridColumnDef<TRow> | GridColumnGroup<TRow>): ColumnDef<TRow, unknown> =>
@@ -135,8 +155,8 @@ export function DataGrid<TRow>(props: DataGridProps<TRow>) {
             size: column.width,
             minSize: column.minWidth,
           }
-    return columns.map(toColumnDef)
-  }, [columns])
+    return normalizedColumns.map(toColumnDef)
+  }, [normalizedColumns])
 
   const emptyData = React.useMemo<TRow[]>(() => [], [])
 
@@ -348,9 +368,23 @@ export function DataGrid<TRow>(props: DataGridProps<TRow>) {
     overscan: 8,
   })
 
+  const showMoreColumnsToggle = hasSecondaryColumns ? (
+    <div className="flex items-center justify-end border-b border-border/60 bg-card px-2 py-1">
+      <button
+        type="button"
+        onClick={() => setShowSecondaryColumns(gridId, !showSecondaryColumns)}
+        className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        {showSecondaryColumns ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+        {showSecondaryColumns ? 'Show fewer columns' : 'Show more columns'}
+      </button>
+    </div>
+  ) : null
+
   if (dataEntries.length === 0 && emptyState) {
     return (
       <div className={cn('flex flex-col overflow-hidden rounded-lg border border-border', className)}>
+        {showMoreColumnsToggle}
         <GridHeader
           headerGroups={table.getHeaderGroups()}
           columnDefById={columnDefById}
@@ -369,6 +403,7 @@ export function DataGrid<TRow>(props: DataGridProps<TRow>) {
 
   return (
     <div className={cn('flex flex-col overflow-hidden rounded-lg border border-border', className)}>
+      {showMoreColumnsToggle}
       <div
         ref={scrollRef}
         role="grid"

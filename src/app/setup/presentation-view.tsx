@@ -104,14 +104,16 @@ export function PresentationView({ project }: { project: Project }) {
       {isVisible('capacity') && groups.length > 0 ? (
         <PresentationSection title="Capacity">
           <PresentationTable
-            headers={['Year group', 'Classrooms', 'Students / classroom', 'Max students']}
+            headers={['Year group', 'Classrooms', 'Max students per class', 'Capacity']}
             rows={groups.map((group) => {
               const capacity = project.capacity[group]
+              const classrooms = capacity?.classrooms ?? 0
+              const studentsPerClassroom = capacity?.studentsPerClassroom ?? 0
               return [
                 YEAR_GROUP_LABELS[group],
-                formatNumber(capacity?.classrooms ?? 0, project.meta.locale),
-                formatNumber(capacity?.studentsPerClassroom ?? 0, project.meta.locale),
-                capacity?.maxStudents != null ? formatNumber(capacity.maxStudents, project.meta.locale) : '—',
+                formatNumber(classrooms, project.meta.locale),
+                formatNumber(studentsPerClassroom, project.meta.locale),
+                formatNumber(classrooms * studentsPerClassroom, project.meta.locale),
               ]
             })}
           />

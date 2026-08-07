@@ -162,7 +162,7 @@ describe('migrateProject', () => {
     expect(migrateProject('not-a-project')).toBe('not-a-project')
   })
 
-  it('backfills maxStudents from classrooms times students per classroom times maxCapacityPct when unset', () => {
+  it('folds maxCapacityPct into max students per class and clears the percentage/override', () => {
     const id = useProjectStore.getState().createProject('Old Capacity School')
     useProjectStore.getState().updateYearGroups(id, ['Y1'])
     useProjectStore.getState().updateCapacity(id, 'Y1', {
@@ -175,27 +175,77 @@ describe('migrateProject', () => {
       project: Record<string, unknown>
     }
 
-    const migrated = migrateProject(exported.project) as { capacity: Record<string, { maxStudents: number | null }> }
+    const migrated = migrateProject(exported.project) as {
+      capacity: Record<string, { studentsPerClassroom: number; maxStudents: number | null; maxCapacityPct: number }>
+    }
 
-    expect(migrated.capacity.Y1?.maxStudents).toBe(225)
+    // 10 classrooms * 25 students/classroom * 90% = 225 ceiling, folded back as 22.5 -> 23/classroom.
+    expect(migrated.capacity.Y1?.studentsPerClassroom).toBe(23)
+    expect(migrated.capacity.Y1?.maxStudents).toBeNull()
+    expect(migrated.capacity.Y1?.maxCapacityPct).toBe(100)
   })
 
-  it('leaves an already-set maxStudents untouched', () => {
+  it('folds an explicit maxStudents override into max students per class', () => {
     const id = useProjectStore.getState().createProject('Capped School')
     useProjectStore.getState().updateYearGroups(id, ['Y1'])
     useProjectStore.getState().updateCapacity(id, 'Y1', {
       classrooms: 10,
       studentsPerClassroom: 25,
-      maxCapacityPct: 90,
+      maxCapacityPct: 100,
       maxStudents: 30,
     })
     const exported = JSON.parse(useProjectStore.getState().exportProject(id)) as {
       project: Record<string, unknown>
     }
 
-    const migrated = migrateProject(exported.project) as { capacity: Record<string, { maxStudents: number | null }> }
+    const migrated = migrateProject(exported.project) as {
+      capacity: Record<string, { studentsPerClassroom: number; maxStudents: number | null; maxCapacityPct: number }>
+    }
 
-    expect(migrated.capacity.Y1?.maxStudents).toBe(30)
+    expect(migrated.capacity.Y1?.studentsPerClassroom).toBe(3)
+    expect(migrated.capacity.Y1?.maxStudents).toBeNull()
+    expect(migrated.capacity.Y1?.maxCapacityPct).toBe(100)
+  })
+
+  it('leaves a project already expressed as pure classrooms/students-per-class untouched', () => {
+    const id = useProjectStore.getState().createProject('Modern School')
+    useProjectStore.getState().updateYearGroups(id, ['Y1'])
+    useProjectStore.getState().updateCapacity(id, 'Y1', {
+      classrooms: 10,
+      studentsPerClassroom: 23,
+      maxCapacityPct: 100,
+      maxStudents: null,
+    })
+    const exported = JSON.parse(useProjectStore.getState().exportProject(id)) as {
+      project: Record<string, unknown>
+    }
+
+    const migrated = migrateProject(exported.project) as {
+      capacity: Record<string, { studentsPerClassroom: number }>
+    }
+
+    expect(migrated.capacity.Y1?.studentsPerClassroom).toBe(23)
+  })
+
+  it('folds a school-wide occupancy ramp into each open year group and clears it', () => {
+    const id = useProjectStore.getState().createProject('Ramped School')
+    useProjectStore.getState().updateYearGroups(id, ['Y1', 'Y2'])
+    useProjectStore.getState().updateCapacity(id, 'Y1', { classrooms: 2, studentsPerClassroom: 20 })
+    useProjectStore.getState().updateCapacity(id, 'Y2', { classrooms: 2, studentsPerClassroom: 20 })
+    useProjectStore.getState().updateRevenueAssumptions(id, { schoolOccupancyPctByYear: [50, 75, 100] })
+
+    const exported = JSON.parse(useProjectStore.getState().exportProject(id)) as {
+      project: Record<string, unknown>
+    }
+
+    const migrated = migrateProject(exported.project) as {
+      capacity: Record<string, { occupancyPctByYear: number[] }>
+      revenueAssumptions: { schoolOccupancyPctByYear: number[] }
+    }
+
+    expect(migrated.capacity.Y1?.occupancyPctByYear).toEqual([50, 75, 100])
+    expect(migrated.capacity.Y2?.occupancyPctByYear).toEqual([50, 75, 100])
+    expect(migrated.revenueAssumptions.schoolOccupancyPctByYear).toEqual([])
   })
 })
 

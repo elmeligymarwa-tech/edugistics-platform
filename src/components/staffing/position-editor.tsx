@@ -2,7 +2,7 @@
 
 import { Plus, Trash2 } from 'lucide-react'
 
-import { DataGrid, toNumberOrZero, type GridColumnDef, type GridRowGroup } from '@/components/grid'
+import { COLUMN_WIDTH, DataGrid, toNumberOrZero, type GridColumnDef, type GridRowGroup } from '@/components/grid'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { StaffSectionSchema, type Project, type StaffPosition } from '@/domain/schema'
@@ -16,6 +16,16 @@ const PERCENT_FIELDS = new Set<keyof StaffPosition>([
   'nationalInsurancePct',
   'medicalInsurancePct',
   'pensionPct',
+])
+
+const MONEY_FIELDS = new Set<keyof StaffPosition>([
+  'averageSalary',
+  'minimumSalary',
+  'maximumSalary',
+  'housingAllowance',
+  'transportAllowance',
+  'recruitmentCost',
+  'trainingCost',
 ])
 
 const NUMBER_FIELDS: Array<{ key: keyof StaffPosition; label: string }> = [
@@ -92,8 +102,7 @@ export function PositionEditor({ project }: { project: Project }) {
       id: 'title',
       label: 'Position',
       kind: 'text',
-      width: 220,
-      minWidth: 180,
+      ...COLUMN_WIDTH.label,
       pinned: 'left',
       getValue: (row) => row.position.title,
       onCommit: (row, value) => row.onUpdate({ title: typeof value === 'string' ? value : '' }),
@@ -132,8 +141,7 @@ export function PositionEditor({ project }: { project: Project }) {
       id: 'headcount',
       label: 'Headcount',
       kind: 'numeric',
-      width: 104,
-      minWidth: 96,
+      ...COLUMN_WIDTH.count,
       disabled: (row) => row.position.derivedFromCapacity && !row.position.manualOverride,
       getValue: (row) => row.position.headcount,
       onCommit: (row, value) => row.onUpdate({ headcount: toNumberOrZero(value) }),
@@ -143,8 +151,7 @@ export function PositionEditor({ project }: { project: Project }) {
         id: key,
         label,
         kind: PERCENT_FIELDS.has(key) ? 'percent' : 'numeric',
-        width: 128,
-        minWidth: 108,
+        ...(PERCENT_FIELDS.has(key) ? COLUMN_WIDTH.percent : MONEY_FIELDS.has(key) ? COLUMN_WIDTH.money : COLUMN_WIDTH.count),
         allowFillDown: true,
         allowUplift: key !== 'monthsWorked',
         getValue: (row) => row.position[key] as number,

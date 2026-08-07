@@ -38,6 +38,11 @@ export interface GridColumnDef<TRow> {
   render?: (row: TRow) => React.ReactNode
   allowFillDown?: boolean
   allowUplift?: boolean
+  /**
+   * Hidden until the grid's "Show more columns" toggle is switched on. Lets a wide grid
+   * default to only its essential columns while keeping the rest a click away.
+   */
+  secondary?: boolean
 }
 
 export interface GridColumnGroup<TRow> {

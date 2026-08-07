@@ -33,9 +33,12 @@ interface GridUiState {
   schemaVersion: number
   columnWidths: Record<string, Record<string, number>>
   collapsedGroups: Record<string, string[]>
+  /** Whether a grid's "secondary" columns (hidden by default behind a "Show more columns" toggle) are shown. */
+  showSecondaryColumns: Record<string, boolean>
   setColumnWidth: (gridId: string, columnId: string, width: number) => void
   setColumnWidths: (gridId: string, widths: Record<string, number>) => void
   toggleGroupCollapsed: (gridId: string, groupId: string) => void
+  setShowSecondaryColumns: (gridId: string, show: boolean) => void
 }
 
 export const useGridUiStore = create<GridUiState>()(
@@ -44,6 +47,7 @@ export const useGridUiStore = create<GridUiState>()(
       schemaVersion: GRID_UI_SCHEMA_VERSION,
       columnWidths: {},
       collapsedGroups: {},
+      showSecondaryColumns: {},
 
       setColumnWidth: (gridId, columnId, width) =>
         set((state) => ({
@@ -69,6 +73,9 @@ export const useGridUiStore = create<GridUiState>()(
             : [...current, groupId]
           return { collapsedGroups: { ...state.collapsedGroups, [gridId]: next } }
         }),
+
+      setShowSecondaryColumns: (gridId, show) =>
+        set((state) => ({ showSecondaryColumns: { ...state.showSecondaryColumns, [gridId]: show } })),
     }),
     {
       name: GRID_UI_STORAGE_NAME,
@@ -80,6 +87,7 @@ export const useGridUiStore = create<GridUiState>()(
           ...currentState,
           columnWidths: persisted.columnWidths ?? currentState.columnWidths,
           collapsedGroups: persisted.collapsedGroups ?? currentState.collapsedGroups,
+          showSecondaryColumns: persisted.showSecondaryColumns ?? currentState.showSecondaryColumns,
         }
       },
     },

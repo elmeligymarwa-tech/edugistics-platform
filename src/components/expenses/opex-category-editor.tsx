@@ -2,7 +2,7 @@
 
 import { Plus, Sparkles, Trash2 } from 'lucide-react'
 
-import { DataGrid, toNumberOrZero, type GridColumnDef } from '@/components/grid'
+import { COLUMN_WIDTH, DataGrid, toNumberOrZero, type GridColumnDef } from '@/components/grid'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { OpexGroupSchema, type OpexCategory } from '@/domain/costs'
@@ -53,8 +53,7 @@ export function OpexCategoryEditor({ projectId, opex }: { projectId: string; ope
       id: 'name',
       label: 'Name',
       kind: 'text',
-      width: 200,
-      minWidth: 160,
+      ...COLUMN_WIDTH.label,
       pinned: 'left',
       getValue: (category) => category.name,
       onCommit: (category, value) => updateCategory(category.id, { name: typeof value === 'string' ? value : '' }),
@@ -76,8 +75,7 @@ export function OpexCategoryEditor({ projectId, opex }: { projectId: string; ope
       id: 'group',
       label: 'Group',
       kind: 'select',
-      width: 140,
-      minWidth: 120,
+      ...COLUMN_WIDTH.select,
       selectOptions: GROUP_OPTIONS,
       getValue: (category) => category.group,
       onCommit: (category, value) => updateCategory(category.id, { group: value as OpexCategory['group'] }),
@@ -86,8 +84,7 @@ export function OpexCategoryEditor({ projectId, opex }: { projectId: string; ope
       id: 'basis',
       label: 'Basis',
       kind: 'select',
-      width: 140,
-      minWidth: 128,
+      ...COLUMN_WIDTH.select,
       selectOptions: BASIS_OPTIONS,
       getValue: (category) => category.basis,
       onCommit: (category, value) => updateCategory(category.id, { basis: value as OpexCategory['basis'] }),
@@ -96,8 +93,7 @@ export function OpexCategoryEditor({ projectId, opex }: { projectId: string; ope
       id: 'amount',
       label: 'Amount',
       kind: 'numeric',
-      width: 128,
-      minWidth: 104,
+      ...COLUMN_WIDTH.money,
       allowFillDown: true,
       allowUplift: true,
       getValue: (category) => category.amount,
@@ -107,8 +103,8 @@ export function OpexCategoryEditor({ projectId, opex }: { projectId: string; ope
       id: 'stepSizeStudents',
       label: 'Step size (students)',
       kind: 'numeric',
-      width: 140,
-      minWidth: 120,
+      width: 116,
+      minWidth: 100,
       getValue: (category) => category.stepSizeStudents,
       onCommit: (category, value) =>
         updateCategory(category.id, { stepSizeStudents: Math.max(1, toNumberOrZero(value) || 1) }),
@@ -117,8 +113,8 @@ export function OpexCategoryEditor({ projectId, opex }: { projectId: string; ope
       id: 'escalationPct',
       label: 'Escalation % (blank inherits)',
       kind: 'percent',
-      width: 168,
-      minWidth: 140,
+      width: 140,
+      minWidth: 120,
       allowFillDown: true,
       getValue: (category) => (Array.isArray(category.escalationPct) ? (category.escalationPct[0] ?? 0) : category.escalationPct),
       onCommit: (category, value) =>
@@ -128,8 +124,7 @@ export function OpexCategoryEditor({ projectId, opex }: { projectId: string; ope
       id: 'startYearIndex',
       label: 'Start year',
       kind: 'numeric',
-      width: 100,
-      minWidth: 92,
+      ...COLUMN_WIDTH.count,
       getValue: (category) => category.startYearIndex + 1,
       onCommit: (category, value) => updateCategory(category.id, { startYearIndex: Math.max(0, toNumberOrZero(value) - 1) }),
     },
@@ -137,8 +132,7 @@ export function OpexCategoryEditor({ projectId, opex }: { projectId: string; ope
       id: 'endYearIndex',
       label: 'End year',
       kind: 'numeric',
-      width: 100,
-      minWidth: 92,
+      ...COLUMN_WIDTH.count,
       getValue: (category) => (category.endYearIndex !== null ? category.endYearIndex + 1 : null),
       onCommit: (category, value) =>
         updateCategory(category.id, { endYearIndex: typeof value === 'number' ? Math.max(0, Math.round(value) - 1) : null }),

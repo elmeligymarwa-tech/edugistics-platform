@@ -31,9 +31,29 @@ function renderHeaderCell<TRow>(
   const { columnDefById, groupMetaById, collapsedGroups, mode, onToggleGroup, onFillDownColumn, onUpliftColumn, pinnedLeftColumnId } =
     params
   const isLeaf = header.subHeaders.length === 0
+  const isPinned = isLeaf && header.column.id === pinnedLeftColumnId
+
+  // TanStack synthesizes a "placeholder" header for every column that doesn't reach the
+  // table's deepest level (i.e. any column not inside a group, once some other column IS
+  // grouped) so every row lines up. It reuses the same column id/label as the real header,
+  // so left unfiltered it renders that column's label a second time, one row above its
+  // actual header — an empty filler here is what leaves the group row genuinely empty
+  // except where a group actually spans multiple columns.
+  if (header.isPlaceholder) {
+    return (
+      <div
+        key={header.id}
+        className={cn(
+          'h-9 shrink-0 border-r border-b border-border/60 bg-card',
+          isPinned ? 'sticky left-0 z-30' : 'z-20',
+        )}
+        style={{ width: header.getSize(), minWidth: columnDefById.get(header.column.id)?.minWidth }}
+      />
+    )
+  }
+
   const columnDef = isLeaf ? columnDefById.get(header.column.id) : undefined
   const groupMeta = !isLeaf ? groupMetaById.get(header.column.id) : undefined
-  const isPinned = isLeaf && header.column.id === pinnedLeftColumnId
   const isCollapsed = !isLeaf && collapsedGroups.includes(header.column.id)
   const label = typeof header.column.columnDef.header === 'string' ? header.column.columnDef.header : header.column.id
 
@@ -57,7 +77,7 @@ function renderHeaderCell<TRow>(
           {isCollapsed ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}
         </button>
       ) : null}
-      <span className="truncate">{label}</span>
+      <span className="truncate" title={label}>{label}</span>
       {isLeaf && columnDef && mode === 'edit' ? (
         <GridColumnMenu
           columnLabel={columnDef.label}

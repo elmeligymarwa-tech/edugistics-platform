@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 
 import { DataGrid } from './data-grid'
-import type { GridColumnDef } from './data-grid.types'
+import type { GridColumnDef, GridColumnGroup } from './data-grid.types'
 
 interface Row {
   id: string
@@ -275,5 +275,85 @@ describe('DataGrid', () => {
 
     expect(onCommit).toHaveBeenCalledWith(rows[2], 1)
     expect(screen.queryByDisplayValue('20')).not.toBeInTheDocument()
+  })
+
+  it('collapses a column group with a single leaf into one header row instead of duplicating the label', () => {
+    const singleLeafGroup: GridColumnGroup<Row> = {
+      id: 'group-single',
+      label: 'Group Label',
+      collapsible: true,
+      columns: [{ id: 'leaf', label: 'Leaf Label', kind: 'numeric', width: 100, minWidth: 80, getValue: () => 5 }],
+    }
+    render(
+      <DataGrid
+        rows={makeRows(1)}
+        getRowId={(row) => row.id}
+        columns={[nameColumn, singleLeafGroup]}
+        mode="display"
+        gridId="test-single-leaf-group"
+        ariaLabel="Single leaf group grid"
+      />,
+    )
+    const grid = screen.getByRole('grid', { name: 'Single leaf group grid' })
+
+    expect(within(grid).getByText('Leaf Label')).toBeInTheDocument()
+    expect(within(grid).queryByText('Group Label')).not.toBeInTheDocument()
+  })
+
+  it('keeps the group header row when a group genuinely spans several columns', () => {
+    const multiLeafGroup: GridColumnGroup<Row> = {
+      id: 'group-multi',
+      label: 'Group Label',
+      collapsible: true,
+      columns: [
+        { id: 'leaf-1', label: 'Year 1', kind: 'numeric', width: 100, minWidth: 80, getValue: () => 1 },
+        { id: 'leaf-2', label: 'Year 2', kind: 'numeric', width: 100, minWidth: 80, getValue: () => 2 },
+      ],
+    }
+    render(
+      <DataGrid
+        rows={makeRows(1)}
+        getRowId={(row) => row.id}
+        columns={[nameColumn, multiLeafGroup]}
+        mode="display"
+        gridId="test-multi-leaf-group"
+        ariaLabel="Multi leaf group grid"
+      />,
+    )
+    const grid = screen.getByRole('grid', { name: 'Multi leaf group grid' })
+
+    expect(within(grid).getByText('Group Label')).toBeInTheDocument()
+    expect(within(grid).getByText('Year 1')).toBeInTheDocument()
+    expect(within(grid).getByText('Year 2')).toBeInTheDocument()
+  })
+
+  it('hides secondary columns by default and reveals them via the "Show more columns" toggle', () => {
+    const secondaryColumn: GridColumnDef<Row> = {
+      id: 'extra',
+      label: 'Extra',
+      kind: 'numeric',
+      width: 100,
+      minWidth: 80,
+      secondary: true,
+      getValue: () => 42,
+    }
+    render(
+      <DataGrid
+        rows={makeRows(1)}
+        getRowId={(row) => row.id}
+        columns={[nameColumn, amountColumn, secondaryColumn]}
+        mode="display"
+        gridId="test-secondary-columns"
+        ariaLabel="Secondary columns grid"
+      />,
+    )
+    const grid = screen.getByRole('grid', { name: 'Secondary columns grid' })
+    expect(within(grid).queryByText('Extra')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show more columns' }))
+    expect(within(grid).getByText('Extra')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show fewer columns' }))
+    expect(within(grid).queryByText('Extra')).not.toBeInTheDocument()
   })
 })

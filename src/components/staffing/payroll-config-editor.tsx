@@ -1,6 +1,6 @@
 'use client'
 
-import { DataGrid, toNumberOrZero, type GridColumnDef, type GridRowGroup } from '@/components/grid'
+import { COLUMN_WIDTH, DataGrid, toNumberOrZero, type GridColumnDef, type GridRowGroup } from '@/components/grid'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { SliderNumberField } from '@/components/ui/slider-number-field'
@@ -51,8 +51,7 @@ export function PayrollConfigEditor({
       id: 'title',
       label: 'Position',
       kind: 'readonly',
-      width: 200,
-      minWidth: 160,
+      ...COLUMN_WIDTH.label,
       pinned: 'left',
       getValue: (row) => row.position.title,
     },
@@ -60,8 +59,7 @@ export function PayrollConfigEditor({
       id: `headcount-${yearIndex}`,
       label: `Year ${yearIndex + 1}`,
       kind: 'numeric',
-      width: 100,
-      minWidth: 92,
+      ...COLUMN_WIDTH.count,
       allowFillDown: true,
       getValue: (row) => payroll.headcountByYear[row.position.id]?.[yearIndex] ?? row.position.headcount,
       onCommit: (row, value) => {

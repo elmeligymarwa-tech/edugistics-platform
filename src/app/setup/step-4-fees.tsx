@@ -2,7 +2,7 @@
 
 import { Plus, Trash2 } from 'lucide-react'
 
-import { DataGrid, toNumberOrZero, type GridColumnDef, type GridColumnGroup } from '@/components/grid'
+import { COLUMN_WIDTH, DataGrid, toNumberOrZero, type GridColumnDef, type GridColumnGroup } from '@/components/grid'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -98,8 +98,7 @@ export function Step4Fees({ project }: { project: Project }) {
       id: 'name',
       label: 'Name',
       kind: 'text',
-      width: 200,
-      minWidth: 160,
+      ...COLUMN_WIDTH.label,
       pinned: 'left',
       getValue: (category) => category.name,
       onCommit: (category, value) => updateCategory(category.id, { name: typeof value === 'string' ? value : '' }),
@@ -121,8 +120,7 @@ export function Step4Fees({ project }: { project: Project }) {
       id: 'taxTreatment',
       label: 'Tax treatment',
       kind: 'select',
-      width: 140,
-      minWidth: 128,
+      ...COLUMN_WIDTH.select,
       selectOptions: TaxTreatmentSchema.options.map((option) => ({ value: option, label: TAX_TREATMENT_LABELS[option] ?? option })),
       getValue: (category) => category.taxTreatment,
       onCommit: (category, value) =>
@@ -132,8 +130,7 @@ export function Step4Fees({ project }: { project: Project }) {
       id: 'billingFrequency',
       label: 'Billing',
       kind: 'select',
-      width: 120,
-      minWidth: 108,
+      ...COLUMN_WIDTH.select,
       selectOptions: BillingFrequencySchema.options.map((option) => ({
         value: option,
         label: BILLING_FREQUENCY_LABELS[option] ?? option,
@@ -146,8 +143,7 @@ export function Step4Fees({ project }: { project: Project }) {
       id: 'chargeBasis',
       label: 'Charge basis',
       kind: 'select',
-      width: 140,
-      minWidth: 128,
+      ...COLUMN_WIDTH.select,
       selectOptions: ChargeBasisSchema.options.map((option) => ({ value: option, label: CHARGE_BASIS_LABELS[option] ?? option })),
       getValue: (category) => category.chargeBasis,
       onCommit: (category, value) => updateCategory(category.id, { chargeBasis: value as FeeCategory['chargeBasis'] }),
@@ -156,8 +152,7 @@ export function Step4Fees({ project }: { project: Project }) {
       id: 'escalationGroup',
       label: 'Escalation group',
       kind: 'select',
-      width: 128,
-      minWidth: 116,
+      ...COLUMN_WIDTH.select,
       selectOptions: EscalationGroupSchema.options.map((option) => ({
         value: option,
         label: ESCALATION_GROUP_LABELS[option] ?? option,
@@ -170,8 +165,7 @@ export function Step4Fees({ project }: { project: Project }) {
       id: 'uptakePct',
       label: 'Uptake %',
       kind: 'percent',
-      width: 100,
-      minWidth: 92,
+      ...COLUMN_WIDTH.percent,
       disabled: (category) => category.mandatory,
       getValue: (category) => category.uptakePct,
       onCommit: (category, value) => updateCategory(category.id, { uptakePct: toNumberOrZero(value) }),
@@ -180,8 +174,7 @@ export function Step4Fees({ project }: { project: Project }) {
       id: 'mandatory',
       label: 'Mandatory',
       kind: 'select',
-      width: 104,
-      minWidth: 96,
+      ...COLUMN_WIDTH.select,
       selectOptions: YES_NO_OPTIONS,
       getValue: (category) => String(category.mandatory),
       onCommit: (category, value) => updateCategory(category.id, { mandatory: value === 'true' }),
@@ -190,8 +183,7 @@ export function Step4Fees({ project }: { project: Project }) {
       id: 'discountable',
       label: 'Discountable',
       kind: 'select',
-      width: 112,
-      minWidth: 100,
+      ...COLUMN_WIDTH.select,
       selectOptions: YES_NO_OPTIONS,
       getValue: (category) => String(category.discountable),
       onCommit: (category, value) => updateCategory(category.id, { discountable: value === 'true' }),
@@ -200,8 +192,7 @@ export function Step4Fees({ project }: { project: Project }) {
       id: 'includedInStm',
       label: 'Included in STM',
       kind: 'select',
-      width: 128,
-      minWidth: 112,
+      ...COLUMN_WIDTH.select,
       selectOptions: YES_NO_OPTIONS,
       getValue: (category) => String(category.includedInStm),
       onCommit: (category, value) => updateCategory(category.id, { includedInStm: value === 'true' }),
@@ -213,8 +204,7 @@ export function Step4Fees({ project }: { project: Project }) {
       id: 'group',
       label: 'Year group',
       kind: 'readonly',
-      width: 140,
-      minWidth: 120,
+      ...COLUMN_WIDTH.shortLabel,
       pinned: 'left',
       getValue: (group) => YEAR_GROUP_LABELS[group],
     },
@@ -232,8 +222,7 @@ export function Step4Fees({ project }: { project: Project }) {
               id: category.id,
               label: category.mandatory ? category.name : `${category.name} (optional)`,
               kind: 'numeric',
-              width: 128,
-              minWidth: 104,
+              ...COLUMN_WIDTH.money,
               allowFillDown: true,
               allowUplift: true,
               getValue: (group) => project.fees.amounts[group]?.[category.id] ?? 0,

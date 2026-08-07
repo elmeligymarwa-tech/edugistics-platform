@@ -2,7 +2,7 @@
 
 import { Plus, Trash2 } from 'lucide-react'
 
-import { DataGrid, toNumberOrZero, type GridColumnDef } from '@/components/grid'
+import { COLUMN_WIDTH, DataGrid, toNumberOrZero, type GridColumnDef } from '@/components/grid'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import type { CapexItem } from '@/domain/costs'
@@ -53,8 +53,7 @@ export function CapexEditor({
       id: 'name',
       label: 'Name',
       kind: 'text',
-      width: 220,
-      minWidth: 180,
+      ...COLUMN_WIDTH.label,
       pinned: 'left',
       getValue: (item) => item.name,
       onCommit: (item, value) => updateItem(item.id, { name: typeof value === 'string' ? value : '' }),
@@ -76,8 +75,7 @@ export function CapexEditor({
       id: 'amount',
       label: 'Amount',
       kind: 'numeric',
-      width: 128,
-      minWidth: 108,
+      ...COLUMN_WIDTH.money,
       allowFillDown: true,
       allowUplift: true,
       getValue: (item) => item.amount,
@@ -87,8 +85,7 @@ export function CapexEditor({
       id: 'yearIndex',
       label: 'Forecast year',
       kind: 'numeric',
-      width: 116,
-      minWidth: 104,
+      ...COLUMN_WIDTH.count,
       getValue: (item) => item.yearIndex + 1,
       onCommit: (item, value) => updateItem(item.id, { yearIndex: Math.max(0, toNumberOrZero(value) - 1) }),
     },
@@ -96,8 +93,8 @@ export function CapexEditor({
       id: 'usefulLifeYears',
       label: 'Useful life (years)',
       kind: 'numeric',
-      width: 140,
-      minWidth: 120,
+      width: 116,
+      minWidth: 100,
       getValue: (item) => item.usefulLifeYears,
       onCommit: (item, value) => updateItem(item.id, { usefulLifeYears: Math.max(1, toNumberOrZero(value)) }),
     },
@@ -109,8 +106,7 @@ export function CapexEditor({
       id: 'label',
       label: 'Depreciation schedule',
       kind: 'readonly',
-      width: 220,
-      minWidth: 180,
+      ...COLUMN_WIDTH.label,
       pinned: 'left',
       getValue: (row) => row.label,
     },
@@ -119,8 +115,7 @@ export function CapexEditor({
         id: `year-${year.yearIndex}`,
         label: year.label,
         kind: 'readonly',
-        width: 128,
-        minWidth: 112,
+        ...COLUMN_WIDTH.money,
         getValue: () => year.depreciation,
         format: (value) => (typeof value === 'number' ? formatMoney(value, project.meta) : ''),
       }),
