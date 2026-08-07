@@ -222,6 +222,25 @@ export function DataGrid<TRow>(props: DataGridProps<TRow>) {
     if (typeof navigator !== 'undefined' && navigator.clipboard) void navigator.clipboard.writeText(text)
   }, [dataEntries, rangeBounds, visibleColumns])
 
+  const handleTypeahead = React.useCallback(
+    (cell: CellCoordinate, key: string) => {
+      const entry = dataEntries[cell.rowIndex]
+      const column = visibleColumns[cell.colIndex]?.def
+      if (!entry?.row || !column || column.kind !== 'select') return false
+      // Space opens the list, matching Enter, rather than jumping to an option labelled
+      // with a leading space.
+      if (key === ' ') {
+        setEditingCell(cell)
+        return true
+      }
+      const lower = key.toLowerCase()
+      const match = column.selectOptions?.find((option) => option.label.toLowerCase().startsWith(lower))
+      if (match && match.value !== column.getValue(entry.row)) column.onCommit?.(entry.row, match.value)
+      return true
+    },
+    [dataEntries, setEditingCell, visibleColumns],
+  )
+
   const handleKeyDown = useGridKeyboard({
     mode,
     rowCount: dataEntries.length,
@@ -232,6 +251,7 @@ export function DataGrid<TRow>(props: DataGridProps<TRow>) {
     setEditingCell,
     onCopy: handleCopy,
     isCellEditable,
+    onTypeahead: handleTypeahead,
   })
 
   const handleCellCommit = React.useCallback(

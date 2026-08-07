@@ -9,6 +9,7 @@ interface Row {
   id: string
   name: string
   amount: number
+  status: string
 }
 
 function makeRows(count: number): Row[] {
@@ -16,6 +17,7 @@ function makeRows(count: number): Row[] {
     id: `row-${index}`,
     name: `Year group ${index}`,
     amount: index * 10,
+    status: 'active',
   }))
 }
 
@@ -40,6 +42,23 @@ const amountColumn: GridColumnDef<Row> = {
 
 function editableAmountColumn(onCommit: (row: Row, value: string | number | null) => void): GridColumnDef<Row> {
   return { ...amountColumn, onCommit }
+}
+
+const statusColumn: GridColumnDef<Row> = {
+  id: 'status',
+  label: 'Status',
+  kind: 'select',
+  width: 120,
+  minWidth: 96,
+  selectOptions: [
+    { value: 'active', label: 'Active' },
+    { value: 'inactive', label: 'Inactive' },
+  ],
+  getValue: (row) => row.status,
+}
+
+function editableStatusColumn(onCommit: (row: Row, value: string | number | null) => void): GridColumnDef<Row> {
+  return { ...statusColumn, onCommit }
 }
 
 function getGridCell(grid: HTMLElement, text: string): HTMLElement {
@@ -147,6 +166,39 @@ describe('DataGrid', () => {
     const input = within(grid).getByDisplayValue('20') as HTMLInputElement
     expect(input).toHaveFocus()
     expect([input.selectionStart, input.selectionEnd]).toEqual([0, 2])
+  })
+
+  it('opens the option list on a single click for a select cell', () => {
+    // jsdom has no HTMLSelectElement.showPicker implementation — stub it so we can assert
+    // the cell actually calls it (a plain focus() alone doesn't open a native list).
+    const showPicker = vi.fn()
+    Object.defineProperty(HTMLSelectElement.prototype, 'showPicker', {
+      configurable: true,
+      writable: true,
+      value: showPicker,
+    })
+
+    const onCommit = vi.fn()
+    const rows = makeRows(3).map((row, index) => ({ ...row, status: index === 0 ? 'active' : 'inactive' }))
+    render(
+      <DataGrid
+        rows={rows}
+        getRowId={(row) => row.id}
+        columns={[nameColumn, editableStatusColumn(onCommit)]}
+        mode="edit"
+        gridId="test-select-click-open"
+        ariaLabel="Select click grid"
+      />,
+    )
+    const grid = screen.getByRole('grid', { name: 'Select click grid' })
+
+    fireEvent.mouseDown(getGridCell(grid, 'Active'))
+
+    const select = within(grid).getByRole('combobox')
+    expect(select).toHaveFocus()
+    expect(showPicker).toHaveBeenCalledTimes(1)
+
+    delete (HTMLSelectElement.prototype as { showPicker?: () => void }).showPicker
   })
 
   it('starts editing, seeded with the typed character, when typing on an active cell without clicking', () => {

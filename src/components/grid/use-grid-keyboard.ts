@@ -14,6 +14,13 @@ interface UseGridKeyboardParams {
   setEditingCell: (cell: CellCoordinate | null, seed?: string | null) => void
   onCopy: () => void
   isCellEditable: (cell: CellCoordinate) => boolean
+  /**
+   * Lets the host special-case a typed character per cell — a select-kind column jumps
+   * straight to the first option starting with that letter (native <select> typeahead)
+   * instead of opening a free-text edit seeded with it. Return true to say "handled,
+   * don't open editing"; false/undefined falls through to the default seeded-edit-open.
+   */
+  onTypeahead?: (cell: CellCoordinate, key: string) => boolean
 }
 
 /**
@@ -37,6 +44,7 @@ export function useGridKeyboard({
   setEditingCell,
   onCopy,
   isCellEditable,
+  onTypeahead,
 }: UseGridKeyboardParams) {
   return React.useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -101,11 +109,23 @@ export function useGridKeyboard({
             isCellEditable(activeCell)
           ) {
             event.preventDefault()
-            setEditingCell(activeCell, event.key)
+            const handled = onTypeahead?.(activeCell, event.key)
+            if (!handled) setEditingCell(activeCell, event.key)
           }
           break
       }
     },
-    [activeCell, colCount, editingCell, isCellEditable, mode, onCopy, rowCount, setActiveCell, setEditingCell],
+    [
+      activeCell,
+      colCount,
+      editingCell,
+      isCellEditable,
+      mode,
+      onCopy,
+      onTypeahead,
+      rowCount,
+      setActiveCell,
+      setEditingCell,
+    ],
   )
 }

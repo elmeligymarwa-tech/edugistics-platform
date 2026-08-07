@@ -60,6 +60,7 @@ export function GridCell<TRow>({
 
   const [draft, setDraft] = React.useState(() => (value === null ? '' : String(value)))
   const inputRef = React.useRef<HTMLInputElement>(null)
+  const selectRef = React.useRef<HTMLSelectElement>(null)
   const wasEditingRef = React.useRef(false)
 
   // Runs synchronously before paint so the input never flashes a stale value and the
@@ -72,7 +73,31 @@ export function GridCell<TRow>({
     }
     const justStarted = !wasEditingRef.current
     wasEditingRef.current = true
-    const useSeed = justStarted && editSeed !== null && column.kind !== 'select'
+
+    if (column.kind === 'select') {
+      setDraft(value === null ? '' : String(value))
+      const select = selectRef.current
+      if (select && justStarted) {
+        select.focus()
+        // The <select> doesn't exist in the DOM until this render (isEditing only flips
+        // true after the click/keydown that started the edit), so the browser never sees
+        // a real user gesture land directly on it — autoFocus alone leaves the list
+        // closed. showPicker() opens it programmatically; it only succeeds within the
+        // brief "transient activation" window left over from that originating click or
+        // keydown, which this layout effect still runs inside of. Guarded because
+        // showPicker isn't implemented everywhere (e.g. jsdom, older browsers) and can
+        // throw if activation has already lapsed — the select is still focused and
+        // openable by hand (click again, or Enter/Space/Arrow) either way.
+        try {
+          select.showPicker?.()
+        } catch {
+          // Activation expired or unsupported — select remains focused and usable.
+        }
+      }
+      return
+    }
+
+    const useSeed = justStarted && editSeed !== null
     const nextDraft = useSeed ? editSeed : value === null ? '' : String(value)
 
     const input = inputRef.current
@@ -139,7 +164,7 @@ export function GridCell<TRow>({
     >
       {isEditing && column.kind === 'select' ? (
         <select
-          autoFocus
+          ref={selectRef}
           value={draft}
           onChange={(event) => onCommit(event.target.value, 'none')}
           onBlur={() => onCancelEdit()}
