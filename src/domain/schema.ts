@@ -89,7 +89,7 @@ export type YearGroupCapacity = z.infer<typeof YearGroupCapacitySchema>
 /* ------------------------------------------------------------------ fees */
 
 export const TaxTreatmentSchema = z.enum(['exclusive', 'inclusive', 'exempt'])
-export const ChargeBasisSchema = z.enum(['perStudent', 'oneOffOnEntry'])
+export const ChargeBasisSchema = z.enum(['perStudent', 'perFamily', 'oneOffOnEntry'])
 export const BillingFrequencySchema = z.enum(['annual', 'termly', 'monthly'])
 export const EscalationGroupSchema = z.enum(['tuition', 'other'])
 
@@ -100,7 +100,7 @@ export const FeeCategorySchema = z.object({
   /** Applied to optional categories only. Mandatory categories always use 100. */
   uptakePct: pct.default(100),
   includedInStm: z.boolean().default(false),
-  /** Whether scholarship and staff discounts reduce this category. */
+  /** Whether sibling, scholarship and staff discounts reduce this category. */
   discountable: z.boolean().default(false),
   taxTreatment: TaxTreatmentSchema.default('exempt'),
   billingFrequency: BillingFrequencySchema.default('annual'),
@@ -118,9 +118,14 @@ export type FeeStructure = z.infer<typeof FeeStructureSchema>
 
 /* ---------------------------------------------------- revenue assumptions */
 
+export const EnrolmentModelSchema = z.enum(['occupancy', 'cohort'])
+export type EnrolmentModel = z.infer<typeof EnrolmentModelSchema>
+
 const escalation = z.union([z.number(), z.array(z.number())])
 
 export const DiscountsSchema = z.object({
+  siblingPct: pct.default(0),
+  siblingEligiblePct: pct.default(0),
   staffChildPct: pct.default(0),
   staffChildPlaces: z.number().int().min(0).default(0),
   scholarshipPct: pct.default(0),
@@ -163,29 +168,21 @@ export const SchoolPlanSchema = z.object({
 export type SchoolPlan = z.infer<typeof SchoolPlanSchema>
 
 export const RevenueAssumptionsSchema = z.object({
-  schoolPlan: SchoolPlanSchema.default({
-    enabled: false,
-    maxSchoolStudents: null,
-    totalStudentsByYear: [],
-    taperPct: 40,
-  }),
+  schoolPlan: SchoolPlanSchema.default({ enabled: false, maxSchoolStudents: null, totalStudentsByYear: [], taperPct: 40 }),
+  enrolmentModel: EnrolmentModelSchema.default('occupancy'),
   /**
    * One occupancy ramp for the whole school, entered once. When present it
    * overrides every per year group ramp. Empty means fall back to per group.
-   * Only year one (index 0) is read — later years come from the intake
-   * growth model below.
    */
   schoolOccupancyPctByYear: z.array(pct).default([]),
   tuitionEscalationPct: escalation.default(0),
   otherFeeEscalationPct: escalation.default(0),
-  /** Single school-wide annual rate compounded onto each year group's prior-year students. */
-  intakeGrowthRatePct: z.number().default(0),
-  /**
-   * intakeOverrides[yearGroupId][forecastYearIndex]; null (or a missing index) uses the
-   * growth-model figure, a number pins that cell's student count instead. Index 0 (year
-   * one) is never read — year one always comes from capacity occupancy.
-   */
-  intakeOverrides: z.record(z.string(), z.array(z.number().min(0).nullable())).default({}),
+  /** newIntake[yearGroupId][forecastYearIndex] */
+  newIntake: z.record(z.string(), z.array(z.number().min(0))).default({}),
+  /** retentionPct[yearGroupId], applied when a cohort progresses. */
+  retentionPct: z.record(z.string(), pct).default({}),
+  progression: z.boolean().default(true),
+  avgSiblingsPerFamily: z.number().min(1).default(1),
   discounts: DiscountsSchema,
   collections: CollectionsSchema,
   taxRatePct: pct.default(0),
@@ -210,6 +207,7 @@ export const StaffPositionSchema = z.object({
   derivedFromCapacity: z.boolean().default(false),
   manualOverride: z.boolean().default(false),
   headcount: z.number().min(0).default(0),
+  /** Monthly gross salary per person. Annual cost is this times contract months. */
   averageSalary: money.default(0),
   minimumSalary: money.default(0),
   maximumSalary: money.default(0),

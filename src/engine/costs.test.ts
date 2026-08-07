@@ -57,11 +57,16 @@ function makeProject(overrides: Record<string, unknown> = {}): Project {
       amounts: { Y1: { tuition: 100000 } },
     },
     revenueAssumptions: {
+      enrolmentModel: 'occupancy',
       tuitionEscalationPct: 0,
       otherFeeEscalationPct: 0,
-      intakeGrowthRatePct: 0,
-      intakeOverrides: {},
+      newIntake: {},
+      retentionPct: {},
+      progression: true,
+      avgSiblingsPerFamily: 1,
       discounts: {
+        siblingPct: 0,
+        siblingEligiblePct: 0,
         staffChildPct: 0,
         staffChildPlaces: 0,
         scholarshipPct: 0,
@@ -81,7 +86,7 @@ function makeProject(overrides: Record<string, unknown> = {}): Project {
           derivedFromCapacity: true,
           manualOverride: false,
           headcount: 0,
-          averageSalary: 200000,
+          averageSalary: 20000,
           minimumSalary: 0,
           maximumSalary: 0,
           annualIncrementPct: 0,
@@ -154,16 +159,12 @@ describe('headcount scaling', () => {
           teachingAssistants: 0,
           coTeachers: 0,
           maxCapacityPct: 100,
-          occupancyPctByYear: [25],
+          occupancyPctByYear: [25, 50, 100],
         },
-      },
-      revenueAssumptions: {
-        ...makeProject().revenueAssumptions,
-        intakeGrowthRatePct: 100,
       },
     })
     const payroll = computePayroll(project, makeCost())
-    // Year one at 25% (25 students, 1 class of 4), then doubling: 50 needs 2, 100 needs all 4.
+    // 25 students needs 1 class of 4, 50 needs 2, 100 needs all 4.
     expect(payroll.map((p) => p.headcount)).toEqual([1, 2, 4])
   })
 })
@@ -181,7 +182,7 @@ describe('establishment plan', () => {
     })
     const payroll = computePayroll(project, cost)
     expect(payroll.map((p) => p.headcount)).toEqual([1, 3, 6])
-    expect(payroll[1]!.salaries).toBe(600_000)
+    expect(payroll[1]!.salaries).toBe(720_000)
   })
 
   it('holds the final planned year when the plan is shorter than the forecast', () => {
@@ -194,8 +195,8 @@ describe('establishment plan', () => {
 })
 
 describe('payroll', () => {
-  it('matches a hand calculation: 2 teachers x 200,000 = 400,000', () => {
-    expect(computePayroll(makeProject(), makeCost())[0]!.total).toBe(400_000)
+  it('matches a hand calculation: 2 teachers x 20,000 a month x 12 = 480,000', () => {
+    expect(computePayroll(makeProject(), makeCost())[0]!.total).toBe(480_000)
   })
 
   it('adds employer on-costs on top of salary', () => {
@@ -212,10 +213,10 @@ describe('payroll', () => {
       },
     })
     const year = computePayroll(project, makeCost())[0]!
-    expect(year.salaries).toBe(400_000)
+    expect(year.salaries).toBe(480_000)
     expect(year.allowances).toBe(40_000)
-    expect(year.onCosts).toBeCloseTo(60_000, 6)
-    expect(year.total).toBeCloseTo(500_000, 6)
+    expect(year.onCosts).toBeCloseTo(72_000, 6)
+    expect(year.total).toBeCloseTo(592_000, 6)
   })
 
   it('charges recruitment on growth and turnover only', () => {
@@ -235,7 +236,7 @@ describe('payroll', () => {
 })
 
 describe('contract length and inflation', () => {
-  it('prices a ten month contract at ten twelfths of the annual salary', () => {
+  it('prices a ten month contract as monthly salary times ten months', () => {
     const project = makeProject({
       staffing: {
         positions: [
@@ -243,7 +244,7 @@ describe('contract length and inflation', () => {
         ],
       },
     })
-    expect(computePayroll(project, makeCost())[0]!.salaries).toBeCloseTo(400_000 * (10 / 12), 6)
+    expect(computePayroll(project, makeCost())[0]!.salaries).toBeCloseTo(400_000, 6)
   })
 
   it('inherits the model wide inflation rate where a category sets none', () => {
@@ -324,13 +325,13 @@ describe('statements', () => {
       financing: { openingCash: 0, payablesDays: 0, corporateTaxPct: 20, carryLossesForward: true },
     })
     const year = computeCostForecast(makeProject(), cost).years[0]!
-    // 4,000,000 revenue less 400,000 payroll less 1,000,000 rent = 2,600,000 EBITDA
-    expect(year.ebitda).toBeCloseTo(2_600_000, 6)
+    // 4,000,000 revenue less 480,000 payroll less 1,000,000 rent = 2,520,000 EBITDA
+    expect(year.ebitda).toBeCloseTo(2_520_000, 6)
     expect(year.depreciation).toBeCloseTo(200_000, 6)
-    expect(year.ebit).toBeCloseTo(2_400_000, 6)
-    expect(year.tax).toBeCloseTo(480_000, 6)
-    expect(year.netProfit).toBeCloseTo(1_920_000, 6)
-    expect(year.ebitdaMarginPct).toBeCloseTo(65, 6)
+    expect(year.ebit).toBeCloseTo(2_320_000, 6)
+    expect(year.tax).toBeCloseTo(464_000, 6)
+    expect(year.netProfit).toBeCloseTo(1_856_000, 6)
+    expect(year.ebitdaMarginPct).toBeCloseTo(63, 6)
   })
 
   it('carries losses forward against later taxable profit', () => {
@@ -344,13 +345,8 @@ describe('statements', () => {
           teachingAssistants: 0,
           coTeachers: 0,
           maxCapacityPct: 100,
-          occupancyPctByYear: [10],
+          occupancyPctByYear: [10, 100, 100],
         },
-      },
-      revenueAssumptions: {
-        ...makeProject().revenueAssumptions,
-        // 10% year one, then a 900% growth rate reaches (and caps at) 100% for years two and three.
-        intakeGrowthRatePct: 900,
       },
     })
     const cost = makeCost({
@@ -377,13 +373,8 @@ describe('statements', () => {
           teachingAssistants: 0,
           coTeachers: 0,
           maxCapacityPct: 100,
-          occupancyPctByYear: [10],
+          occupancyPctByYear: [10, 60, 100],
         },
-      },
-      revenueAssumptions: {
-        ...makeProject().revenueAssumptions,
-        // 10% year one, then a 500% growth rate reaches 60% for year two and caps at 100% for year three.
-        intakeGrowthRatePct: 500,
       },
     })
     const cost = makeCost({
@@ -405,12 +396,12 @@ describe('statements', () => {
     })
     const years = computeCostForecast(project, cost).years
     expect(years[0]!.cashCostsPaid).toBe(0)
-    expect(years[1]!.cashCostsPaid).toBeCloseTo(400_000, 6)
+    expect(years[1]!.cashCostsPaid).toBeCloseTo(480_000, 6)
   })
 
   it('returns zeroes for an empty cost model without throwing', () => {
     const result = computeCostForecast(makeProject(), makeCost())
     expect(result.years[0]!.opex).toBe(0)
-    expect(result.years[0]!.netProfit).toBeCloseTo(3_600_000, 6)
+    expect(result.years[0]!.netProfit).toBeCloseTo(3_520_000, 6)
   })
 })

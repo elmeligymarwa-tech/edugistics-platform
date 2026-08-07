@@ -193,6 +193,35 @@ function zeroHiddenStaffingFields(data: Record<string, unknown>): Record<string,
   return { ...data, staffing: { ...(staffing as Record<string, unknown>), positions: nextPositions } }
 }
 
+/**
+ * averageSalary, minimumSalary and maximumSalary used to be entered as an annual figure;
+ * the cost engine now reads them as monthly (annual cost = monthly times contract months
+ * times headcount, with the annual increase compounding on top). Dividing by twelve here
+ * keeps a project that already existed producing the same annual cost it did before,
+ * rather than suddenly costing twelve times as much. This can't use the schemaVersion
+ * gate above — schema.ts is locked, so there's nowhere on Project itself to record that a
+ * given project has already been converted — so the one-time guard lives in the store's
+ * own persisted state instead, see `staffingSalaryMigrated` below.
+ */
+function divideStaffingSalariesByTwelve(data: Record<string, unknown>): Record<string, unknown> {
+  const staffing = data.staffing
+  if (typeof staffing !== 'object' || staffing === null) return data
+  const positions = (staffing as Record<string, unknown>).positions
+  if (!Array.isArray(positions)) return data
+
+  const nextPositions = positions.map((entry) => {
+    if (typeof entry !== 'object' || entry === null) return entry
+    const position = entry as Record<string, unknown>
+    const next: Record<string, unknown> = { ...position }
+    for (const key of ['averageSalary', 'minimumSalary', 'maximumSalary'] as const) {
+      if (typeof position[key] === 'number') next[key] = (position[key] as number) / 12
+    }
+    return next
+  })
+
+  return { ...data, staffing: { ...(staffing as Record<string, unknown>), positions: nextPositions } }
+}
+
 /** Upgrades a raw project object to the current schemaVersion. */
 export function migrateProject(data: unknown): unknown {
   if (typeof data !== 'object' || data === null) return data
@@ -377,6 +406,14 @@ interface PersistedProjectState {
   capitalModels: Record<string, CapitalModel>
   scenarios: Record<string, ScenarioMeta>
   activeProjectId: string | null
+  /**
+   * Flips true the first time the store rehydrates after the monthly-salary change shipped,
+   * once every already-persisted project has been run through divideStaffingSalariesByTwelve.
+   * Staying true for good afterwards is what makes that divide self-guarding: a project
+   * created (or edited) after this flag is set already holds a monthly figure, so it must
+   * never be divided again on a later reload.
+   */
+  staffingSalaryMigrated: boolean
 }
 
 export type ProjectImportResult = { ok: true; id: string } | { ok: false; error: string }
@@ -396,7 +433,7 @@ interface ProjectActions {
   updateMeta: (id: string, patch: Partial<ProjectMeta>) => void
   updateCalendar: (id: string, patch: Partial<CalendarConfig>) => void
   updateYearGroups: (id: string, yearGroups: YearGroupId[]) => void
-  /** Removes a year group and any capacity, fee and intake override data tied to it. */
+  /** Removes a year group and any capacity, fee, intake and retention data tied to it. */
   removeYearGroup: (id: string, yearGroup: YearGroupId) => void
   updateCapacity: (id: string, yearGroup: YearGroupId, patch: Partial<YearGroupCapacity>) => void
   updateFees: (id: string, patch: Partial<FeeStructure>) => void
@@ -523,6 +560,11 @@ export const useProjectStore = create<ProjectStoreState>()(
       capitalModels: {},
       scenarios: {},
       activeProjectId: null,
+      // True by default: only a persisted blob from before this field existed — read back
+      // as `undefined` and coerced to false in `merge` below — should ever trigger the
+      // divide. A brand-new store (nothing in IndexedDB yet, so `merge` never runs) or a
+      // freshly created project must never have its already-monthly figures divided.
+      staffingSalaryMigrated: true,
       hasHydrated: false,
       setHasHydrated: (value) => set({ hasHydrated: value }),
 
@@ -630,8 +672,11 @@ export const useProjectStore = create<ProjectStoreState>()(
           const amounts = { ...project.fees.amounts }
           delete amounts[yearGroup]
 
-          const intakeOverrides = { ...project.revenueAssumptions.intakeOverrides }
-          delete intakeOverrides[yearGroup]
+          const newIntake = { ...project.revenueAssumptions.newIntake }
+          delete newIntake[yearGroup]
+
+          const retentionPct = { ...project.revenueAssumptions.retentionPct }
+          delete retentionPct[yearGroup]
 
           return {
             projects: {
@@ -641,7 +686,7 @@ export const useProjectStore = create<ProjectStoreState>()(
                 yearGroups: project.yearGroups.filter((g) => g !== yearGroup),
                 capacity,
                 fees: { ...project.fees, amounts },
-                revenueAssumptions: { ...project.revenueAssumptions, intakeOverrides },
+                revenueAssumptions: { ...project.revenueAssumptions, newIntake, retentionPct },
                 updatedAt: new Date().toISOString(),
               },
             },
@@ -868,6 +913,7 @@ export const useProjectStore = create<ProjectStoreState>()(
             ),
             discounts: {
               ...project.revenueAssumptions.discounts,
+              siblingPct: clampPct(project.revenueAssumptions.discounts.siblingPct + discountDeltaPct),
               staffChildPct: clampPct(project.revenueAssumptions.discounts.staffChildPct + discountDeltaPct),
               scholarshipPct: clampPct(
                 project.revenueAssumptions.discounts.scholarshipPct + discountDeltaPct,
@@ -984,6 +1030,7 @@ export const useProjectStore = create<ProjectStoreState>()(
         capitalModels: state.capitalModels,
         scenarios: state.scenarios,
         activeProjectId: state.activeProjectId,
+        staffingSalaryMigrated: state.staffingSalaryMigrated,
       }),
       onRehydrateStorage: () => () => {
         useProjectStore.getState().setHasHydrated(true)
@@ -991,11 +1038,17 @@ export const useProjectStore = create<ProjectStoreState>()(
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<PersistedProjectState> | null
         if (!persisted?.projects) return currentState
+        // Runs the one-time divide only while the flag is still false — an old blob that
+        // predates it entirely (undefined) is treated the same as an explicit false.
+        const staffingSalaryMigrated = persisted.staffingSalaryMigrated ?? false
         const projects = Object.fromEntries(
-          Object.entries(persisted.projects).map(([id, project]) => [
-            id,
-            ProjectSchema.parse(migrateProject(project)),
-          ]),
+          Object.entries(persisted.projects).map(([id, project]) => {
+            let raw = migrateProject(project)
+            if (!staffingSalaryMigrated && typeof raw === 'object' && raw !== null) {
+              raw = divideStaffingSalariesByTwelve(raw as Record<string, unknown>)
+            }
+            return [id, ProjectSchema.parse(raw)]
+          }),
         )
         const costModels = Object.fromEntries(
           Object.entries(persisted.costModels ?? {}).map(([id, costModel]) => [
@@ -1016,6 +1069,9 @@ export const useProjectStore = create<ProjectStoreState>()(
           capitalModels,
           scenarios: persisted.scenarios ?? currentState.scenarios,
           activeProjectId: persisted.activeProjectId ?? currentState.activeProjectId,
+          // Every project just went through the divide above (or already skipped it because
+          // it had already run) — true from here on, on every future rehydration.
+          staffingSalaryMigrated: true,
         }
       },
     },

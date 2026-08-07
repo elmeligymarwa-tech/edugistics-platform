@@ -6,9 +6,11 @@ import { Copy, Layers, Plus, Trash2 } from 'lucide-react'
 import {
   COLUMN_WIDTH,
   DataGrid,
+  coerceCellValue,
   toNumberOrZero,
   type CellPatch,
   type GridColumnDef,
+  type GridColumnGroup,
   type GridRowGroup,
 } from '@/components/grid'
 import { Button } from '@/components/ui/button'
@@ -17,7 +19,7 @@ import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { orderedYearGroups, StaffSectionSchema, type Project, type StaffPosition, type YearGroupId } from '@/domain/schema'
-import { formatMoney } from '@/lib/format'
+import { formatMoney, formatNumber } from '@/lib/format'
 import { STAFF_SECTION_LABELS, YEAR_GROUP_LABELS } from '@/lib/wizard-data'
 import { useProjectCostForecast, useProjectStore } from '@/store/project-store'
 import { createStaffPosition } from './create-staff-position'
@@ -26,13 +28,8 @@ const PERCENT_FIELDS = new Set<keyof StaffPosition>(['annualIncrementPct', 'empl
 
 const MONEY_FIELDS = new Set<keyof StaffPosition>(['averageSalary'])
 
-const NUMBER_FIELDS: Array<{ key: keyof StaffPosition; label: string }> = [
-  { key: 'averageSalary', label: 'Expected salary' },
-  { key: 'annualIncrementPct', label: 'Annual increase %' },
-  { key: 'employerTaxPct', label: 'Employer tax %' },
-  { key: 'nationalInsurancePct', label: 'National insurance %' },
-  { key: 'monthsWorked', label: 'Contract months' },
-]
+/** A year sub-column of the Total cost group — narrower than a plain money column since a forecast can run to ten of them. */
+const YEAR_COLUMN_WIDTH = { width: 112, minWidth: 96 }
 
 /** Pre-filled role suffix per section when bulk-adding by year group, e.g. "FS1 Teacher". Every section can still be typed over. */
 const DEFAULT_BULK_ADD_ROLE: Record<StaffPosition['section'], string> = {
@@ -61,7 +58,7 @@ type StaffingRow =
       onRemove: () => void
       onDuplicate: () => void
     }
-  | { kind: 'summary'; id: string; label: string; headcount: number; totalCost: number }
+  | { kind: 'summary'; id: string; label: string; headcount: number; totalCostByYear: number[] }
 
 /**
  * The full position editor grouped by staffing section, covering headcount,
@@ -74,10 +71,44 @@ export function PositionEditor({ project }: { project: Project }) {
   const updateStaffing = useProjectStore((state) => state.updateStaffing)
   const costForecast = useProjectCostForecast(project.id)
 
-  const linesByPositionId = new Map(
-    (costForecast?.payroll[0]?.lines ?? []).map((line) => [line.positionId, line]),
-  )
-  const totalCostFor = (positionId: string) => linesByPositionId.get(positionId)?.total ?? 0
+  const forecastYears = project.calendar.forecastYears
+  const payrollYears = costForecast?.payroll ?? []
+
+  /** A position's full cost — salary, allowances, on-costs, recruitment, training — for each forecast year, with the annual increase already compounded in by computeCostForecast. */
+  const totalCostByYearForPosition = (positionId: string): number[] =>
+    Array.from({ length: forecastYears }, (_, y) => payrollYears[y]?.lines.find((line) => line.positionId === positionId)?.total ?? 0)
+
+  const totalCostByYearForPositions = (positions: StaffPosition[]): number[] =>
+    Array.from({ length: forecastYears }, (_, y) =>
+      positions.reduce((sum, position) => sum + (payrollYears[y]?.lines.find((line) => line.positionId === position.id)?.total ?? 0), 0),
+    )
+
+  const totalCostByYearFor = (row: StaffingRow): number[] =>
+    row.kind === 'position' ? totalCostByYearForPosition(row.position.id) : row.totalCostByYear
+
+  const numberFields: Array<{
+    key: keyof StaffPosition
+    label: string
+    tooltip?: string
+    editHint?: (row: StaffingRow, draft: string) => React.ReactNode
+  }> = [
+    {
+      key: 'averageSalary',
+      label: 'Expected monthly salary',
+      tooltip: 'Gross monthly salary per person.',
+      editHint: (row, draft) => {
+        if (row.kind !== 'position') return null
+        const monthly = toNumberOrZero(coerceCellValue('numeric', draft))
+        const months = row.position.monthsWorked
+        const annual = monthly * months
+        return `${formatNumber(monthly, project.meta.locale)} a month over ${formatNumber(months, project.meta.locale)} months equals ${formatMoney(annual, project.meta).text} a year`
+      },
+    },
+    { key: 'annualIncrementPct', label: 'Annual increase %' },
+    { key: 'employerTaxPct', label: 'Employer tax %' },
+    { key: 'nationalInsurancePct', label: 'National insurance %' },
+    { key: 'monthsWorked', label: 'Contract months' },
+  ]
 
   const updatePosition = (id: string, patch: Partial<StaffPosition>) => {
     updateStaffing(project.id, {
@@ -135,7 +166,7 @@ export function PositionEditor({ project }: { project: Project }) {
         if (patch.columnId === 'headcount') {
           return { ...position, headcount: toNumberOrZero(patch.value) }
         }
-        const field = NUMBER_FIELDS.find(({ key }) => key === patch.columnId)
+        const field = numberFields.find(({ key }) => key === patch.columnId)
         if (!field) return position
         const numeric =
           field.key === 'monthsWorked'
@@ -163,7 +194,7 @@ export function PositionEditor({ project }: { project: Project }) {
         id: `subtotal-${section}`,
         label: 'Subtotal',
         headcount: sectionPositions.reduce((sum, position) => sum + position.headcount, 0),
-        totalCost: sectionPositions.reduce((sum, position) => sum + totalCostFor(position.id), 0),
+        totalCostByYear: totalCostByYearForPositions(sectionPositions),
       })
       return { id: section, label: STAFF_SECTION_LABELS[section] ?? section, rows }
     })
@@ -179,13 +210,52 @@ export function PositionEditor({ project }: { project: Project }) {
           id: 'grand-total',
           label: 'Grand total',
           headcount: project.staffing.positions.reduce((sum, position) => sum + position.headcount, 0),
-          totalCost: project.staffing.positions.reduce((sum, position) => sum + totalCostFor(position.id), 0),
+          totalCostByYear: totalCostByYearForPositions(project.staffing.positions),
         },
       ],
     })
   }
 
-  const columns: GridColumnDef<StaffingRow>[] = [
+  // Essential (always shown) columns: Position, Headcount, the five numberFields columns and
+  // the Total cost group's own Total column — everything except its per-year sub-columns.
+  const essentialColumnsWidth =
+    COLUMN_WIDTH.label.width +
+    COLUMN_WIDTH.count.width +
+    COLUMN_WIDTH.money.width +
+    COLUMN_WIDTH.percent.width * 3 +
+    COLUMN_WIDTH.count.width +
+    COLUMN_WIDTH.money.width
+  const yearColumnsFitAt1280 = essentialColumnsWidth + forecastYears * YEAR_COLUMN_WIDTH.width <= 1280
+
+  const totalCostGroup: GridColumnGroup<StaffingRow> = {
+    id: 'totalCost',
+    label: 'Total cost',
+    columns: [
+      ...Array.from({ length: forecastYears }, (_, yearIndex): GridColumnDef<StaffingRow> => ({
+        id: `totalCost-year-${yearIndex}`,
+        label: `Year ${yearIndex + 1}`,
+        kind: 'readonly',
+        width: YEAR_COLUMN_WIDTH.width,
+        minWidth: YEAR_COLUMN_WIDTH.minWidth,
+        // Hidden behind "Show more columns" whenever the full set of year sub-columns
+        // wouldn't fit alongside the essential columns at a 1280px viewport.
+        secondary: !yearColumnsFitAt1280,
+        getValue: (row) => totalCostByYearFor(row)[yearIndex] ?? 0,
+        format: (value) => (typeof value === 'number' ? formatMoney(value, project.meta) : ''),
+      })),
+      {
+        id: 'totalCost-total',
+        label: 'Total',
+        tooltip: 'Sum of this cost across the whole forecast.',
+        kind: 'readonly',
+        ...COLUMN_WIDTH.money,
+        getValue: (row) => totalCostByYearFor(row).reduce((sum, value) => sum + value, 0),
+        format: (value) => (typeof value === 'number' ? formatMoney(value, project.meta) : ''),
+      },
+    ],
+  }
+
+  const columns: (GridColumnDef<StaffingRow> | GridColumnGroup<StaffingRow>)[] = [
     {
       id: 'title',
       label: 'Position',
@@ -241,10 +311,11 @@ export function PositionEditor({ project }: { project: Project }) {
         row.onUpdate({ headcount: toNumberOrZero(value) })
       },
     },
-    ...NUMBER_FIELDS.map(
-      ({ key, label }): GridColumnDef<StaffingRow> => ({
+    ...numberFields.map(
+      ({ key, label, tooltip, editHint }): GridColumnDef<StaffingRow> => ({
         id: key,
         label,
+        tooltip,
         kind: PERCENT_FIELDS.has(key) ? 'percent' : 'numeric',
         ...(PERCENT_FIELDS.has(key) ? COLUMN_WIDTH.percent : MONEY_FIELDS.has(key) ? COLUMN_WIDTH.money : COLUMN_WIDTH.count),
         // Staffing uses an increment/decrement stepper for every percent field, not the
@@ -260,16 +331,10 @@ export function PositionEditor({ project }: { project: Project }) {
             [key]: key === 'monthsWorked' ? Math.min(12, Math.max(1, toNumberOrZero(value))) : toNumberOrZero(value),
           } as Partial<StaffPosition>)
         },
+        editHint,
       }),
     ),
-    {
-      id: 'totalCost',
-      label: 'Total cost',
-      kind: 'readonly',
-      ...COLUMN_WIDTH.money,
-      getValue: (row) => (row.kind === 'position' ? totalCostFor(row.position.id) : row.totalCost),
-      format: (value) => (typeof value === 'number' ? formatMoney(value, project.meta) : ''),
-    },
+    totalCostGroup,
   ]
 
   return (

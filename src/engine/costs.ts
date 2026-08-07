@@ -168,7 +168,9 @@ export function computePayroll(
       const factor = compound(increment, y)
       const monthsFactor = position.monthsWorked / 12
 
-      const salaries = position.averageSalary * headcount * factor * monthsFactor
+      /* Salary is monthly, so annual cost is monthly times contract months. */
+      const salaries =
+        position.averageSalary * position.monthsWorked * headcount * factor
       const allowances =
         (position.housingAllowance + position.transportAllowance) * headcount * factor
       const onCostRate =

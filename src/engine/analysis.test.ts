@@ -31,17 +31,17 @@ function makeProject(overrides: Record<string, unknown> = {}): Project {
     },
     revenueAssumptions: {
       schoolPlan: { enabled: false, maxSchoolStudents: null, totalStudentsByYear: [], taperPct: 40 },
-      schoolOccupancyPctByYear: [],
+      enrolmentModel: 'occupancy', schoolOccupancyPctByYear: [],
       tuitionEscalationPct: 8, otherFeeEscalationPct: 8,
-      intakeGrowthRatePct: 0, intakeOverrides: {},
-      discounts: { staffChildPct: 0, staffChildPlaces: 0, scholarshipPct: 0, scholarshipPlaces: 0, earlyPaymentPct: 0, earlyPaymentTakeUpPct: 0 },
+      newIntake: {}, retentionPct: {}, progression: true, avgSiblingsPerFamily: 1,
+      discounts: { siblingPct: 0, siblingEligiblePct: 0, staffChildPct: 0, staffChildPlaces: 0, scholarshipPct: 0, scholarshipPlaces: 0, earlyPaymentPct: 0, earlyPaymentTakeUpPct: 0 },
       collections: { termSplit: [100], payInFullPct: 100, badDebtPct: 0, dsoDays: 0 },
       taxRatePct: 0,
     },
     staffing: {
       positions: [{
         id: 'teacher', title: 'Teacher', section: 'teaching', derivedFromCapacity: true,
-        manualOverride: false, headcount: 0, averageSalary: 200000, minimumSalary: 0,
+        manualOverride: false, headcount: 0, averageSalary: 20000, minimumSalary: 0,
         maximumSalary: 0, annualIncrementPct: 0, employerTaxPct: 0, nationalInsurancePct: 0,
         medicalInsurancePct: 0, pensionPct: 0, housingAllowance: 0, transportAllowance: 0,
         recruitmentCost: 0, trainingCost: 0, monthsWorked: 12,

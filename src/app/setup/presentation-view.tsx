@@ -136,8 +136,8 @@ export function PresentationView({ project }: { project: Project }) {
         <PresentationSection title="Revenue assumptions">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <PresentationStat
-              label="Annual growth rate"
-              value={formatPercent(project.revenueAssumptions.intakeGrowthRatePct)}
+              label="Enrolment model"
+              value={project.revenueAssumptions.enrolmentModel === 'occupancy' ? 'Occupancy-driven' : 'Cohort progression'}
             />
             <PresentationStat
               label="Tuition escalation"
@@ -147,6 +147,7 @@ export function PresentationView({ project }: { project: Project }) {
                   : 0,
               )}
             />
+            <PresentationStat label="Sibling discount" value={formatPercent(project.revenueAssumptions.discounts.siblingPct)} />
             <PresentationStat label="Scholarship discount" value={formatPercent(project.revenueAssumptions.discounts.scholarshipPct)} />
           </div>
         </PresentationSection>

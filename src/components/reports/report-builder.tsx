@@ -429,9 +429,10 @@ function buildAssumptionsSection(doc: jsPDF, theme: PdfTheme, cursor: Cursor, pr
 
   const items: Array<{ label: string; value: string }> = [
     { label: 'Forecast horizon', value: `${project.calendar.forecastYears} years` },
-    { label: 'Annual growth rate', value: formatPercent(a.intakeGrowthRatePct) },
+    { label: 'Enrolment model', value: a.enrolmentModel === 'occupancy' ? 'Occupancy-driven' : 'Cohort progression' },
     { label: 'Tuition escalation', value: formatPercent(typeof a.tuitionEscalationPct === 'number' ? a.tuitionEscalationPct : 0) },
     { label: 'Other fee escalation', value: formatPercent(typeof a.otherFeeEscalationPct === 'number' ? a.otherFeeEscalationPct : 0) },
+    { label: 'Sibling discount', value: formatPercent(a.discounts.siblingPct) },
     { label: 'Staff child discount', value: formatPercent(a.discounts.staffChildPct) },
     { label: 'Scholarship discount', value: formatPercent(a.discounts.scholarshipPct) },
     { label: 'Early payment discount', value: formatPercent(a.discounts.earlyPaymentPct) },

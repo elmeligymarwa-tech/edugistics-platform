@@ -1,19 +1,32 @@
 'use client'
 
 import { useEffect } from 'react'
-import { RotateCcw } from 'lucide-react'
 
 import { DataGrid, toNumberOrZero, type GridColumnDef } from '@/components/grid'
 import { GlossaryHint } from '@/components/glossary/glossary-hint'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
 import { SliderNumberField } from '@/components/ui/slider-number-field'
-import { orderedYearGroups, type Collections, type Discounts, type Project, type YearGroupId } from '@/domain/schema'
+import { Switch } from '@/components/ui/switch'
+import {
+  EnrolmentModelSchema,
+  orderedYearGroups,
+  type Collections,
+  type Discounts,
+  type Project,
+  type YearGroupId,
+} from '@/domain/schema'
 import { computeEnrolment } from '@/engine/revenue'
 import { formatNumber } from '@/lib/format'
 import { YEAR_GROUP_LABELS } from '@/lib/wizard-data'
 import { useCostModel, useProjectStore } from '@/store/project-store'
+
+const ENROLMENT_MODEL_LABELS: Record<string, string> = {
+  occupancy: 'Occupancy-driven',
+  cohort: 'Cohort progression',
+}
 
 export function Step5Revenue({ project }: { project: Project }) {
   const updateRevenueAssumptions = useProjectStore((state) => state.updateRevenueAssumptions)
@@ -23,7 +36,6 @@ export function Step5Revenue({ project }: { project: Project }) {
   const a = project.revenueAssumptions
   const termsPerYear = project.calendar.termsPerYear
   const enrolment = computeEnrolment(project)
-  const locale = project.meta.locale
 
   useEffect(() => {
     const current = a.collections.termSplit
@@ -44,23 +56,15 @@ export function Step5Revenue({ project }: { project: Project }) {
   const patchCollections = (patch: Partial<Collections>) =>
     updateRevenueAssumptions(project.id, { collections: { ...a.collections, ...patch } })
 
-  const calculatedStudents = (group: YearGroupId, yearIndex: number) =>
-    Math.round(enrolment[yearIndex]?.find((entry) => entry.yearGroup === group)?.students ?? 0)
+  const setRetention = (group: YearGroupId, value: number) =>
+    updateRevenueAssumptions(project.id, { retentionPct: { ...a.retentionPct, [group]: value } })
 
-  const setIntakeOverride = (group: YearGroupId, yearIndex: number, value: number) => {
-    const existing = a.intakeOverrides[group] ?? []
+  const setIntake = (group: YearGroupId, yearIndex: number, value: number) => {
+    const existing = a.newIntake[group] ?? []
     const next = [...existing]
-    while (next.length <= yearIndex) next.push(null)
+    while (next.length <= yearIndex) next.push(0)
     next[yearIndex] = value
-    updateRevenueAssumptions(project.id, { intakeOverrides: { ...a.intakeOverrides, [group]: next } })
-  }
-
-  const resetIntakeOverride = (group: YearGroupId, yearIndex: number) => {
-    const existing = a.intakeOverrides[group]
-    if (!existing || existing[yearIndex] == null) return
-    const next = [...existing]
-    next[yearIndex] = null
-    updateRevenueAssumptions(project.id, { intakeOverrides: { ...a.intakeOverrides, [group]: next } })
+    updateRevenueAssumptions(project.id, { newIntake: { ...a.newIntake, [group]: next } })
   }
 
   const setTermSplit = (index: number, value: number) => {
@@ -78,21 +82,21 @@ export function Step5Revenue({ project }: { project: Project }) {
           <CardTitle>Enrolment and escalation</CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-3 pt-0 sm:grid-cols-4">
-          <Field className="sm:col-span-2">
-            <FieldLabel htmlFor="intakeGrowthRate">Annual growth rate %</FieldLabel>
-            <SliderNumberField
-              id="intakeGrowthRate"
-              aria-label="Annual growth rate %"
-              min={-50}
-              max={100}
-              step={0.5}
-              suffix="%"
-              value={a.intakeGrowthRatePct}
-              onValueChange={(value) => updateRevenueAssumptions(project.id, { intakeGrowthRatePct: value })}
+          <Field>
+            <FieldLabel htmlFor="enrolmentModel">Enrolment model</FieldLabel>
+            <Select
+              id="enrolmentModel"
+              value={a.enrolmentModel}
+              items={EnrolmentModelSchema.options.map((option) => ({
+                value: option,
+                label: ENROLMENT_MODEL_LABELS[option] ?? option,
+              }))}
+              onValueChange={(value) =>
+                updateRevenueAssumptions(project.id, {
+                  enrolmentModel: value as Project['revenueAssumptions']['enrolmentModel'],
+                })
+              }
             />
-            <FieldDescription>
-              Compounded onto each year group&apos;s prior-year students to project years after year one.
-            </FieldDescription>
           </Field>
           <Field className="sm:col-span-2">
             <FieldLabel htmlFor="tuitionEscalation" className="flex items-center gap-1">
@@ -152,17 +156,61 @@ export function Step5Revenue({ project }: { project: Project }) {
               </FieldDescription>
             </Field>
           ) : null}
+          <Field>
+            <FieldLabel htmlFor="avgSiblings">Average siblings / family</FieldLabel>
+            <Input
+              id="avgSiblings"
+              type="number"
+              min={1}
+              value={a.avgSiblingsPerFamily}
+              onChange={(event) =>
+                updateRevenueAssumptions(project.id, { avgSiblingsPerFamily: Number(event.target.value) })
+              }
+            />
+          </Field>
+          <label className="col-span-2 flex items-center gap-2 text-sm text-foreground sm:col-span-4">
+            <Switch
+              checked={a.progression}
+              onCheckedChange={(checked) => updateRevenueAssumptions(project.id, { progression: checked })}
+            />
+            Students progress automatically into the next year group
+          </label>
         </CardContent>
       </Card>
 
       {groups.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle>Student numbers per forecast year</CardTitle>
+            <CardTitle>Retention</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 gap-3 pt-0 sm:grid-cols-2 lg:grid-cols-4">
+            {groups.map((group) => (
+              <Field key={group}>
+                <FieldLabel htmlFor={`retention-${group}`}>{YEAR_GROUP_LABELS[group]}</FieldLabel>
+                <SliderNumberField
+                  id={`retention-${group}`}
+                  aria-label={`${YEAR_GROUP_LABELS[group]} retention %`}
+                  min={0}
+                  max={100}
+                  step={0.5}
+                  suffix="%"
+                  value={a.retentionPct[group] ?? 100}
+                  onValueChange={(value) => setRetention(group, value)}
+                />
+              </Field>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {groups.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>New intake per forecast year</CardTitle>
             <CardDescription>
-              Year 1 comes from the occupancy ramp set in Step 3 Capacity. Later years compound the annual growth
-              rate above onto the prior year, unless overridden below — an overridden cell shows a dot and a reset
-              button, and only that cell stops following the growth rate.
+              {a.enrolmentModel === 'occupancy'
+                ? 'Driven by the occupancy ramp set in Step 3 Capacity. Shown here for reference only.'
+                : 'Year 1 is set by the occupancy ramp in Step 3 Capacity. Later years take retained students plus the intake you type here.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
@@ -180,61 +228,38 @@ export function Step5Revenue({ project }: { project: Project }) {
                   getValue: (group) => YEAR_GROUP_LABELS[group],
                 },
                 ...Array.from({ length: project.calendar.forecastYears }, (_, index): GridColumnDef<YearGroupId> => {
-                  if (index === 0) {
+                  // The engine only ever reads newIntake for years after year one, and only
+                  // under the cohort model — every other cell is derived from the Step 3
+                  // occupancy ramp, so it must render read-only rather than accept dead input.
+                  const derived = index === 0 || a.enrolmentModel === 'occupancy'
+                  if (derived) {
                     return {
-                      id: 'students-0',
-                      label: 'Year 1',
+                      id: `intake-${index}`,
+                      label: `Year ${index + 1}`,
                       kind: 'readonly',
                       width: 104,
                       minWidth: 92,
-                      getValue: (group) => calculatedStudents(group, 0),
-                      format: (value) => (typeof value === 'number' ? formatNumber(value, locale) : ''),
+                      getValue: (group) =>
+                        Math.round(enrolment[index]?.find((entry) => entry.yearGroup === group)?.newEntrants ?? 0),
+                      format: (value) => (typeof value === 'number' ? formatNumber(value, project.meta.locale) : ''),
                     }
                   }
                   return {
-                    id: `students-${index}`,
+                    id: `intake-${index}`,
                     label: `Year ${index + 1}`,
                     kind: 'numeric',
                     width: 104,
                     minWidth: 92,
                     allowFillDown: true,
                     allowUplift: true,
-                    getValue: (group) => a.intakeOverrides[group]?.[index] ?? calculatedStudents(group, index),
-                    onCommit: (group, value) => setIntakeOverride(group, index, toNumberOrZero(value)),
-                    format: (value) => (typeof value === 'number' ? formatNumber(value, locale) : ''),
-                    render: (group) => {
-                      const override = a.intakeOverrides[group]?.[index] ?? null
-                      const displayValue = override ?? calculatedStudents(group, index)
-                      return (
-                        <div className="flex w-full items-center justify-end gap-1">
-                          {override !== null ? (
-                            <span
-                              className="size-1.5 shrink-0 rounded-full bg-primary"
-                              aria-hidden="true"
-                              title="Overridden"
-                            />
-                          ) : null}
-                          <span className="truncate tabular-nums">{formatNumber(displayValue, locale)}</span>
-                          {override !== null ? (
-                            <button
-                              type="button"
-                              aria-label={`Reset ${YEAR_GROUP_LABELS[group]} year ${index + 1} to calculated`}
-                              onMouseDown={(event) => event.stopPropagation()}
-                              onClick={() => resetIntakeOverride(group, index)}
-                              className="shrink-0 text-muted-foreground hover:text-foreground"
-                            >
-                              <RotateCcw className="size-3" aria-hidden="true" />
-                            </button>
-                          ) : null}
-                        </div>
-                      )
-                    },
+                    getValue: (group) => a.newIntake[group]?.[index] ?? 0,
+                    onCommit: (group, value) => setIntake(group, index, toNumberOrZero(value)),
                   }
                 }),
               ]}
               mode="edit"
-              gridId="wizard-step5-students"
-              ariaLabel="Student numbers per forecast year"
+              gridId="wizard-step5-intake"
+              ariaLabel="New intake per forecast year"
             />
           </CardContent>
         </Card>
@@ -245,6 +270,35 @@ export function Step5Revenue({ project }: { project: Project }) {
           <CardTitle>Discounts</CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-x-4 gap-y-4 pt-0 sm:grid-cols-2">
+          <Field>
+            <FieldLabel htmlFor="siblingPct" className="flex items-center gap-1">
+              Sibling discount %
+              <GlossaryHint term="sibling-discount" currentValue={`${a.discounts.siblingPct}%`} />
+            </FieldLabel>
+            <SliderNumberField
+              id="siblingPct"
+              aria-label="Sibling discount %"
+              min={0}
+              max={100}
+              step={0.5}
+              suffix="%"
+              value={a.discounts.siblingPct}
+              onValueChange={(value) => patchDiscounts({ siblingPct: value })}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="siblingEligiblePct">Eligible for sibling %</FieldLabel>
+            <SliderNumberField
+              id="siblingEligiblePct"
+              aria-label="Eligible for sibling %"
+              min={0}
+              max={100}
+              step={0.5}
+              suffix="%"
+              value={a.discounts.siblingEligiblePct}
+              onValueChange={(value) => patchDiscounts({ siblingEligiblePct: value })}
+            />
+          </Field>
           <Field>
             <FieldLabel htmlFor="staffChildPct">Staff child discount %</FieldLabel>
             <SliderNumberField

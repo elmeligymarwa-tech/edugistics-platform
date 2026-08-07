@@ -52,7 +52,7 @@ Respond with a short conversational message, and — whenever you have something
     "schoolPlan": { "enabled"?: boolean, "maxSchoolStudents"?: number | null, "totalStudentsByYear"?: number[], "taperPct"?: number },
     "feeCategories": [{ "id": string, "name": string, "mandatory"?: boolean, "uptakePct"?: number, "includedInStm"?: boolean, "discountable"?: boolean, "taxTreatment"?: "exclusive"|"inclusive"|"exempt", "billingFrequency"?: "annual"|"termly"|"monthly", "chargeBasis"?: "perStudent"|"oneOffOnEntry", "escalationGroup"?: "tuition"|"other" }],
     "feePositioning": "budget" | "midMarket" | "premium" | "luxury",
-    "staffPositions": [{ "id": string, "title": string, "section": "leadership"|"teaching"|"studentServices"|"administration"|"facilities", "headcount"?: number, "averageSalary"?: number, "employerTaxPct"?: number, "annualIncrementPct"?: number }],
+    "staffPositions": [{ "id": string, "title": string, "section": "leadership"|"teaching"|"studentServices"|"administration"|"facilities", "headcount"?: number, "averageSalary"?: number /* gross monthly salary per person, not annual */, "employerTaxPct"?: number, "annualIncrementPct"?: number }],
     "opexCategories": [{ "id": string, "name": string, "group": string, "basis": "fixed"|"perStudent"|"perStaff"|"pctOfRevenue"|"perClassroom", "amount": number, "escalationPct"?: number, "startYearIndex"?: number, "endYearIndex"?: number | null }]
   } | null,
   "fieldReasons": [{ "path": string, "label": string, "reason": string }],
