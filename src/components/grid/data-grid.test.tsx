@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 
 import { DataGrid } from './data-grid'
 import type { GridColumnDef } from './data-grid.types'
@@ -36,6 +36,16 @@ const amountColumn: GridColumnDef<Row> = {
   width: 100,
   minWidth: 96,
   getValue: (row) => row.amount,
+}
+
+function editableAmountColumn(onCommit: (row: Row, value: string | number | null) => void): GridColumnDef<Row> {
+  return { ...amountColumn, onCommit }
+}
+
+function getGridCell(grid: HTMLElement, text: string): HTMLElement {
+  const cell = within(grid).getByText(text).closest('[role="gridcell"]')
+  if (!cell) throw new Error(`No gridcell ancestor found for text "${text}"`)
+  return cell as HTMLElement
 }
 
 beforeEach(() => {
@@ -116,5 +126,102 @@ describe('DataGrid', () => {
       />,
     )
     expect(screen.getByText('Nothing here yet')).toBeInTheDocument()
+  })
+
+  it('opens a cell for editing on a single click, with the existing value selected', () => {
+    const onCommit = vi.fn()
+    render(
+      <DataGrid
+        rows={makeRows(3)}
+        getRowId={(row) => row.id}
+        columns={[nameColumn, editableAmountColumn(onCommit)]}
+        mode="edit"
+        gridId="test-click-edit"
+        ariaLabel="Click edit grid"
+      />,
+    )
+    const grid = screen.getByRole('grid', { name: 'Click edit grid' })
+
+    fireEvent.mouseDown(getGridCell(grid, '20'))
+
+    const input = within(grid).getByDisplayValue('20') as HTMLInputElement
+    expect(input).toHaveFocus()
+    expect([input.selectionStart, input.selectionEnd]).toEqual([0, 2])
+  })
+
+  it('starts editing, seeded with the typed character, when typing on an active cell without clicking', () => {
+    const onCommit = vi.fn()
+    render(
+      <DataGrid
+        rows={makeRows(3)}
+        getRowId={(row) => row.id}
+        columns={[nameColumn, editableAmountColumn(onCommit)]}
+        mode="edit"
+        gridId="test-type-edit"
+        ariaLabel="Type edit grid"
+      />,
+    )
+    const grid = screen.getByRole('grid', { name: 'Type edit grid' })
+
+    // Shift+click only activates the cell (range-selection semantics) — it must not
+    // open it for editing, so this exercises typing on an active-but-not-editing cell.
+    fireEvent.mouseDown(getGridCell(grid, '20'), { shiftKey: true })
+    expect(screen.queryByDisplayValue('20')).not.toBeInTheDocument()
+
+    fireEvent.keyDown(grid, { key: '5' })
+
+    const input = within(grid).getByDisplayValue('5') as HTMLInputElement
+    expect(input).toHaveFocus()
+    expect([input.selectionStart, input.selectionEnd]).toEqual([1, 1])
+  })
+
+  it('commits the draft on blur, not only on enter or tab', () => {
+    const onCommit = vi.fn()
+    const rows = makeRows(3)
+    render(
+      <DataGrid
+        rows={rows}
+        getRowId={(row) => row.id}
+        columns={[nameColumn, editableAmountColumn(onCommit)]}
+        mode="edit"
+        gridId="test-blur-commit"
+        ariaLabel="Blur commit grid"
+      />,
+    )
+    const grid = screen.getByRole('grid', { name: 'Blur commit grid' })
+
+    fireEvent.mouseDown(getGridCell(grid, '20'))
+    const input = within(grid).getByDisplayValue('20') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '42' } })
+    fireEvent.blur(input)
+
+    expect(onCommit).toHaveBeenCalledWith(rows[2], 42)
+  })
+
+  it('commits the draft when blurred by clicking a different cell, not just a direct blur event', () => {
+    const onCommit = vi.fn()
+    const rows = makeRows(3)
+    render(
+      <DataGrid
+        rows={rows}
+        getRowId={(row) => row.id}
+        columns={[nameColumn, editableAmountColumn(onCommit)]}
+        mode="edit"
+        gridId="test-blur-commit-via-click"
+        ariaLabel="Blur commit via click grid"
+      />,
+    )
+    const grid = screen.getByRole('grid', { name: 'Blur commit via click grid' })
+
+    fireEvent.mouseDown(getGridCell(grid, '20'))
+    const input = within(grid).getByDisplayValue('20') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '1' } })
+
+    // Click a different cell without pressing Enter/Tab or blurring directly — this is what
+    // exposed the bug: the click's own mousedown must not discard the pending edit.
+    fireEvent.mouseDown(getGridCell(grid, '0'))
+
+    expect(onCommit).toHaveBeenCalledWith(rows[2], 1)
+    expect(screen.queryByDisplayValue('20')).not.toBeInTheDocument()
   })
 })

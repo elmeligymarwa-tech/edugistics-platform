@@ -12,7 +12,8 @@ import type { CellCoordinate, CellRange } from './data-grid.types'
 export function useGridSelection(rowCount: number, colCount: number) {
   const [activeCell, setActiveCellState] = React.useState<CellCoordinate | null>(null)
   const [range, setRange] = React.useState<CellRange | null>(null)
-  const [editingCell, setEditingCell] = React.useState<CellCoordinate | null>(null)
+  const [editingCell, setEditingCellState] = React.useState<CellCoordinate | null>(null)
+  const [editSeed, setEditSeed] = React.useState<string | null>(null)
 
   const clamp = React.useCallback(
     (cell: CellCoordinate): CellCoordinate => ({
@@ -26,11 +27,21 @@ export function useGridSelection(rowCount: number, colCount: number) {
     (cell: CellCoordinate, extend = false) => {
       const clamped = clamp(cell)
       setActiveCellState(clamped)
-      setEditingCell(null)
+      setEditingCellState(null)
+      setEditSeed(null)
       setRange((prev) => (extend && prev ? { anchor: prev.anchor, focus: clamped } : { anchor: clamped, focus: clamped }))
     },
     [clamp],
   )
+
+  /**
+   * `seed` is the character that started an in-place edit by typing (spreadsheet-style),
+   * as opposed to a click/double-click/Enter, which edit starting from the existing value.
+   */
+  const setEditingCell = React.useCallback((cell: CellCoordinate | null, seed: string | null = null) => {
+    setEditingCellState(cell)
+    setEditSeed(cell ? seed : null)
+  }, [])
 
   const isCellActive = React.useCallback(
     (cell: CellCoordinate) => activeCell?.rowIndex === cell.rowIndex && activeCell?.colIndex === cell.colIndex,
@@ -64,6 +75,7 @@ export function useGridSelection(rowCount: number, colCount: number) {
   return {
     activeCell,
     editingCell,
+    editSeed,
     setEditingCell,
     setActiveCell,
     isCellActive,

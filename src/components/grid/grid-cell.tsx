@@ -23,6 +23,8 @@ interface GridCellProps<TRow> {
   isActive: boolean
   isSelected: boolean
   isEditing: boolean
+  /** The character that started this edit by typing, replacing the value as a spreadsheet would. Null when editing started from the existing value (click, double click, Enter). */
+  editSeed: string | null
   width: number
   height: number
   pinnedOffset?: number
@@ -41,6 +43,7 @@ export function GridCell<TRow>({
   isActive,
   isSelected,
   isEditing,
+  editSeed,
   width,
   height,
   pinnedOffset,
@@ -56,10 +59,36 @@ export function GridCell<TRow>({
   const isPinned = column.pinned === 'left'
 
   const [draft, setDraft] = React.useState(() => (value === null ? '' : String(value)))
+  const inputRef = React.useRef<HTMLInputElement>(null)
+  const wasEditingRef = React.useRef(false)
 
-  React.useEffect(() => {
-    if (isEditing) setDraft(value === null ? '' : String(value))
-  }, [isEditing, value])
+  // Runs synchronously before paint so the input never flashes a stale value and the
+  // programmatic focus/selection below always acts on the text the user is meant to see.
+  // A select-kind cell ignores the seed (it isn't a free-text draft) and just opens.
+  React.useLayoutEffect(() => {
+    if (!isEditing) {
+      wasEditingRef.current = false
+      return
+    }
+    const justStarted = !wasEditingRef.current
+    wasEditingRef.current = true
+    const useSeed = justStarted && editSeed !== null && column.kind !== 'select'
+    const nextDraft = useSeed ? editSeed : value === null ? '' : String(value)
+
+    const input = inputRef.current
+    if (input) input.value = nextDraft
+    setDraft(nextDraft)
+
+    if (input) {
+      input.focus()
+      if (useSeed) {
+        const caret = editSeed.length
+        input.setSelectionRange(caret, caret)
+      } else {
+        input.select()
+      }
+    }
+  }, [isEditing, value, editSeed, column.kind])
 
   const commitDraft = (move: GridCellMove) => onCommit(coerceCellValue(column.kind, draft), move)
 
@@ -77,9 +106,19 @@ export function GridCell<TRow>({
       role="gridcell"
       aria-selected={isActive}
       tabIndex={-1}
-      onMouseDown={(event) => onActivate(event.shiftKey)}
-      onDoubleClick={() => {
-        if (!disabled) onBeginEdit()
+      onMouseDown={(event) => {
+        // onActivate below moves editingCell to this cell, which unmounts whatever cell's
+        // input is currently focused elsewhere in the same synchronous render. A native
+        // blur fired mid-unmount doesn't reliably reach that input's onBlur prop, silently
+        // dropping its draft. Blurring the outgoing input here — while it's still mounted —
+        // lets its own onBlur commit first. Skipped when the focus is already inside this
+        // cell (e.g. clicking within the input you're already editing).
+        const active = document.activeElement
+        if (active instanceof HTMLElement && !event.currentTarget.contains(active)) active.blur()
+        onActivate(event.shiftKey)
+        // A plain click both selects and opens the cell for editing, spreadsheet-style;
+        // a shift+click only extends the range selection. onBeginEdit no-ops when disabled.
+        if (!event.shiftKey) onBeginEdit()
       }}
       style={{
         width,
@@ -120,10 +159,12 @@ export function GridCell<TRow>({
         </select>
       ) : isEditing ? (
         <input
-          autoFocus
+          ref={inputRef}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          onFocus={(event) => event.currentTarget.select()}
+          // The layout effect above already focused and selected/positioned the caret;
+          // the browser's own mouseup-after-focus would otherwise collapse that selection.
+          onMouseUp={(event) => event.preventDefault()}
           onBlur={() => commitDraft('none')}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {

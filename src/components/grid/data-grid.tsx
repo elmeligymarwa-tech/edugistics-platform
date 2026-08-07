@@ -182,8 +182,16 @@ export function DataGrid<TRow>(props: DataGridProps<TRow>) {
   )
   const totalWidth = visibleColumns.reduce((sum, entry) => sum + entry.size, 0)
 
-  const { activeCell, editingCell, setEditingCell, setActiveCell, isCellActive, isCellSelected, rangeBounds } =
-    useGridSelection(dataEntries.length, visibleColumns.length)
+  const {
+    activeCell,
+    editingCell,
+    editSeed,
+    setEditingCell,
+    setActiveCell,
+    isCellActive,
+    isCellSelected,
+    rangeBounds,
+  } = useGridSelection(dataEntries.length, visibleColumns.length)
 
   const isCellEditable = React.useCallback(
     (cell: CellCoordinate) => {
@@ -230,15 +238,18 @@ export function DataGrid<TRow>(props: DataGridProps<TRow>) {
     (rowIndex: number, colIndex: number, value: string | number | null, move: GridCellMove) => {
       const entry = dataEntries[rowIndex]
       const column = visibleColumns[colIndex]?.def
-      if (entry?.row && column?.onCommit && !column.disabled?.(entry.row)) {
+      // A click now opens a cell for editing, so a blur-commit fires on every click, not
+      // just an actual change — skip the store write when nothing actually changed.
+      if (entry?.row && column?.onCommit && !column.disabled?.(entry.row) && value !== column.getValue(entry.row)) {
         column.onCommit(entry.row, value)
       }
       setEditingCell(null)
 
-      if (move === 'none') {
-        setActiveCell({ rowIndex, colIndex })
-        return
-      }
+      // A blur-triggered commit ('none') never repositions the active cell: it's already
+      // correct, whether unchanged (blur with no navigation) or moved to wherever the user
+      // clicked next (that cell's own mousedown activates it before this blur cascade runs,
+      // since committing here happens as a side effect of this cell's input unmounting).
+      if (move === 'none') return
       let nextRow = rowIndex
       let nextCol = colIndex
       if (move === 'down') {
@@ -406,6 +417,7 @@ export function DataGrid<TRow>(props: DataGridProps<TRow>) {
                 >
                   {visibleColumns.map(({ def: column, size }, colIndex) => {
                     const cellCoord: CellCoordinate = { rowIndex: dataRowIndex, colIndex }
+                    const isEditing = editingCell?.rowIndex === dataRowIndex && editingCell?.colIndex === colIndex
                     return (
                       <GridCell
                         key={column.id}
@@ -418,7 +430,8 @@ export function DataGrid<TRow>(props: DataGridProps<TRow>) {
                         rowClassName={rowClassName}
                         isActive={isCellActive(cellCoord)}
                         isSelected={isCellSelected(cellCoord)}
-                        isEditing={editingCell?.rowIndex === dataRowIndex && editingCell?.colIndex === colIndex}
+                        isEditing={isEditing}
+                        editSeed={isEditing ? editSeed : null}
                         onActivate={(extend) => setActiveCell(cellCoord, extend)}
                         onBeginEdit={() => {
                           if (mode === 'edit' && column.kind !== 'readonly' && !column.disabled?.(row)) {

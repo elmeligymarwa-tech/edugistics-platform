@@ -11,7 +11,7 @@ interface UseGridKeyboardParams {
   activeCell: CellCoordinate | null
   editingCell: CellCoordinate | null
   setActiveCell: (cell: CellCoordinate, extend?: boolean) => void
-  setEditingCell: (cell: CellCoordinate | null) => void
+  setEditingCell: (cell: CellCoordinate | null, seed?: string | null) => void
   onCopy: () => void
   isCellEditable: (cell: CellCoordinate) => boolean
 }
@@ -23,6 +23,9 @@ interface UseGridKeyboardParams {
  * the active cell for editing (the cell itself owns commit-and-move-down),
  * Escape is handled by the editing cell. Cmd/Ctrl+C copies the current
  * range. Cmd/Ctrl+V is handled separately via the container's onPaste.
+ * Typing a plain character on an active (non-editing) cell also opens it for
+ * editing, seeded with that character, so it replaces the value as it would
+ * in a spreadsheet.
  */
 export function useGridKeyboard({
   mode,
@@ -90,6 +93,16 @@ export function useGridKeyboard({
           }
           break
         default:
+          if (
+            mode === 'edit' &&
+            event.key.length === 1 &&
+            !meta &&
+            !event.altKey &&
+            isCellEditable(activeCell)
+          ) {
+            event.preventDefault()
+            setEditingCell(activeCell, event.key)
+          }
           break
       }
     },
