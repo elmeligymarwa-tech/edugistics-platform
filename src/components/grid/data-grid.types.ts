@@ -38,6 +38,13 @@ export interface GridColumnDef<TRow> {
    * value via `format`/`getValue` as normal.
    */
   render?: (row: TRow) => React.ReactNode
+  /**
+   * `kind: 'numeric' | 'percent'` only. A live read-out shown anchored beneath the cell
+   * while it is being edited, recomputed from the in-progress (uncommitted) draft text on
+   * every keystroke — e.g. showing the resulting total a raw figure would produce before
+   * the user commits it.
+   */
+  editHint?: (row: TRow, draft: string) => React.ReactNode
   allowFillDown?: boolean
   allowUplift?: boolean
   /**

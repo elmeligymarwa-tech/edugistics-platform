@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { Popover as PopoverPrimitive } from '@base-ui/react/popover'
 import { ChevronDown, ChevronUp, SlidersHorizontal } from 'lucide-react'
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -219,32 +220,56 @@ export function GridCell<TRow>({
           ))}
         </select>
       ) : isEditing ? (
-        <input
-          ref={inputRef}
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          // The layout effect above already selected the whole value for a numeric/percent
-          // cell; the browser's own mouseup-after-focus would otherwise collapse that
-          // selection down to a caret at the click point. Text cells want exactly that
-          // click-point caret, so their mouseup is left to run.
-          onMouseUp={(event) => {
-            if (isNumeric) event.preventDefault()
-          }}
-          onBlur={() => commitDraft('none')}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              commitDraft('down')
-            } else if (event.key === 'Tab') {
-              event.preventDefault()
-              commitDraft(event.shiftKey ? 'tab-back' : 'tab')
-            } else if (event.key === 'Escape') {
-              event.preventDefault()
-              onCancelEdit()
-            }
-          }}
-          className={cn('w-full bg-transparent tabular-nums outline-none', isNumeric ? 'text-right' : 'text-left')}
-        />
+        <>
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            // The layout effect above already selected the whole value for a numeric/percent
+            // cell; the browser's own mouseup-after-focus would otherwise collapse that
+            // selection down to a caret at the click point. Text cells want exactly that
+            // click-point caret, so their mouseup is left to run.
+            onMouseUp={(event) => {
+              if (isNumeric) event.preventDefault()
+            }}
+            onBlur={() => commitDraft('none')}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                commitDraft('down')
+              } else if (event.key === 'Tab') {
+                event.preventDefault()
+                commitDraft(event.shiftKey ? 'tab-back' : 'tab')
+              } else if (event.key === 'Escape') {
+                event.preventDefault()
+                onCancelEdit()
+              }
+            }}
+            className={cn('w-full bg-transparent tabular-nums outline-none', isNumeric ? 'text-right' : 'text-left')}
+          />
+          {column.editHint ? (
+            // Controlled and anchored directly to the input rather than a Trigger, since
+            // this must appear the instant editing starts, driven purely by isEditing —
+            // not by a click gesture the way every other Popover in this file is.
+            <PopoverPrimitive.Root open>
+              <PopoverPrimitive.Portal>
+                <PopoverPrimitive.Positioner anchor={inputRef} side="bottom" align="start" sideOffset={4} className="z-50">
+                  {/* Focus must stay on the input the whole time this is open — it opens the
+                      instant editing starts, not from a user gesture aimed at the popup itself,
+                      so the default auto-focus-on-open behaviour would immediately steal focus
+                      back off the input and blur-commit the edit before a single key lands. */}
+                  <PopoverPrimitive.Popup
+                    initialFocus={false}
+                    finalFocus={false}
+                    className="whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md outline-none"
+                  >
+                    {column.editHint(row, draft)}
+                  </PopoverPrimitive.Popup>
+                </PopoverPrimitive.Positioner>
+              </PopoverPrimitive.Portal>
+            </PopoverPrimitive.Root>
+          ) : null}
+        </>
       ) : column.render ? (
         column.render(row)
       ) : column.kind === 'percent' && !disabled && column.stepper ? (

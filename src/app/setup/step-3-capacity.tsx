@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 
-import { COLUMN_WIDTH, DataGrid, toNumberOrZero, type GridColumnDef, type GridColumnGroup } from '@/components/grid'
+import { COLUMN_WIDTH, DataGrid, coerceCellValue, toNumberOrZero, type GridColumnDef, type GridColumnGroup } from '@/components/grid'
 import { GlossaryHint } from '@/components/glossary/glossary-hint'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -191,7 +191,7 @@ function CapacityGrid({
     id: string,
     label: string,
     field: 'classrooms' | 'studentsPerClassroom',
-    opts?: { secondary?: boolean; width?: number; minWidth?: number; tooltip?: string },
+    opts?: { secondary?: boolean; width?: number; minWidth?: number; tooltip?: string; showCapacityHint?: boolean },
   ): GridColumnDef<CapacityRow> => ({
     id,
     label,
@@ -204,6 +204,15 @@ function CapacityGrid({
     secondary: opts?.secondary,
     getValue: (row) => project.capacity[row.group]?.[field] ?? 0,
     onCommit: (row, value) => patch(row.group, { [field]: toNumberOrZero(value) }),
+    editHint: opts?.showCapacityHint
+      ? (row, draft) => {
+          const capacity = project.capacity[row.group]
+          const draftValue = toNumberOrZero(coerceCellValue('numeric', draft))
+          const classrooms = field === 'classrooms' ? draftValue : (capacity?.classrooms ?? 0)
+          const studentsPerClassroom = field === 'studentsPerClassroom' ? draftValue : (capacity?.studentsPerClassroom ?? 0)
+          return `${formatNumber(classrooms, project.meta.locale)} classes of ${formatNumber(studentsPerClassroom, project.meta.locale)} equals ${formatNumber(classrooms * studentsPerClassroom, project.meta.locale)} students`
+        }
+      : undefined,
   })
 
   const columns: (GridColumnDef<CapacityRow> | GridColumnGroup<CapacityRow>)[] = [
@@ -215,11 +224,12 @@ function CapacityGrid({
       pinned: 'left',
       getValue: (row) => YEAR_GROUP_LABELS[row.group],
     },
-    numericColumn('classrooms', 'Classrooms', 'classrooms'),
+    numericColumn('classrooms', 'Classrooms', 'classrooms', { showCapacityHint: true }),
     numericColumn('studentsPerClassroom', 'Students per class', 'studentsPerClassroom', {
-      width: 108,
-      minWidth: 90,
+      width: 168,
+      minWidth: 150,
       tooltip: 'Maximum number of students allowed in each class for this year group.',
+      showCapacityHint: true,
     }),
     {
       id: 'currentIntake',

@@ -212,6 +212,31 @@ describe('enrolment', () => {
     // Year 3: Y1 compounds onward from its overridden year 2 figure (35 x 1.1 = 38.5).
     expect(enrolment[2]![0]!.students).toBeCloseTo(38.5, 6)
   })
+
+  it('sums capacity ceiling for the selected year groups only, ignoring unselected groups left in the capacity map', () => {
+    const selected = ['FS1', 'FS2', 'Y1', 'Y2', 'Y3', 'Y4'] as const
+    const unselected = ['Y5', 'Y6', 'Y7', 'Y8', 'IGCSE_Y9', 'IGCSE_Y10', 'IGCSE_Y11', 'IGCSE_Y12'] as const
+    const oneClassroomOf = (studentsPerClassroom: number) => ({
+      classrooms: 5,
+      studentsPerClassroom,
+      teachers: 1,
+      teachingAssistants: 0,
+      coTeachers: 0,
+      maxCapacityPct: 100,
+      occupancyPctByYear: [100],
+    })
+    const capacity: Record<string, ReturnType<typeof oneClassroomOf>> = {}
+    for (const group of [...selected, ...unselected]) capacity[group] = oneClassroomOf(125)
+
+    const project = makeProject({ yearGroups: [...selected], capacity })
+    const yearOne = computeEnrolment(project)[0] ?? []
+
+    // Six selected year groups at 5 classrooms x 125 students = 625 each. A stray
+    // capacity entry for one of the fourteen schema year groups the user did not
+    // select in Step 2 must not inflate the running total to fourteen groups' worth.
+    expect(yearOne).toHaveLength(6)
+    expect(yearOne.reduce((sum, entry) => sum + entry.capacityCeiling, 0)).toBe(6 * 625)
+  })
 })
 
 describe('school wide ramp and student caps', () => {
