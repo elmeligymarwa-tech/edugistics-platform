@@ -70,7 +70,11 @@ export interface CapitalForecast {
 export function buildLoanSchedule(loan: Loan, years: number): LoanYear[] {
   const schedule: LoanYear[] = []
   const rate = loan.interestRatePct / 100
-  const repayYears = Math.max(1, loan.termYears - loan.graceYears)
+  // A grace period at or beyond the term would leave no year in which sinceDraw is both
+  // past grace and still within the term, so the loan would draw down and accrue interest
+  // but never repay — clamp to always leave at least one repayment year.
+  const graceYears = Math.min(loan.graceYears, Math.max(0, loan.termYears - 1))
+  const repayYears = Math.max(1, loan.termYears - graceYears)
   let balance = 0
 
   for (let y = 0; y < years; y += 1) {
@@ -82,7 +86,7 @@ export function buildLoanSchedule(loan: Loan, years: number): LoanYear[] {
 
     let principalRepaid = 0
     const sinceDraw = y - loan.drawYearIndex
-    const repaying = sinceDraw >= loan.graceYears && sinceDraw < loan.termYears
+    const repaying = sinceDraw >= graceYears && sinceDraw < loan.termYears
 
     if (repaying && balance > 0) {
       if (loan.repaymentType === 'bullet') {
@@ -303,18 +307,30 @@ export function computeCapitalForecast(
 
   const closing = out[years - 1]
   const netDebt = (closing?.debt ?? 0) - (closing?.closingCash ?? 0)
+  const equityValue = enterpriseValue - netDebt
 
-  const irrSeries = [
-    -(capital.equity.openingShareCapital || cost.financing.openingCash),
-    ...freeCashFlows,
-  ]
-  irrSeries[irrSeries.length - 1] =
-    (irrSeries[irrSeries.length - 1] ?? 0) + terminalValue
+  /**
+   * NPV, IRR and payback are the equity investor's return, not the whole project's — the
+   * initial outlay below is the equity stake, so what follows it must be cash flow that
+   * actually reaches equity (dividends paid out, net of any further injections called),
+   * with the equity's own share of the exit (enterprise value less outstanding net debt)
+   * added in the final year. Using the unlevered project cash flows or the enterprise
+   * terminal value here would credit the equity investor with value that belongs to the
+   * school's lenders, overstating both the return and the enterprise value included in it.
+   */
+  const openingEquityOutlay = capital.equity.openingShareCapital || cost.financing.openingCash
+  const equityCashFlows = out.map((year) => year.dividend - year.equityInjected)
+  const finalEquityCashFlowIndex = equityCashFlows.length - 1
+  if (finalEquityCashFlowIndex >= 0) {
+    equityCashFlows[finalEquityCashFlowIndex] =
+      (equityCashFlows[finalEquityCashFlowIndex] ?? 0) + equityValue
+  }
+  const irrSeries = [-openingEquityOutlay, ...equityCashFlows]
 
-  let cumulative = 0
+  let cumulative = -openingEquityOutlay
   let paybackYearIndex: number | null = null
-  for (let y = 0; y < freeCashFlows.length; y += 1) {
-    cumulative += freeCashFlows[y] ?? 0
+  for (let y = 0; y < equityCashFlows.length; y += 1) {
+    cumulative += equityCashFlows[y] ?? 0
     if (cumulative >= 0 && paybackYearIndex === null) paybackYearIndex = y
   }
 
@@ -328,8 +344,8 @@ export function computeCapitalForecast(
       terminalValue,
       enterpriseValue,
       netDebt,
-      equityValue: enterpriseValue - netDebt,
-      npv: enterpriseValue - (capital.equity.openingShareCapital || 0),
+      equityValue,
+      npv: equityValue - (capital.equity.openingShareCapital || 0),
       irrPct: irrValue === null ? null : irrValue * 100,
       paybackYearIndex,
     },

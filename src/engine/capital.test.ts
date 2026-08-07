@@ -132,6 +132,15 @@ describe('loan schedules', () => {
     expect(payments[0]!).toBeCloseTo(payments[3]!, -3)
     expect(s[4]!.closing).toBeCloseTo(0, 2)
   })
+
+  it('still fully repays within the term when the grace period is misconfigured to reach it', () => {
+    // graceYears >= termYears would otherwise leave no year where sinceDraw is both past
+    // grace and still inside the term, so the loan would draw down, accrue interest, and
+    // never repay a cent — the schedule must clamp grace so at least one year repays.
+    const s = buildLoanSchedule({ ...loan, termYears: 5, graceYears: 5 }, 6)
+    expect(s.some((year) => year.principalRepaid > 0)).toBe(true)
+    expect(s[4]!.closing).toBeCloseTo(0, 6)
+  })
 })
 
 describe('balance sheet', () => {
@@ -203,6 +212,56 @@ describe('valuation', () => {
     expect(result.valuation.equityValue).toBeGreaterThan(
       result.valuation.enterpriseValue - 1e9,
     )
+  })
+
+  it('bases NPV on equity value, not enterprise value, once there is debt to net off', () => {
+    const result = computeCapitalForecast(
+      makeProject(),
+      makeCost(),
+      makeCapital({
+        loans: [
+          {
+            id: 'l1', name: 'Term loan', principal: 4_000_000, drawYearIndex: 0,
+            interestRatePct: 10, termYears: 5, graceYears: 0,
+            repaymentType: 'straightLine', arrangementFeePct: 0,
+          },
+        ],
+      }),
+    )
+    const { npv: reportedNpv, equityValue, enterpriseValue } = result.valuation
+    expect(result.valuation.netDebt).not.toBe(0)
+    // The equity investor's NPV nets off outstanding debt via equityValue — crediting
+    // enterprise value (which still belongs partly to the lender) would overstate it.
+    expect(reportedNpv).toBeCloseTo(equityValue - 3_000_000, 6)
+    expect(reportedNpv).not.toBeCloseTo(enterpriseValue - 3_000_000, 6)
+  })
+
+  it('computes IRR from cash actually paid to equity, not the unlevered project cash flow', () => {
+    // A single forecast year with every profit paid out as a dividend makes the equity
+    // cash flow series exactly [-openingShareCapital, dividend + equityValue] — a
+    // two-flow series whose IRR has an exact closed form, so this checks the wiring
+    // (dividends plus the equity's own share of the exit) rather than approximating it.
+    const project = makeProject({ calendar: { academicYearStart: 2027, financialYearStartMonth: 9, forecastYears: 1, termsPerYear: 3 } })
+    // No capex here — a one-off spend dumped into the only forecast year would swamp free
+    // cash flow and make the Gordon-growth terminal value (which assumes that year is
+    // representative of a steady state) meaningless, which isn't what this test is about.
+    const cost = makeCost({ capex: [] })
+    const capital = makeCapital({ equity: { openingShareCapital: 3_000_000, injections: [], dividendPayoutPct: 100 } })
+    const result = computeCapitalForecast(project, cost, capital)
+
+    const dividend = result.years[0]!.dividend
+    expect(dividend).toBeGreaterThan(0)
+    const expectedIrrPct = ((dividend + result.valuation.equityValue) / 3_000_000 - 1) * 100
+    expect(result.valuation.irrPct).toBeCloseTo(expectedIrrPct, 4)
+  })
+
+  it('reports payback against the equity outlay, not an un-netted cash flow total', () => {
+    // With no dividends at all (0% payout), no cash reaches the investor until the
+    // terminal equity value lands in the final year — payback cannot occur any earlier.
+    const project = makeProject({ calendar: { academicYearStart: 2027, financialYearStartMonth: 9, forecastYears: 3, termsPerYear: 3 } })
+    const capital = makeCapital({ equity: { openingShareCapital: 3_000_000, injections: [], dividendPayoutPct: 0 } })
+    const result = computeCapitalForecast(project, makeCost(), capital)
+    expect(result.valuation.paybackYearIndex).toBe(2)
   })
 
   it('values on an exit multiple when that method is chosen', () => {
