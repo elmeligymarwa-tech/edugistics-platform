@@ -137,18 +137,40 @@ export function GridCell<TRow>({
       aria-selected={isActive}
       tabIndex={-1}
       onMouseDown={(event) => {
+        // A mousedown that starts inside the input this cell is already editing — e.g. the
+        // press that begins a click-drag text selection, which can land on this div's own
+        // padding rather than the input if the drag starts right at the text's edge — must
+        // be left entirely alone. Re-running onActivate/onBeginEdit here would re-issue
+        // setEditingCell for a cell that's already editing, and without preventDefault this
+        // div (tabIndex={-1}) is still the browser's default mousedown focus target: it would
+        // focus itself once the event finishes dispatching, silently stealing focus back from
+        // the input and cancelling the edit that was already open — exactly the instability
+        // seen when highlighting text and typing over it.
+        if (isEditing && event.currentTarget.contains(event.target as Node)) {
+          event.preventDefault()
+          return
+        }
+
         // onActivate below moves editingCell to this cell, which unmounts whatever cell's
         // input is currently focused elsewhere in the same synchronous render. A native
         // blur fired mid-unmount doesn't reliably reach that input's onBlur prop, silently
         // dropping its draft. Blurring the outgoing input here — while it's still mounted —
-        // lets its own onBlur commit first. Skipped when the focus is already inside this
-        // cell (e.g. clicking within the input you're already editing).
+        // lets its own onBlur commit first.
         const active = document.activeElement
         if (active instanceof HTMLElement && !event.currentTarget.contains(active)) active.blur()
         onActivate(event.shiftKey)
         // A plain click both selects and opens the cell for editing, spreadsheet-style;
         // a shift+click only extends the range selection. onBeginEdit no-ops when disabled.
-        if (!event.shiftKey) onBeginEdit()
+        if (!event.shiftKey) {
+          // This div (tabIndex={-1}) is the nearest focusable ancestor of the actual
+          // mousedown target (a span, icon, or bare cell background) — the browser's default
+          // mousedown action would focus it once the event finishes dispatching, which runs
+          // after the layout effect below has already focused the freshly-rendered input and
+          // would silently steal that focus straight back, blurring the input and cancelling
+          // the edit this same click just opened.
+          event.preventDefault()
+          onBeginEdit()
+        }
       }}
       onDoubleClick={() => {
         // A text cell's single click deliberately leaves the caret wherever it was clicked

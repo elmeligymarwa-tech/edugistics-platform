@@ -197,6 +197,38 @@ describe('DataGrid', () => {
     expect([input.selectionStart, input.selectionEnd]).not.toEqual([0, 'Year group 0'.length])
   })
 
+  it('does not cancel an in-progress edit when a further mousedown lands back inside the same cell', () => {
+    const onCommit = vi.fn()
+    render(
+      <DataGrid
+        rows={makeRows(3)}
+        getRowId={(row) => row.id}
+        columns={[editableNameColumn(onCommit), amountColumn]}
+        mode="edit"
+        gridId="test-text-reselect-edit"
+        ariaLabel="Text reselect edit grid"
+      />,
+    )
+    const grid = screen.getByRole('grid', { name: 'Text reselect edit grid' })
+
+    fireEvent.mouseDown(getGridCell(grid, 'Year group 0'))
+    const input = within(grid).getByDisplayValue('Year group 0') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'Head Teacher' } })
+
+    // The press that starts a click-drag text selection inside the input this cell is
+    // already editing bubbles up to the cell's own mousedown handler. Unless that handler
+    // calls preventDefault, the browser's default mousedown action then focuses the cell's
+    // wrapping div (tabIndex={-1}) — the nearest focusable ancestor of the click — stealing
+    // focus straight back from the input, which blurs it and silently commits/cancels the
+    // edit, discarding whatever was highlighted and about to be typed over.
+    const notCanceled = fireEvent.mouseDown(input)
+
+    expect(notCanceled).toBe(false)
+    expect(input).toHaveFocus()
+    expect(within(grid).getByDisplayValue('Head Teacher')).toBe(input)
+    expect(onCommit).not.toHaveBeenCalled()
+  })
+
   it('selects the whole value on a double click on a text cell', () => {
     const onCommit = vi.fn()
     render(

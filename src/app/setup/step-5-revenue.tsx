@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 
 import { DataGrid, toNumberOrZero, type GridColumnDef } from '@/components/grid'
 import { GlossaryHint } from '@/components/glossary/glossary-hint'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -18,6 +18,8 @@ import {
   type Project,
   type YearGroupId,
 } from '@/domain/schema'
+import { computeEnrolment } from '@/engine/revenue'
+import { formatNumber } from '@/lib/format'
 import { YEAR_GROUP_LABELS } from '@/lib/wizard-data'
 import { useCostModel, useProjectStore } from '@/store/project-store'
 
@@ -33,6 +35,7 @@ export function Step5Revenue({ project }: { project: Project }) {
   const groups = orderedYearGroups(project)
   const a = project.revenueAssumptions
   const termsPerYear = project.calendar.termsPerYear
+  const enrolment = computeEnrolment(project)
 
   useEffect(() => {
     const current = a.collections.termSplit
@@ -204,6 +207,11 @@ export function Step5Revenue({ project }: { project: Project }) {
         <Card>
           <CardHeader>
             <CardTitle>New intake per forecast year</CardTitle>
+            <CardDescription>
+              {a.enrolmentModel === 'occupancy'
+                ? 'Driven by the occupancy ramp set in Step 3 Capacity. Shown here for reference only.'
+                : 'Year 1 is set by the occupancy ramp in Step 3 Capacity. Later years take retained students plus the intake you type here.'}
+            </CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
             <DataGrid
@@ -219,17 +227,35 @@ export function Step5Revenue({ project }: { project: Project }) {
                   pinned: 'left',
                   getValue: (group) => YEAR_GROUP_LABELS[group],
                 },
-                ...Array.from({ length: project.calendar.forecastYears }, (_, index): GridColumnDef<YearGroupId> => ({
-                  id: `intake-${index}`,
-                  label: `Year ${index + 1}`,
-                  kind: 'numeric',
-                  width: 104,
-                  minWidth: 92,
-                  allowFillDown: true,
-                  allowUplift: true,
-                  getValue: (group) => a.newIntake[group]?.[index] ?? 0,
-                  onCommit: (group, value) => setIntake(group, index, toNumberOrZero(value)),
-                })),
+                ...Array.from({ length: project.calendar.forecastYears }, (_, index): GridColumnDef<YearGroupId> => {
+                  // The engine only ever reads newIntake for years after year one, and only
+                  // under the cohort model — every other cell is derived from the Step 3
+                  // occupancy ramp, so it must render read-only rather than accept dead input.
+                  const derived = index === 0 || a.enrolmentModel === 'occupancy'
+                  if (derived) {
+                    return {
+                      id: `intake-${index}`,
+                      label: `Year ${index + 1}`,
+                      kind: 'readonly',
+                      width: 104,
+                      minWidth: 92,
+                      getValue: (group) =>
+                        Math.round(enrolment[index]?.find((entry) => entry.yearGroup === group)?.newEntrants ?? 0),
+                      format: (value) => (typeof value === 'number' ? formatNumber(value, project.meta.locale) : ''),
+                    }
+                  }
+                  return {
+                    id: `intake-${index}`,
+                    label: `Year ${index + 1}`,
+                    kind: 'numeric',
+                    width: 104,
+                    minWidth: 92,
+                    allowFillDown: true,
+                    allowUplift: true,
+                    getValue: (group) => a.newIntake[group]?.[index] ?? 0,
+                    onCommit: (group, value) => setIntake(group, index, toNumberOrZero(value)),
+                  }
+                }),
               ]}
               mode="edit"
               gridId="wizard-step5-intake"
