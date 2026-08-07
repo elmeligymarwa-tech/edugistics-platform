@@ -45,9 +45,7 @@ export function SetupWizard({ projectId, initialStep }: { projectId: string; ini
     if (!validation.valid) return
     setStep((current) => Math.min(WIZARD_STEP_COUNT, current + 1))
   }
-  const jumpTo = (target: number) => {
-    if (target <= step) setStep(target)
-  }
+  const jumpTo = (target: number) => setStep(target)
   const finish = () => {
     if (!validation.valid) return
     router.push('/dashboard')
@@ -68,14 +66,13 @@ export function SetupWizard({ projectId, initialStep }: { projectId: string; ini
               <button
                 type="button"
                 onClick={() => jumpTo(stepNumber)}
-                disabled={stepNumber > step}
                 className={cn(
                   'flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
                   isActive
                     ? 'border-primary bg-primary/10 text-primary'
                     : isComplete
                       ? 'border-success/40 bg-success/10 text-success hover:bg-success/20'
-                      : 'border-border text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60',
+                      : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground',
                 )}
               >
                 <span

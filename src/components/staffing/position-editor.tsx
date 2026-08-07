@@ -43,6 +43,16 @@ const DEFAULT_BULK_ADD_ROLE: Record<StaffPosition['section'], string> = {
   facilities: '',
 }
 
+/** "EYFS 1 Teacher" -> "EYFS 1 Teacher 2"; duplicating that again -> "EYFS 1 Teacher 3", skipping any suffix already taken. */
+function nextDuplicateTitle(existingTitles: string[], title: string): string {
+  const match = /^(.*) (\d+)$/.exec(title)
+  const root = match ? match[1]! : title
+  const taken = new Set(existingTitles)
+  let suffix = match ? Number(match[2]) + 1 : 2
+  while (taken.has(`${root} ${suffix}`)) suffix += 1
+  return `${root} ${suffix}`
+}
+
 type StaffingRow =
   | {
       kind: 'position'
@@ -87,7 +97,11 @@ export function PositionEditor({ project }: { project: Project }) {
     const index = project.staffing.positions.findIndex((position) => position.id === id)
     if (index === -1) return
     const original = project.staffing.positions[index]!
-    const copy: StaffPosition = { ...original, id: globalThis.crypto.randomUUID(), title: `${original.title} copy` }
+    const copy: StaffPosition = {
+      ...original,
+      id: globalThis.crypto.randomUUID(),
+      title: nextDuplicateTitle(project.staffing.positions.map((position) => position.title), original.title),
+    }
     updateStaffing(project.id, {
       positions: [
         ...project.staffing.positions.slice(0, index + 1),

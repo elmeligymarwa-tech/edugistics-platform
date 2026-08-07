@@ -50,6 +50,39 @@ describe('PositionEditor', () => {
     expect(within(grid).queryByText('Teacher')).not.toBeInTheDocument()
   })
 
+  it('duplicates a position with a numeric suffix, skipping any suffix already taken', () => {
+    const id = useProjectStore.getState().createProject('Duplicate Test School')
+    useProjectStore.getState().updateStaffing(id, {
+      positions: [
+        createStaffPosition({ id: 'pos-eyfs-1', title: 'EYFS 1 Teacher', section: 'teaching', headcount: 1 }),
+      ],
+    })
+
+    render(<StaffingHarness projectId={id} />)
+
+    const grid = screen.getByRole('grid', { name: 'Staff positions' })
+    const cell = within(grid).getByText('EYFS 1 Teacher').closest('[role="gridcell"]')
+    if (!cell) throw new Error('No gridcell ancestor found for "EYFS 1 Teacher"')
+
+    const duplicateButton = within(cell as HTMLElement).getByRole('button', { name: 'Duplicate EYFS 1 Teacher' })
+    fireEvent.mouseDown(duplicateButton)
+    fireEvent.click(duplicateButton)
+
+    expect(
+      useProjectStore.getState().projects[id]?.staffing.positions.map((position) => position.title),
+    ).toEqual(['EYFS 1 Teacher', 'EYFS 1 Teacher 2'])
+
+    // Duplicating the original again must skip straight to 3 rather than colliding with the
+    // "EYFS 1 Teacher 2" that already exists. The new copy is inserted right after the
+    // original, same as the first duplicate, landing ahead of "EYFS 1 Teacher 2".
+    fireEvent.mouseDown(duplicateButton)
+    fireEvent.click(duplicateButton)
+
+    expect(
+      useProjectStore.getState().projects[id]?.staffing.positions.map((position) => position.title),
+    ).toEqual(['EYFS 1 Teacher', 'EYFS 1 Teacher 3', 'EYFS 1 Teacher 2'])
+  })
+
   it('does not enter edit mode on the title cell when the delete icon is clicked', () => {
     const id = useProjectStore.getState().createProject('Edit Guard School')
     useProjectStore.getState().updateStaffing(id, {

@@ -44,6 +44,10 @@ function editableAmountColumn(onCommit: (row: Row, value: string | number | null
   return { ...amountColumn, onCommit }
 }
 
+function editableNameColumn(onCommit: (row: Row, value: string | number | null) => void): GridColumnDef<Row> {
+  return { ...nameColumn, onCommit }
+}
+
 const statusColumn: GridColumnDef<Row> = {
   id: 'status',
   label: 'Status',
@@ -166,6 +170,82 @@ describe('DataGrid', () => {
     const input = within(grid).getByDisplayValue('20') as HTMLInputElement
     expect(input).toHaveFocus()
     expect([input.selectionStart, input.selectionEnd]).toEqual([0, 2])
+  })
+
+  it('opens a text cell for editing on a single click without selecting the value', () => {
+    const onCommit = vi.fn()
+    render(
+      <DataGrid
+        rows={makeRows(3)}
+        getRowId={(row) => row.id}
+        columns={[editableNameColumn(onCommit), amountColumn]}
+        mode="edit"
+        gridId="test-text-click-edit"
+        ariaLabel="Text click edit grid"
+      />,
+    )
+    const grid = screen.getByRole('grid', { name: 'Text click edit grid' })
+
+    fireEvent.mouseDown(getGridCell(grid, 'Year group 0'))
+
+    const input = within(grid).getByDisplayValue('Year group 0') as HTMLInputElement
+    expect(input).toHaveFocus()
+    // Unlike a numeric cell (which selects the whole value), a text cell must not select
+    // everything on a plain click — the caret stays collapsed so a later keystroke edits in
+    // place instead of wiping the name out.
+    expect(input.selectionStart).toBe(input.selectionEnd)
+    expect([input.selectionStart, input.selectionEnd]).not.toEqual([0, 'Year group 0'.length])
+  })
+
+  it('selects the whole value on a double click on a text cell', () => {
+    const onCommit = vi.fn()
+    render(
+      <DataGrid
+        rows={makeRows(3)}
+        getRowId={(row) => row.id}
+        columns={[editableNameColumn(onCommit), amountColumn]}
+        mode="edit"
+        gridId="test-text-dblclick-edit"
+        ariaLabel="Text double click edit grid"
+      />,
+    )
+    const grid = screen.getByRole('grid', { name: 'Text double click edit grid' })
+    const cell = getGridCell(grid, 'Year group 0')
+
+    fireEvent.mouseDown(cell)
+    fireEvent.doubleClick(cell)
+
+    const input = within(grid).getByDisplayValue('Year group 0') as HTMLInputElement
+    expect([input.selectionStart, input.selectionEnd]).toEqual([0, 'Year group 0'.length])
+  })
+
+  it('keeps the existing name and appends the typed character when typing on an active text cell', () => {
+    const onCommit = vi.fn()
+    render(
+      <DataGrid
+        rows={makeRows(3)}
+        getRowId={(row) => row.id}
+        columns={[editableNameColumn(onCommit), amountColumn]}
+        mode="edit"
+        gridId="test-text-type-edit"
+        ariaLabel="Text type edit grid"
+      />,
+    )
+    const grid = screen.getByRole('grid', { name: 'Text type edit grid' })
+
+    // Shift+click only activates the cell (range-selection semantics) — it must not open it
+    // for editing, so this exercises typing on an active-but-not-editing text cell.
+    fireEvent.mouseDown(getGridCell(grid, 'Year group 0'), { shiftKey: true })
+    expect(screen.queryByDisplayValue('Year group 0')).not.toBeInTheDocument()
+
+    fireEvent.keyDown(grid, { key: '2' })
+
+    const input = within(grid).getByDisplayValue('Year group 02') as HTMLInputElement
+    expect(input).toHaveFocus()
+    expect([input.selectionStart, input.selectionEnd]).toEqual([
+      'Year group 02'.length,
+      'Year group 02'.length,
+    ])
   })
 
   it('opens the option list on a single click for a select cell', () => {

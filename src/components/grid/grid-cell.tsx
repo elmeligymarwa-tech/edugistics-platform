@@ -109,11 +109,16 @@ export function GridCell<TRow>({
       if (useSeed) {
         const caret = editSeed.length
         input.setSelectionRange(caret, caret)
-      } else {
+      } else if (isNumeric) {
+        // Numeric/percent cells stay spreadsheet-style: the whole value is selected so the
+        // next keystroke replaces it. Text cells deliberately fall through with no explicit
+        // selection — assigning `input.value` above already left the caret collapsed at the
+        // end, and a plain click's own (unprevented) mouseup then moves it to the click point;
+        // see the input's onMouseUp below.
         input.select()
       }
     }
-  }, [isEditing, value, editSeed, column.kind])
+  }, [isEditing, value, editSeed, column.kind, isNumeric])
 
   const commitDraft = (move: GridCellMove) => onCommit(coerceCellValue(column.kind, draft), move)
 
@@ -144,6 +149,15 @@ export function GridCell<TRow>({
         // A plain click both selects and opens the cell for editing, spreadsheet-style;
         // a shift+click only extends the range selection. onBeginEdit no-ops when disabled.
         if (!event.shiftKey) onBeginEdit()
+      }}
+      onDoubleClick={() => {
+        // A text cell's single click deliberately leaves the caret wherever it was clicked
+        // (see the layout effect and the input's onMouseUp below) rather than selecting
+        // everything. Double click is the explicit "select the whole value" gesture instead —
+        // this overrides whatever the browser's own double-click-selects-a-word default just
+        // did to the input's selection. Numeric/percent cells already select-all on the first
+        // click, so they have nothing extra to do here.
+        if (!disabled && column.kind === 'text') inputRef.current?.select()
       }}
       style={{
         width,
@@ -187,9 +201,13 @@ export function GridCell<TRow>({
           ref={inputRef}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          // The layout effect above already focused and selected/positioned the caret;
-          // the browser's own mouseup-after-focus would otherwise collapse that selection.
-          onMouseUp={(event) => event.preventDefault()}
+          // The layout effect above already selected the whole value for a numeric/percent
+          // cell; the browser's own mouseup-after-focus would otherwise collapse that
+          // selection down to a caret at the click point. Text cells want exactly that
+          // click-point caret, so their mouseup is left to run.
+          onMouseUp={(event) => {
+            if (isNumeric) event.preventDefault()
+          }}
           onBlur={() => commitDraft('none')}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {

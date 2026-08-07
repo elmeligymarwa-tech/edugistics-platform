@@ -262,6 +262,22 @@ export function DataGrid<TRow>(props: DataGridProps<TRow>) {
     [dataEntries, setEditingCell, visibleColumns],
   )
 
+  const buildEditSeed = React.useCallback(
+    (cell: CellCoordinate, key: string) => {
+      const entry = dataEntries[cell.rowIndex]
+      const column = visibleColumns[cell.colIndex]?.def
+      // A text cell keeps its existing value and appends the typed key (caret lands at the
+      // end) rather than replacing it — only numeric/percent cells seed with just the key,
+      // spreadsheet-style, since overwriting a whole number by typing over it is expected.
+      if (column?.kind === 'text' && entry?.row) {
+        const value = column.getValue(entry.row)
+        return (value === null ? '' : String(value)) + key
+      }
+      return key
+    },
+    [dataEntries, visibleColumns],
+  )
+
   const handleKeyDown = useGridKeyboard({
     mode,
     rowCount: dataEntries.length,
@@ -273,6 +289,7 @@ export function DataGrid<TRow>(props: DataGridProps<TRow>) {
     onCopy: handleCopy,
     isCellEditable,
     onTypeahead: handleTypeahead,
+    buildEditSeed,
   })
 
   const handleCellCommit = React.useCallback(

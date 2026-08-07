@@ -21,6 +21,12 @@ interface UseGridKeyboardParams {
    * don't open editing"; false/undefined falls through to the default seeded-edit-open.
    */
   onTypeahead?: (cell: CellCoordinate, key: string) => boolean
+  /**
+   * Builds the seed string for the default (non-typeahead) case: a numeric/percent cell
+   * replaces its whole value, so the seed is just the typed key; a text cell keeps its
+   * existing value and appends the key, so typing never wipes out what was already there.
+   */
+  buildEditSeed: (cell: CellCoordinate, key: string) => string
 }
 
 /**
@@ -45,6 +51,7 @@ export function useGridKeyboard({
   onCopy,
   isCellEditable,
   onTypeahead,
+  buildEditSeed,
 }: UseGridKeyboardParams) {
   return React.useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -110,13 +117,14 @@ export function useGridKeyboard({
           ) {
             event.preventDefault()
             const handled = onTypeahead?.(activeCell, event.key)
-            if (!handled) setEditingCell(activeCell, event.key)
+            if (!handled) setEditingCell(activeCell, buildEditSeed(activeCell, event.key))
           }
           break
       }
     },
     [
       activeCell,
+      buildEditSeed,
       colCount,
       editingCell,
       isCellEditable,
