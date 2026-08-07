@@ -161,6 +161,42 @@ describe('migrateProject', () => {
     expect(migrateProject(null)).toBeNull()
     expect(migrateProject('not-a-project')).toBe('not-a-project')
   })
+
+  it('backfills maxStudents from classrooms times students per classroom times maxCapacityPct when unset', () => {
+    const id = useProjectStore.getState().createProject('Old Capacity School')
+    useProjectStore.getState().updateYearGroups(id, ['Y1'])
+    useProjectStore.getState().updateCapacity(id, 'Y1', {
+      classrooms: 10,
+      studentsPerClassroom: 25,
+      maxCapacityPct: 90,
+      maxStudents: null,
+    })
+    const exported = JSON.parse(useProjectStore.getState().exportProject(id)) as {
+      project: Record<string, unknown>
+    }
+
+    const migrated = migrateProject(exported.project) as { capacity: Record<string, { maxStudents: number | null }> }
+
+    expect(migrated.capacity.Y1?.maxStudents).toBe(225)
+  })
+
+  it('leaves an already-set maxStudents untouched', () => {
+    const id = useProjectStore.getState().createProject('Capped School')
+    useProjectStore.getState().updateYearGroups(id, ['Y1'])
+    useProjectStore.getState().updateCapacity(id, 'Y1', {
+      classrooms: 10,
+      studentsPerClassroom: 25,
+      maxCapacityPct: 90,
+      maxStudents: 30,
+    })
+    const exported = JSON.parse(useProjectStore.getState().exportProject(id)) as {
+      project: Record<string, unknown>
+    }
+
+    const migrated = migrateProject(exported.project) as { capacity: Record<string, { maxStudents: number | null }> }
+
+    expect(migrated.capacity.Y1?.maxStudents).toBe(30)
+  })
 })
 
 describe('cost model', () => {

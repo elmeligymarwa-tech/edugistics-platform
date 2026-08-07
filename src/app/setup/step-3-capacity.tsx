@@ -156,17 +156,6 @@ function CapacityGrid({
     numericColumn('teachingAssistants', 'Teaching assistants', 'teachingAssistants'),
     numericColumn('coTeachers', 'Co-teachers', 'coTeachers'),
     {
-      id: 'maxCapacityPct',
-      label: 'Max capacity %',
-      kind: 'percent',
-      width: 128,
-      minWidth: 104,
-      allowFillDown: true,
-      allowUplift: true,
-      getValue: (row) => project.capacity[row.group]?.maxCapacityPct ?? 100,
-      onCommit: (row, value) => patch(row.group, { maxCapacityPct: toNumberOrZero(value) }),
-    },
-    {
       id: 'maxStudents',
       label: 'Max students',
       kind: 'numeric',
@@ -176,6 +165,18 @@ function CapacityGrid({
       getValue: (row) => project.capacity[row.group]?.maxStudents ?? null,
       onCommit: (row, value) =>
         patch(row.group, { maxStudents: typeof value === 'number' ? Math.max(0, Math.round(value)) : null }),
+    },
+    {
+      id: 'classroomCapacity',
+      label: 'Classroom capacity',
+      kind: 'readonly',
+      width: 128,
+      minWidth: 112,
+      getValue: (row) => {
+        const capacity = project.capacity[row.group]
+        return (capacity?.classrooms ?? 0) * (capacity?.studentsPerClassroom ?? 0)
+      },
+      format: (value) => (typeof value === 'number' ? formatNumber(value, project.meta.locale) : ''),
     },
     {
       id: 'openFromYearIndex',

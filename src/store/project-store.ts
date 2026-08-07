@@ -45,6 +45,38 @@ const DEBOUNCE_MS = 500
 /** Per-version upgrade steps, keyed by the schemaVersion they upgrade *from*. */
 const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Record<string, unknown>> = {}
 
+/**
+ * The "Max capacity %" input was removed from the capacity grid — maxStudents is now the
+ * only hard cap a user can set. Old projects that relied on the classrooms times students
+ * per classroom times maxCapacityPct calculation (by leaving maxStudents unset) need that
+ * figure baked into maxStudents once so the enrolment ceiling doesn't silently change.
+ * Self-guarding on `maxStudents == null`, so it's a no-op on every load after the first.
+ */
+function backfillMaxStudents(data: Record<string, unknown>): Record<string, unknown> {
+  const capacity = data.capacity
+  if (typeof capacity !== 'object' || capacity === null) return data
+
+  let changed = false
+  const nextCapacity: Record<string, unknown> = {}
+  for (const [group, entry] of Object.entries(capacity as Record<string, unknown>)) {
+    if (typeof entry !== 'object' || entry === null) {
+      nextCapacity[group] = entry
+      continue
+    }
+    const row = entry as Record<string, unknown>
+    if (row.maxStudents !== null && row.maxStudents !== undefined) {
+      nextCapacity[group] = row
+      continue
+    }
+    const classrooms = typeof row.classrooms === 'number' ? row.classrooms : 0
+    const studentsPerClassroom = typeof row.studentsPerClassroom === 'number' ? row.studentsPerClassroom : 0
+    const maxCapacityPct = typeof row.maxCapacityPct === 'number' ? row.maxCapacityPct : 100
+    nextCapacity[group] = { ...row, maxStudents: Math.round((classrooms * studentsPerClassroom * maxCapacityPct) / 100) }
+    changed = true
+  }
+  return changed ? { ...data, capacity: nextCapacity } : data
+}
+
 /** Upgrades a raw project object to the current schemaVersion. */
 export function migrateProject(data: unknown): unknown {
   if (typeof data !== 'object' || data === null) return data
@@ -55,6 +87,7 @@ export function migrateProject(data: unknown): unknown {
     migrated = upgrade ? upgrade(migrated) : migrated
     version += 1
   }
+  migrated = backfillMaxStudents(migrated)
   return { ...migrated, schemaVersion: SCHEMA_VERSION }
 }
 
