@@ -68,12 +68,10 @@ export function Step3Capacity({ project }: { project: Project }) {
   const totalMax = groups.reduce((sum, group) => sum + (ceilingByGroup.get(group) ?? 0), 0)
   const totalYearOne = yearOne.reduce((sum, entry) => sum + entry.students, 0)
   const totalFinalYear = finalYear.reduce((sum, entry) => sum + entry.students, 0)
-  const totalTeachers = groups.reduce(
-    (sum, group) =>
-      sum + (project.capacity[group]?.teachers ?? 0) + (project.capacity[group]?.coTeachers ?? 0),
-    0,
-  )
-  const ratio = totalTeachers > 0 ? totalMax / totalTeachers : 0
+  const teachingHeadcount = project.staffing.positions
+    .filter((position) => position.section === 'teaching')
+    .reduce((sum, position) => sum + position.headcount, 0)
+  const ratio = teachingHeadcount > 0 ? totalMax / teachingHeadcount : 0
 
   return (
     <div className="flex flex-col gap-4">
@@ -89,7 +87,7 @@ export function Step3Capacity({ project }: { project: Project }) {
           />
           <SummaryStat
             label="Student : teacher ratio"
-            value={totalTeachers > 0 ? `${ratio.toFixed(1)} : 1` : '—'}
+            value={teachingHeadcount > 0 ? `${ratio.toFixed(1)} : 1` : '—'}
             term="student-teacher-ratio"
           />
         </CardContent>
@@ -143,7 +141,7 @@ function CapacityGrid({
   const numericColumn = (
     id: string,
     label: string,
-    field: 'classrooms' | 'studentsPerClassroom' | 'teachers' | 'teachingAssistants' | 'coTeachers',
+    field: 'classrooms' | 'studentsPerClassroom',
     opts?: { secondary?: boolean; width?: number; minWidth?: number },
   ): GridColumnDef<CapacityRow> => ({
     id,
@@ -234,9 +232,6 @@ function CapacityGrid({
             },
       })),
     },
-    numericColumn('teachers', 'Teachers', 'teachers'),
-    numericColumn('teachingAssistants', 'Teaching assistants', 'teachingAssistants', { secondary: true }),
-    numericColumn('coTeachers', 'Co-teachers', 'coTeachers', { secondary: true }),
     {
       id: 'openFromYearIndex',
       label: 'Opens from year',

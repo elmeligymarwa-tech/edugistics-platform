@@ -122,6 +122,34 @@ function normalizeCapacityInputs(data: Record<string, unknown>): Record<string, 
   return nextData
 }
 
+/**
+ * The staffing grid no longer derives Teachers/Teaching Assistants/Co-Teachers headcount
+ * from capacity — every position's headcount is typed directly, and the Auto/Override
+ * badge that gated it is gone. A position that was capacity-derived keeps whatever
+ * headcount it last computed to (kept fresh, until now, by the sync effect this replaces),
+ * so the switch to typed headcount doesn't change a single forecast number; only the
+ * derivedFromCapacity/manualOverride flags are cleared. Self-guarding — a no-op once every
+ * position has already been cleared.
+ */
+function normalizeStaffingPositions(data: Record<string, unknown>): Record<string, unknown> {
+  const staffing = data.staffing
+  if (typeof staffing !== 'object' || staffing === null) return data
+  const positions = (staffing as Record<string, unknown>).positions
+  if (!Array.isArray(positions)) return data
+
+  let changed = false
+  const nextPositions = positions.map((entry) => {
+    if (typeof entry !== 'object' || entry === null) return entry
+    const position = entry as Record<string, unknown>
+    if (position.derivedFromCapacity === false && position.manualOverride === false) return position
+    changed = true
+    return { ...position, derivedFromCapacity: false, manualOverride: false }
+  })
+
+  if (!changed) return data
+  return { ...data, staffing: { ...(staffing as Record<string, unknown>), positions: nextPositions } }
+}
+
 /** Upgrades a raw project object to the current schemaVersion. */
 export function migrateProject(data: unknown): unknown {
   if (typeof data !== 'object' || data === null) return data
@@ -133,11 +161,27 @@ export function migrateProject(data: unknown): unknown {
     version += 1
   }
   migrated = normalizeCapacityInputs(migrated)
+  migrated = normalizeStaffingPositions(migrated)
   return { ...migrated, schemaVersion: SCHEMA_VERSION }
 }
 
 /** Per-version upgrade steps for the cost model, keyed by the schemaVersion they upgrade *from*. */
 const MIGRATIONS_COST: Record<number, (data: Record<string, unknown>) => Record<string, unknown>> = {}
+
+/**
+ * derivedRoleMap tied a position id to the capacity figure that drove its headcount. The
+ * staffing grid no longer derives headcount from capacity, so nothing reads this map any
+ * more — cleared on load so an old cost model doesn't carry a mapping the app no longer
+ * honours. Self-guarding — a no-op once already empty.
+ */
+function normalizePayrollDerivedRoleMap(data: Record<string, unknown>): Record<string, unknown> {
+  const payroll = data.payroll
+  if (typeof payroll !== 'object' || payroll === null) return data
+  const derivedRoleMap = (payroll as Record<string, unknown>).derivedRoleMap
+  if (typeof derivedRoleMap !== 'object' || derivedRoleMap === null) return data
+  if (Object.keys(derivedRoleMap as Record<string, unknown>).length === 0) return data
+  return { ...data, payroll: { ...(payroll as Record<string, unknown>), derivedRoleMap: {} } }
+}
 
 /** Upgrades a raw cost model object to the current COST_SCHEMA_VERSION. */
 export function migrateCostModel(data: unknown): unknown {
@@ -149,6 +193,7 @@ export function migrateCostModel(data: unknown): unknown {
     migrated = upgrade ? upgrade(migrated) : migrated
     version += 1
   }
+  migrated = normalizePayrollDerivedRoleMap(migrated)
   return { ...migrated, schemaVersion: COST_SCHEMA_VERSION }
 }
 
@@ -793,12 +838,10 @@ export const useProjectStore = create<ProjectStoreState>()(
             },
           }
 
-          const positions = project.staffing.positions.map((position) => {
-            const isManual = !position.derivedFromCapacity || position.manualOverride
-            return isManual
-              ? { ...position, headcount: Math.max(0, Math.round((position.headcount * headcountScalePct) / 100)) }
-              : position
-          })
+          const positions = project.staffing.positions.map((position) => ({
+            ...position,
+            headcount: Math.max(0, Math.round((position.headcount * headcountScalePct) / 100)),
+          }))
 
           const now = new Date().toISOString()
           const projects = {

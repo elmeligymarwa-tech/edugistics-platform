@@ -54,6 +54,7 @@ export function DataGrid<TRow>(props: DataGridProps<TRow>) {
     className,
     rowHeight = DEFAULT_ROW_HEIGHT,
     getRowClassName,
+    renderGroupHeaderAction,
   } = props
 
   // A group that holds only one column has nothing to group — rendering it as a
@@ -444,9 +445,10 @@ export function DataGrid<TRow>(props: DataGridProps<TRow>) {
                       height: virtualRow.size,
                       transform: `translateY(${virtualRow.start}px)`,
                     }}
-                    className="flex items-center border-b border-border/60 bg-muted/60 px-2 text-xs font-semibold text-heading"
+                    className="flex items-center justify-between gap-2 border-b border-border/60 bg-muted/60 px-2 text-xs font-semibold text-heading"
                   >
-                    {entry.groupLabel}
+                    <span>{entry.groupLabel}</span>
+                    {entry.groupId ? renderGroupHeaderAction?.(entry.groupId) : null}
                   </div>
                 )
               }

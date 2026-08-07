@@ -102,4 +102,6 @@ export interface DataGridProps<TRow> {
   rowHeight?: number
   /** Extra classes for a data row's wrapper, e.g. `font-semibold` on a subtotal/total line. Font weight cascades into each cell since GridCell never sets its own. */
   getRowClassName?: (row: TRow) => string | undefined
+  /** Renders into a row group's own header bar (e.g. a per-section "Bulk add" control), aligned to its right edge. */
+  renderGroupHeaderAction?: (groupId: string) => React.ReactNode
 }

@@ -431,15 +431,15 @@ describe('scenarios', () => {
     expect(useProjectStore.getState().projects[scenarioId]?.capacity.Y1?.occupancyPctByYear).toEqual([100])
   })
 
-  it('does not derived-headcount positions unless manually overridden', () => {
+  it('applyScenarioAdjustments scales every position headcount, none of them derived any more', () => {
     const baseId = useProjectStore.getState().createProject('Base School')
     useProjectStore.getState().updateStaffing(baseId, {
       positions: [
         {
-          id: 'derived-teachers',
-          title: 'Teachers',
+          id: 'teacher-1',
+          title: 'Teacher',
           section: 'teaching',
-          derivedFromCapacity: true,
+          derivedFromCapacity: false,
           manualOverride: false,
           headcount: 5,
           averageSalary: 0,
@@ -462,7 +462,7 @@ describe('scenarios', () => {
 
     useProjectStore.getState().applyScenarioAdjustments(scenarioId, { headcountScalePct: 50 })
 
-    expect(useProjectStore.getState().projects[scenarioId]?.staffing.positions[0]?.headcount).toBe(5)
+    expect(useProjectStore.getState().projects[scenarioId]?.staffing.positions[0]?.headcount).toBe(3)
   })
 })
 
