@@ -1,0 +1,598 @@
+EDUGISTICS TRAINING REGISTRATION & ANALYTICS
+CLAUDE CODE BUILD PROMPT, VERSION 4
+
+Repository: edugistics-platform
+Branch: feature/training-app
+Paste PHASE 0 first. Review. Then each phase in order. Never all at once.
+
+
+==================================================
+CONFIRMED STACK (verified, do not re-detect)
+==================================================
+
+Next.js 15.5.22 with Turbopack
+React 19.1.0
+TypeScript
+Tailwind CSS 4
+shadcn/ui plus @base-ui/react
+zod 4 for validation
+react-hook-form 7 with @hookform/resolvers
+recharts 3 for charts
+@tanstack/react-table for tables
+lucide-react for icons
+zustand for client state
+vitest for tests
+eslint for linting
+
+Scripts:
+  npm run dev
+  npm run build
+  npm run lint
+  npm run test
+  npm run typecheck
+
+Use these libraries. Do not install alternatives for anything already listed.
+
+
+==================================================
+WHAT TO INSTALL
+==================================================
+
+The repository has no database layer. Install only these:
+
+  prisma and @prisma/client   database ORM and migrations
+  resend                       transactional email
+  exceljs                      server side Excel generation
+  @node-rs/argon2              password hashing
+  date-fns and date-fns-tz     Cairo timezone handling
+
+Do not install a chart library, a form library, a validation library, a
+table library or a UI kit. They are already present.
+
+
+==================================================
+CONFIRMED DECISIONS
+==================================================
+
+DATABASE
+  Dedicated Supabase Postgres project named edugistics-training
+  This project contains nothing else. Use the public schema normally.
+  DATABASE_URL   transaction pooler, port 6543, application runtime
+  DIRECT_URL     direct connection, port 5432, migrations only
+  Prisma datasource uses both. Never run migrations through the pooler.
+
+EMAIL
+  Resend, sending domain send.edugistics.online
+  Server side only. The key must never reach a client bundle.
+
+ADMIN AUTH
+  Single admin password, hashed with argon2id into ADMIN_PASSWORD_HASH
+  Signed httpOnly session cookie, 8 hour expiry
+  Login rate limited to 5 attempts per 15 minutes per IP
+  The existing site password mechanism is separate. Do not modify it.
+
+CAPACITY
+  Per course waitlist toggle
+  Full with waitlist off blocks registration
+  Full with waitlist on records status WAITLISTED with a position
+
+TIMEZONE   Africa/Cairo for all grouping and all date filters
+CURRENCY   EGP default
+PUBLIC     /training
+ADMIN      /training/admin
+
+ENVIRONMENT VARIABLES
+  DATABASE_URL
+  DIRECT_URL
+  RESEND_API_KEY
+  EMAIL_FROM
+  EMAIL_REPLY_TO
+  ADMIN_PASSWORD_HASH
+  ADMIN_SESSION_SECRET
+  NEXT_PUBLIC_SITE_URL
+
+Do not modify ANTHROPIC_API_KEY or SITE_PASSWORD.
+
+
+==================================================
+RULES THAT APPLY TO EVERY PHASE
+==================================================
+
+1. The existing school-planning application must not change. Do not modify
+   its routes, components, state, calculations or storage.
+2. Keep all new code under a clearly separated training module inside src.
+   Follow the conventions already used in the repository.
+3. Read CLAUDE.md before writing code and follow anything it specifies.
+4. Never run a destructive database command. No prisma migrate reset, no
+   force db push. If a migration conflict appears, stop and report.
+5. Print migration SQL before running it.
+6. Work only on the feature/training-app branch. Commit at the end of each
+   phase with a clear message. Do not merge to main.
+7. Stop at the end of every phase and wait for approval.
+
+
+==================================================
+PHASE 0 - AUDIT AND PLAN (READ ONLY)
+==================================================
+
+Write no code.
+
+Report:
+1. Contents and instructions in CLAUDE.md
+2. Folder structure under src, and the router type in use
+3. How existing pages, components and server code are organised
+4. The shadcn/ui components already installed in the project
+5. Design tokens, colours, fonts and Tailwind config in use
+6. How the existing site password protection works and which routes it covers
+7. Existing vitest setup and where tests live
+8. Whether Turbopack imposes any constraint on server side code
+9. Confirm DATABASE_URL and DIRECT_URL connect successfully. Report the
+   Postgres version and confirm the public schema is empty.
+
+Then propose:
+  A. Exact folder layout for the training module
+  B. Prisma schema file location and how the client is instantiated for
+     serverless
+  C. Which existing shadcn components you will reuse for forms, tables,
+     dialogs and badges
+  D. Any conflict between the training module and existing code
+
+Stop. Report. Wait for approval.
+
+
+==================================================
+PHASE 1 - DATABASE, ADMIN LOGIN, COURSE MANAGEMENT
+==================================================
+
+Install the packages listed above. Initialise Prisma.
+
+MODELS
+
+Course
+  id, name, slug unique
+  shortDescription, fullDescription
+  category enum: LEADERSHIP, TEACHING_LEARNING, ASSESSMENT, CURRICULUM,
+    SEN, CLASSROOM_MANAGEMENT, TECHNOLOGY, AI, PROFESSIONAL_DEVELOPMENT
+  courseDate, startTime, endTime, durationMinutes
+  deliveryMethod enum: ONLINE, IN_PERSON, HYBRID
+  location nullable, required when delivery is not ONLINE
+  joiningInstructions nullable
+  feeAmount decimal default 0, currency default EGP
+  registrationOpensAt, registrationClosesAt nullable
+  maxCapacity nullable, null means unlimited
+  waitlistEnabled default false
+  waitlistCapacity nullable
+  isActive default false, isFeatured default false
+  archivedAt nullable
+  createdAt, updatedAt
+
+Teacher
+  id
+  emailNormalised unique, emailOriginal
+  fullName, phone, phoneNormalised, address nullable
+  schoolId nullable, schoolNameOriginal
+  subjectOriginal, subjectNormalised
+  gradeOriginal, gradeNormalised
+  marketingConsent default false, marketingConsentAt nullable
+  firstRegisteredAt, lastRegisteredAt
+  createdAt, updatedAt
+
+School
+  id, canonicalName, nameKey unique
+  schoolType nullable, location nullable
+  mergedIntoId self relation nullable
+  createdAt, updatedAt
+
+SchoolAlias
+  id, schoolId, aliasKey unique, createdAt
+
+Registration
+  id, reference unique, format EDU-YYYY-XXXXXX
+  teacherId, courseId
+  courseNameSnapshot, courseDateSnapshot, courseFeeSnapshot,
+    courseCurrencySnapshot
+  status enum: CONFIRMED, WAITLISTED, CANCELLED
+  waitlistPosition nullable, promotedAt nullable
+  registeredAt
+  consentGiven, consentAt nullable
+  emailSent default false, emailSentAt nullable
+  emailStatus enum: PENDING, SENT, FAILED
+  emailType enum: CONFIRMED, WAITLISTED, PROMOTED
+  emailError nullable
+  sourceIpHash nullable
+  cancelledAt nullable
+  createdAt, updatedAt
+
+AuditLog
+  id, actor, action, entityType, entityId, beforeJson, afterJson, createdAt
+
+DATABASE RULES
+  Unique composite index on (courseId, teacherId). Duplicate prevention must
+    hold at database level, not only in application code.
+  Index courseId, teacherId, registeredAt, schoolId, status.
+  Never hard delete a registration. Use status CANCELLED.
+  Never hard delete a course. Use archivedAt.
+  Instantiate PrismaClient as a module level singleton to avoid exhausting
+    connections in serverless.
+
+NORMALISATION
+  Email: lowercase and trim, keep the original.
+  Phone: strip spaces, brackets, hyphens, keep a leading plus, keep the
+    original.
+  School nameKey: lowercase, trim, collapse spaces, strip punctuation, strip
+    trailing words school, schools, international, academy. Lookup key only.
+    Never overwrite what the teacher typed.
+  Subject and grade: lowercase and trim into a normalised column, keep the
+    original, no synonym mapping.
+
+School matching: exact nameKey match against School or SchoolAlias, else
+create a new School. No fuzzy matching. Merging is a manual admin action.
+
+ADMIN LOGIN at /training/admin/login
+  Verify the submitted password against ADMIN_PASSWORD_HASH using argon2
+    verify. Never compare plain strings. Never log the password.
+  On success set a signed httpOnly, secure, sameSite lax cookie using
+    ADMIN_SESSION_SECRET. Expiry 8 hours.
+  Add a logout route.
+  Rate limit to 5 attempts per 15 minutes per IP.
+  Check the session server side inside every admin route and every admin
+    action. Hiding a link is not protection.
+  Add a script registered as admin:hash that prompts for a password, prints
+    the argon2 hash and nothing else, and never writes it to a file.
+
+COURSE MANAGEMENT
+  Course list: name, date, status, registrations, waitlist count, capacity,
+    active toggle
+  Create and edit forms using react-hook-form with zod resolvers and the
+    existing shadcn form components
+  Archive action with confirmation dialog
+
+  Capacity controls:
+    Maximum Capacity, optional, blank means unlimited
+    Enable Waitlist switch, disabled while capacity is blank
+    Waitlist Capacity, shown only when the switch is on
+    Helper text: waitlist off closes registration when full, waitlist on
+      keeps collecting names in order
+
+  Server side validation with zod:
+    Cannot activate without name, date, start time and delivery method
+    registrationClosesAt after registrationOpensAt
+    Location required when delivery is not ONLINE
+    waitlistEnabled cannot be true when maxCapacity is null
+
+DELIVERABLE
+Migration applied, admin login working, course screens working, typecheck
+and lint passing. Commit. Stop and wait for approval.
+
+
+==================================================
+PHASE 2 - PUBLIC REGISTRATION, WAITLIST, EMAIL
+==================================================
+
+PUBLIC PAGE at /training
+
+Mobile first. Under two minutes to complete. Professional, minimal,
+trustworthy, education focused. Use the existing design tokens. It must not
+look like an admin dashboard.
+
+Course selection
+  Only courses where isActive is true, archivedAt is null, and the current
+    Cairo time falls inside the registration window
+  Show name, date, time, delivery method, fee
+  Fee zero shows Free
+  Fee above zero shows the amount plus: Payment is not collected through
+    this form. Payment instructions will be sent separately.
+  Full with waitlist on: This course is full. Join the waiting list.
+  Full with waitlist off: shown as Full, not selectable
+
+Fields
+  Course, Full Name, Email, Phone, Current School, Subject Taught, Grade or
+    Year Group all required
+  Address optional
+  Marketing consent checkbox, unticked by default, never pre-ticked
+  Privacy notice with a link above the submit button
+  Hidden honeypot field
+
+SERVER ACTION LOGIC
+1. Validate every field server side with zod.
+2. Reject if the honeypot is filled.
+3. Rate limit by IP, 5 submissions per hour.
+4. Normalise email, phone and school name.
+5. Resolve or create the school.
+6. Find the teacher by emailNormalised. Update and reuse if found, create if
+   not. Never duplicate a teacher for a repeat email.
+7. Reject a duplicate non-cancelled registration for the same course with:
+   This email address is already registered for this course.
+8. Apply capacity inside a transaction with a row lock on the course so two
+   simultaneous submissions cannot both take the last seat:
+     maxCapacity null: CONFIRMED
+     confirmed count below maxCapacity: CONFIRMED
+     full and waitlist off: reject with This course is now full.
+     full and waitlist on, waitlist also full: reject with This course and
+       its waiting list are both full.
+     full and waitlist on: WAITLISTED, position = waitlist count plus 1
+9. Reference EDU-YYYY-XXXXXX using the Cairo year plus six random uppercase
+   alphanumeric characters. Retry on collision.
+10. Write the registration with all snapshot fields populated.
+11. Send the email after the transaction commits.
+12. Email failure must not lose the registration. Record FAILED and the
+    error.
+
+CONFIRMATION SCREEN, CONFIRMED
+  Registration Confirmed
+  Thank you, [Name].
+  You are registered for: [Course]
+  Date and time in Cairo time
+  Reference: [EDU-YYYY-XXXXXX]
+  Confirmation email sent to: [email]
+  Button: Register for Another Course
+
+CONFIRMATION SCREEN, WAITLISTED
+  You are on the waiting list
+  [Course] is currently full. You are number [position] on the waiting list.
+  We will email you if a place becomes available.
+  Reference: [EDU-YYYY-XXXXXX]
+  Button: Register for Another Course
+
+  Never show a waitlisted teacher a confirmed message.
+
+EMAILS VIA RESEND
+  Server side only. From EMAIL_FROM, Reply-To EMAIL_REPLY_TO.
+  HTML and plain text for every template. Edugistics branding. Mobile
+    readable.
+
+  CONFIRMED: name, course, date, start and end time in Cairo, delivery
+    method, joining instructions or location, fee, reference. Free states
+    the course is free. Paid states payment is not collected through the
+    registration system and instructions follow separately.
+  WAITLISTED: waiting list status and position, plainly not yet a place,
+    reference, no joining instructions.
+  PROMOTED: a place has opened, seat confirmed, full details and joining
+    instructions.
+
+BLOCKING ITEM
+  Do not declare email complete until send.edugistics.online is verified in
+  Resend and a test message reaches a Gmail inbox rather than spam. If
+  either is outstanding, report it as an open item.
+
+DELIVERABLE
+Working form, saved registration, delivered email. Test one confirmed and
+one waitlisted registration and report both references. Commit. Stop.
+
+
+==================================================
+PHASE 3 - ADMIN REGISTRATIONS, WAITLIST, EXCEL
+==================================================
+
+REGISTRATIONS TABLE at /training/admin/registrations
+  Use @tanstack/react-table with server side pagination, 50 rows per page.
+    Never load the whole table into the browser.
+  Columns: date, reference, course, name, email, phone, school, subject,
+    grade, status, consent, email status
+  Status badges: Confirmed, Waitlisted, Cancelled
+  Search by name, email, school or reference
+  Filter by course, status, date range, email status
+  Row actions: view, edit, cancel
+  Resend email action for failed sends
+
+WAITLIST at /training/admin/courses/[id]/waitlist
+  Confirmed count, capacity, remaining seats, waitlist in position order
+  Promote action per row
+  On promote: set CONFIRMED, set promotedAt, clear position, resequence the
+    rest, send the PROMOTED email, write an audit log entry
+  Block promotion at capacity unless explicitly overridden. Log overrides.
+  When a confirmed registration is cancelled and a waitlist exists, do not
+    promote silently. Flag a place available and let the admin choose. No
+    automated emails to teachers without an admin action.
+
+EXCEL EXPORT with exceljs
+  Server side, streamed. Never built in the browser. Respects active filters.
+  Sheets: Registrations, Teachers, Schools, Course Performance
+
+  Registrations columns: Registration Date, Reference, Course, Course Date,
+    Course Fee, Status, Waitlist Position, Full Name, Email, Phone, Address,
+    School, Subject, Grade, Marketing Consent, Email Status
+
+  Bold header row with Edugistics navy fill and white text, frozen header,
+  autofilter across the header range, real date cells formatted dd/mm/yyyy,
+  currency cells formatted with the course currency, fitted column widths.
+  File name edugistics-registrations-YYYY-MM-DD.xlsx
+
+DELIVERABLE
+Working table, working promotion, a file that opens in Excel without a
+repair prompt. Confirm you opened and validated it. Commit. Stop.
+
+
+==================================================
+PHASE 4 - ANALYTICS
+==================================================
+
+CENTRALISED CALCULATION LAYER
+One analytics module. Every metric has exactly one implementation. No
+component recalculates anything. No formula appears twice.
+
+One filter type applied by one function:
+  AnalyticsFilters { dateFrom, dateTo, courseIds, categories, schoolIds,
+    subjects, grades, teacherType, status, marketingConsent }
+
+Every query takes the same filter object. Filtered and unfiltered values
+never mix inside one view.
+
+DEFINITIONS
+  Total Registrations = count where status CONFIRMED
+  Waitlisted = count where status WAITLISTED
+  Cancelled excluded from every metric unless a view reports cancellations
+  Unique Teachers = distinct teacherId in the confirmed set
+  Unique Schools = distinct schoolId in the confirmed set
+  Repeat Teachers = teachers with more than one confirmed registration
+  Average Registrations per Course = confirmed registrations divided by
+    courses with at least one confirmed registration
+  Potential Registration Value = sum of courseFeeSnapshot across confirmed
+    registrations only, waitlisted excluded
+  Course Utilisation = confirmed divided by maxCapacity times 100, null when
+    maxCapacity is null
+  New Teacher 1 confirmed, Engaged 2, Highly Engaged 3 or more
+
+TIMEZONE
+  All grouping and all date filters use Africa/Cairo via date-fns-tz.
+  Convert before grouping. Never group in UTC. Write a test proving a
+  registration at 23:30 Cairo falls on the correct local day.
+
+AGGREGATION
+  Aggregate in SQL through Prisma groupBy or raw queries. Never pull rows
+  into memory to count them.
+
+DASHBOARD at /training/admin
+  Header, global filter bar, date presets Today, Last 7 Days, Last 30 Days,
+  This Month, Last Month, This Year, All Time, Custom Range
+  KPI row: Registrations, Unique Teachers, Unique Schools, Active Courses,
+    Repeat Teachers, Potential Value
+  Registration trend line chart with day, week and month toggle, recharts
+  Course performance bar chart plus a table with confirmed, waitlisted,
+    capacity, remaining seats and utilisation
+  Subject distribution and grade distribution charts built from submitted
+    data only, never hardcoded
+  Top schools table with Top 10, Top 20 and All toggle
+  New versus returning teachers
+
+  Everything responds to the filters. Add no charts beyond this list.
+
+COMMERCIAL SECTION
+  Free registrations, paid registrations, potential value by course, by
+  month. Label everything Potential Registration Value. Never use the word
+  revenue. Never imply payment was received.
+
+DELIVERABLE
+Dashboard working with tests covering every definition. Commit. Stop.
+
+
+==================================================
+PHASE 5 - TEACHER, SCHOOL AND LEAD INTELLIGENCE
+==================================================
+
+TEACHER DETAIL
+  Name, email, phone, school, subject, grade
+  Registration history with status including waitlisted
+  Total confirmed courses, first registration, last registration
+  Consent status and date
+  Admin edit for name, phone, school, subject, grade, written to audit log
+
+SCHOOL DETAIL
+  Name, teacher count, total registrations, courses attended, first and
+  latest registration
+  Teacher list with subject, grade, courses attended, last activity
+
+SCHOOL MERGE
+  Select duplicate and target. Reassign teachers, write the duplicate
+  nameKey into SchoolAlias, set mergedIntoId, keep the record. Reversible
+  and logged. Nothing deleted.
+
+COURSE AUDIENCE PROFILE
+  Per course: registrations, unique teachers, schools, subject breakdown,
+  grade breakdown, new versus returning percentage.
+
+COURSE COMPARISON
+  Registrations, unique teachers, schools, utilisation, waitlist demand,
+  repeat attendees, fee status, potential value.
+  Waitlist Demand = waitlisted divided by capacity.
+
+TEACHER LEADS
+  NEW, ENGAGED, HIGHLY ENGAGED, SCHOOL LEAD meaning more than one teacher
+  from the same school. Filters for date, course, school, subject, grade,
+  engagement and consent. Invent no lead score.
+
+ENGAGEMENT OPPORTUNITIES
+  Schools with multiple registered teachers, sortable by size.
+
+Commit. Stop.
+
+
+==================================================
+PHASE 6 - SECURITY, TESTING, VALIDATION
+==================================================
+
+SECURITY
+  Public users may view active courses and submit a registration. Nothing
+    else.
+  Public users must not reach registrations, teachers, schools, analytics,
+    exports, waitlists or any admin route.
+  Verify the admin session server side on every admin route and action.
+  No database URL, Resend key, password hash or session secret in any client
+    bundle. Confirm by inspecting the build output.
+  Rate limiting on public registration and admin login.
+  Enable Row Level Security on all tables in Supabase and report the
+    policies applied.
+
+PRIVACY
+  Privacy notice on the public form. Consent stored with a timestamp, false
+  unless explicitly ticked. Admin filter for marketing consent.
+
+TESTS with vitest
+  Valid registration succeeds
+  Each missing required field is rejected
+  Duplicate registration for the same course and email is blocked
+  Same teacher on a different course creates no second teacher record
+  School grouping links matching normalised names
+  School merge reassigns teachers and preserves history
+  Registration blocked outside the registration window
+  Full course with waitlist off rejects
+  Full course with waitlist on creates WAITLISTED position 1
+  Second waitlisted registration gets position 2
+  Waitlist capacity limit rejects further registrations
+  Two simultaneous submissions for the last seat produce one confirmed and
+    one waitlisted, never two confirmed
+  Promotion sets CONFIRMED and resequences positions
+  Waitlisted registrations excluded from Potential Registration Value
+  Registration saves when email fails
+  Reference format and uniqueness
+  Every analytics definition against a fixed seed fixture
+  Cairo day boundary grouping
+  Date, course and combined filter consistency
+  Excel export produces a valid file with correct row counts
+  Admin routes reject unauthenticated requests
+  Wrong admin password rejected
+  Login rate limit triggers after 5 failed attempts
+  Public rate limit triggers
+
+SEED SCRIPT
+  6 courses across categories, one at capacity with a waitlist, 40 teachers,
+  12 schools including two obvious name variants, 90 registrations across
+  four months, some repeat teachers, some waitlisted, some failed emails.
+
+FINAL VALIDATION
+  Run npm run typecheck, npm run lint, npm run test, npm run build.
+  Fix every error. Do not proceed with failures.
+  Confirm the existing school-planning pages still build and load.
+
+  Then manually verify in order:
+    1. Log in to admin
+    2. Create a course with capacity 1 and waitlist enabled
+    3. Activate it
+    4. Register teacher A, confirm CONFIRMED
+    5. Confirm the email arrives
+    6. Register teacher B, confirm WAITLISTED position 1
+    7. Confirm the waitlist email reads as a waitlist
+    8. Promote teacher B, confirm the promotion email
+    9. View the registration in admin
+    10. Open the teacher profile
+    11. Open the school view
+    12. Open the dashboard
+    13. Apply filters, confirm every panel updates
+    14. Export to Excel and open the file
+    15. Register teacher A for a second course, confirm no duplicate teacher
+    16. Confirm repeat teacher analytics update
+    17. Register a second teacher from the same school
+    18. Confirm school analytics update
+    19. Close the course, confirm registration is blocked
+    20. Log out, confirm admin routes reject access
+
+FINAL REPORT
+  Architecture, database model, public routes, admin routes, analytics with
+  the formula used for each, waitlist race condition handling, email system
+  and Resend verification status, Excel export, security, privacy, test
+  results with actual pass and fail counts, typecheck result, lint result,
+  build result, environment variables, deployment instructions, outstanding
+  items and known limitations.
+
+  State nothing as passing unless you ran it. If a step was not tested, say
+  so plainly.

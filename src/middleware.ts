@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 import { isSitePasswordConfigured, SESSION_COOKIE_NAME, verifySessionToken } from '@/lib/auth/session'
 import { toSafeInternalPath } from '@/lib/auth/safe-redirect'
+import { ADMIN_SESSION_COOKIE_NAME, verifyAdminSessionToken } from '@/lib/training/auth/admin-session'
 
 const PUBLIC_PATHS = new Set([
   '/login',
@@ -19,8 +20,65 @@ function isPublicPath(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))
 }
 
+// The training module is a separate public-facing product behind its own
+// admin auth (ADMIN_SESSION_SECRET) — it must never be gated by the
+// school-planning tool's shared SITE_PASSWORD.
+const TRAINING_ADMIN_PUBLIC_PATHS = new Set([
+  '/training/admin/login',
+  '/api/training/admin/login',
+  '/api/training/admin/logout',
+])
+
+function isTrainingPath(pathname: string): boolean {
+  return pathname === '/training' || pathname.startsWith('/training/') || pathname.startsWith('/api/training/')
+}
+
+function isTrainingAdminPath(pathname: string): boolean {
+  return (
+    pathname === '/training/admin' ||
+    pathname.startsWith('/training/admin/') ||
+    pathname.startsWith('/api/training/admin/')
+  )
+}
+
+async function trainingMiddleware(request: NextRequest): Promise<NextResponse> {
+  const { pathname } = request.nextUrl
+
+  if (!isTrainingAdminPath(pathname) || TRAINING_ADMIN_PUBLIC_PATHS.has(pathname)) {
+    // Public /training pages, the admin login screen, and /api/training/*
+    // registration endpoints — no gate.
+    return NextResponse.next()
+  }
+
+  const adminSessionCookie = request.cookies.get(ADMIN_SESSION_COOKIE_NAME)?.value
+  const hasValidAdminSession = await verifyAdminSessionToken(adminSessionCookie)
+
+  if (hasValidAdminSession) {
+    const response = NextResponse.next()
+    // Prevents bfcache from replaying an authenticated admin page after
+    // sign-out without a fresh middleware check.
+    response.headers.set('Cache-Control', 'no-store')
+    return response
+  }
+
+  if (pathname.startsWith('/api/')) {
+    return NextResponse.json({ error: 'Admin session required.' }, { status: 401 })
+  }
+
+  const loginUrl = new URL('/training/admin/login', request.url)
+  const response = NextResponse.redirect(loginUrl)
+  if (adminSessionCookie) {
+    response.cookies.delete(ADMIN_SESSION_COOKIE_NAME)
+  }
+  return response
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl
+
+  if (isTrainingPath(pathname)) {
+    return trainingMiddleware(request)
+  }
 
   if (pathname.startsWith('/api/auth/')) {
     return NextResponse.next()

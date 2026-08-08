@@ -1,0 +1,190 @@
+// Training Registration & Analytics — dedicated Supabase Postgres project,
+// public schema. Runtime connects via the pooler (url), migrations run
+// through the direct connection (directUrl) — never through the pooler.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum CourseCategory {
+  LEADERSHIP
+  TEACHING_LEARNING
+  ASSESSMENT
+  CURRICULUM
+  SEN
+  CLASSROOM_MANAGEMENT
+  TECHNOLOGY
+  AI
+  PROFESSIONAL_DEVELOPMENT
+}
+
+enum DeliveryMethod {
+  ONLINE
+  IN_PERSON
+  HYBRID
+}
+
+enum RegistrationStatus {
+  CONFIRMED
+  WAITLISTED
+  CANCELLED
+}
+
+enum EmailStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum EmailType {
+  CONFIRMED
+  WAITLISTED
+  PROMOTED
+}
+
+model Course {
+  id                   String         @id @default(cuid())
+  name                 String
+  slug                 String         @unique
+  shortDescription     String
+  fullDescription      String
+  category             CourseCategory
+  courseDate           DateTime       @db.Date
+  startTime            DateTime       @db.Time
+  endTime              DateTime       @db.Time
+  durationMinutes      Int
+  deliveryMethod       DeliveryMethod
+  location             String?
+  joiningInstructions  String?
+  feeAmount            Decimal        @default(0) @db.Decimal(10, 2)
+  currency             String         @default("EGP")
+  registrationOpensAt  DateTime?      @db.Timestamptz
+  registrationClosesAt DateTime?      @db.Timestamptz
+  maxCapacity          Int?
+  waitlistEnabled      Boolean        @default(false)
+  waitlistCapacity     Int?
+  isActive             Boolean        @default(false)
+  isFeatured           Boolean        @default(false)
+  archivedAt           DateTime?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  registrations Registration[]
+
+  @@index([isActive])
+  @@index([category])
+}
+
+model Teacher {
+  id                 String    @id @default(cuid())
+  emailNormalised    String    @unique
+  emailOriginal      String
+  fullName           String
+  phone              String
+  phoneNormalised    String
+  address            String?
+  schoolId           String?
+  schoolNameOriginal String
+  subjectOriginal    String
+  subjectNormalised  String
+  gradeOriginal      String
+  gradeNormalised    String
+  marketingConsent   Boolean   @default(false)
+  marketingConsentAt DateTime?
+  firstRegisteredAt  DateTime
+  lastRegisteredAt   DateTime
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  school        School?        @relation(fields: [schoolId], references: [id])
+  registrations Registration[]
+
+  @@index([schoolId])
+}
+
+model School {
+  id            String   @id @default(cuid())
+  canonicalName String
+  nameKey       String   @unique
+  schoolType    String?
+  location      String?
+  mergedIntoId  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  mergedInto School?       @relation("SchoolMerge", fields: [mergedIntoId], references: [id])
+  mergedFrom School[]      @relation("SchoolMerge")
+  teachers   Teacher[]
+  aliases    SchoolAlias[]
+}
+
+model SchoolAlias {
+  id        String   @id @default(cuid())
+  schoolId  String
+  aliasKey  String   @unique
+  createdAt DateTime @default(now())
+
+  school School @relation(fields: [schoolId], references: [id])
+
+  @@index([schoolId])
+}
+
+model Registration {
+  id                     String             @id @default(cuid())
+  reference              String             @unique
+  teacherId              String
+  courseId               String
+  courseNameSnapshot     String
+  courseDateSnapshot     DateTime           @db.Date
+  courseFeeSnapshot      Decimal            @db.Decimal(10, 2)
+  courseCurrencySnapshot String
+  status                 RegistrationStatus
+  waitlistPosition       Int?
+  promotedAt             DateTime?
+  registeredAt           DateTime           @default(now())
+  consentGiven           Boolean            @default(false)
+  consentAt              DateTime?
+  emailSent              Boolean            @default(false)
+  emailSentAt            DateTime?
+  emailStatus            EmailStatus        @default(PENDING)
+  emailType              EmailType
+  emailError             String?
+  sourceIpHash           String?
+  cancelledAt            DateTime?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  teacher Teacher @relation(fields: [teacherId], references: [id])
+  course  Course  @relation(fields: [courseId], references: [id])
+
+  // Database-level duplicate prevention: at most one registration row per
+  // (course, teacher) pair, ever — including across cancellation. A teacher
+  // whose registration for a course was cancelled cannot get a second row
+  // for that same course; re-registration for that course is not possible
+  // at the schema level, by design per spec.
+  @@unique([courseId, teacherId])
+  @@index([courseId])
+  @@index([teacherId])
+  @@index([registeredAt])
+  @@index([status])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actor      String
+  action     String
+  entityType String
+  entityId   String
+  beforeJson Json?
+  afterJson  Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}

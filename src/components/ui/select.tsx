@@ -37,6 +37,7 @@ function Select({
 }: SelectProps) {
   return (
     <SelectPrimitive.Root
+      items={items}
       value={value}
       defaultValue={defaultValue}
       onValueChange={(next) => onValueChange?.(next as string)}
