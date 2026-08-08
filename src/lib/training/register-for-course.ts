@@ -23,7 +23,7 @@ export interface RegisterInput {
   schoolName: string
   subject: string
   grade: string
-  address: string | null
+  address: string
   marketingConsent: boolean
   ip: string
 }

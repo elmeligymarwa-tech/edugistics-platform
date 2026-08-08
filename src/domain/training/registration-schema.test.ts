@@ -10,7 +10,7 @@ const validInput = {
   schoolName: 'Cairo International School',
   subject: 'Mathematics',
   grade: 'Grade 7',
-  address: '',
+  address: '12 Nile Street',
   marketingConsent: false,
   website: '',
 }
@@ -21,23 +21,23 @@ describe('publicRegistrationSchema', () => {
     expect(result.success).toBe(true)
   })
 
-  it('normalises a blank address to null', () => {
-    const result = publicRegistrationSchema.parse(validInput)
-    expect(result.address).toBeNull()
-  })
-
-  it('keeps a non-blank address', () => {
-    const result = publicRegistrationSchema.parse({ ...validInput, address: '12 Nile Street' })
+  it('trims a non-blank address', () => {
+    const result = publicRegistrationSchema.parse({ ...validInput, address: '  12 Nile Street  ' })
     expect(result.address).toBe('12 Nile Street')
   })
 
-  it.each(['courseId', 'fullName', 'email', 'phone', 'schoolName', 'subject', 'grade'])(
+  it.each(['courseId', 'fullName', 'email', 'phone', 'schoolName', 'subject', 'grade', 'address'])(
     'rejects a submission missing %s',
     (field) => {
       const result = publicRegistrationSchema.safeParse({ ...validInput, [field]: '' })
       expect(result.success).toBe(false)
     },
   )
+
+  it('rejects a whitespace-only address', () => {
+    const result = publicRegistrationSchema.safeParse({ ...validInput, address: '   ' })
+    expect(result.success).toBe(false)
+  })
 
   it('rejects an invalid email address', () => {
     const result = publicRegistrationSchema.safeParse({ ...validInput, email: 'not-an-email' })
