@@ -70,7 +70,7 @@ export function RegistrationExperience({ courses }: { courses: PublicCourse[] })
     setFormError(null)
     setIsSubmitting(true)
 
-    const payload = { ...values, address: values.address.trim() }
+    const payload = { ...values, address: values.address.trim() || null }
 
     try {
       const response = await fetch('/api/training/register', {
@@ -204,16 +204,8 @@ export function RegistrationExperience({ courses }: { courses: PublicCourse[] })
         </Field>
 
         <Field>
-          <FieldLabel htmlFor="address">Address</FieldLabel>
-          <Textarea
-            id="address"
-            rows={2}
-            required
-            {...register('address')}
-            aria-invalid={Boolean(errors.address)}
-          />
-          <FieldDescription>Required so we can post your certificate.</FieldDescription>
-          <FieldError>{errors.address?.message}</FieldError>
+          <FieldLabel htmlFor="address">Address (optional)</FieldLabel>
+          <Textarea id="address" rows={2} {...register('address')} />
         </Field>
       </div>
 
