@@ -22,19 +22,19 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { title: 'Setup', href: '/setup', icon: SlidersHorizontal },
-  { title: 'Revenue', href: '/revenue', icon: TrendingUp },
-  { title: 'Staffing', href: '/staffing', icon: Users },
-  { title: 'Expenses', href: '/expenses', icon: Receipt },
-  { title: 'Financing', href: '/financing', icon: Landmark },
-  { title: 'STM', href: '/stm', icon: Handshake },
-  { title: 'Statements', href: '/statements', icon: FileText },
-  { title: 'Valuation', href: '/valuation', icon: LineChart },
-  { title: 'Reports', href: '/reports', icon: BarChart3 },
-  { title: 'Scenarios', href: '/scenarios', icon: GitBranch },
-  { title: 'Glossary', href: '/glossary', icon: BookOpen },
-  { title: 'Settings', href: '/settings', icon: Settings },
+  { title: 'Dashboard', href: '/app/dashboard', icon: LayoutDashboard },
+  { title: 'Setup', href: '/app/setup', icon: SlidersHorizontal },
+  { title: 'Revenue', href: '/app/revenue', icon: TrendingUp },
+  { title: 'Staffing', href: '/app/staffing', icon: Users },
+  { title: 'Expenses', href: '/app/expenses', icon: Receipt },
+  { title: 'Financing', href: '/app/financing', icon: Landmark },
+  { title: 'STM', href: '/app/stm', icon: Handshake },
+  { title: 'Statements', href: '/app/statements', icon: FileText },
+  { title: 'Valuation', href: '/app/valuation', icon: LineChart },
+  { title: 'Reports', href: '/app/reports', icon: BarChart3 },
+  { title: 'Scenarios', href: '/app/scenarios', icon: GitBranch },
+  { title: 'Glossary', href: '/app/glossary', icon: BookOpen },
+  { title: 'Settings', href: '/app/settings', icon: Settings },
 ]
 
 export function navItemForPath(pathname: string): NavItem | undefined {

@@ -19,7 +19,7 @@ export default function NotFound() {
               forecast.
             </p>
           </div>
-          <Button size="sm" render={<Link href="/dashboard" />}>
+          <Button size="sm" render={<Link href="/app/dashboard" />}>
             Go to dashboard
           </Button>
         </CardContent>

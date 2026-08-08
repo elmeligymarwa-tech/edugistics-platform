@@ -14,7 +14,7 @@ export default async function LoginPage({
   searchParams: Promise<{ from?: string }>
 }) {
   const { from } = await searchParams
-  const redirectTo = toSafeInternalPath(from) ?? '/dashboard'
+  const redirectTo = toSafeInternalPath(from) ?? '/app/dashboard'
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background px-4">

@@ -31,7 +31,7 @@ export default function SettingsPage() {
         <div className="flex flex-col gap-4">
           <SettingsOverview project={project} />
           <div>
-            <Button size="sm" variant="outline" render={<Link href="/setup?step=1" />}>
+            <Button size="sm" variant="outline" render={<Link href="/app/setup?step=1" />}>
               Edit in setup
             </Button>
           </div>

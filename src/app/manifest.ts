@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'Edugistics — School Financial Planning',
     short_name: 'Edugistics',
     description: 'Financial planning and forecasting for school operators.',
-    start_url: '/dashboard',
+    start_url: '/app/dashboard',
     display: 'standalone',
     background_color: '#F6F7FA',
     theme_color: '#2B3A67',

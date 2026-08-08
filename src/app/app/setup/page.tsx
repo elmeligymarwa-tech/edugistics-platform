@@ -24,7 +24,7 @@ function SetupPageContent({ projectId }: { projectId: string }) {
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
           <PageHeader title="Setup — presentation" description="A read-only summary, ready to project or print." />
-          <Button type="button" variant="outline" size="sm" render={<Link href="/setup" />}>
+          <Button type="button" variant="outline" size="sm" render={<Link href="/app/setup" />}>
             Exit presentation
           </Button>
         </div>
@@ -37,7 +37,7 @@ function SetupPageContent({ projectId }: { projectId: string }) {
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <PageHeader title="Setup" description="School profile, academic calendar and year group capacity." />
-        <Button type="button" variant="outline" size="sm" render={<Link href="/setup?present=1" />}>
+        <Button type="button" variant="outline" size="sm" render={<Link href="/app/setup?present=1" />}>
           <Presentation data-icon="inline-start" />
           Present
         </Button>

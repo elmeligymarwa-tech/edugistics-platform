@@ -36,7 +36,7 @@ export default function GlobalError({
             <Button size="sm" onClick={reset}>
               Try again
             </Button>
-            <Button size="sm" variant="outline" render={<Link href="/dashboard" />}>
+            <Button size="sm" variant="outline" render={<Link href="/app/dashboard" />}>
               Go to dashboard
             </Button>
           </div>

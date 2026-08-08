@@ -5,6 +5,7 @@ import { toSafeInternalPath } from '@/lib/auth/safe-redirect'
 import { ADMIN_SESSION_COOKIE_NAME, verifyAdminSessionToken } from '@/lib/training/auth/admin-session'
 
 const PUBLIC_PATHS = new Set([
+  '/',
   '/login',
   '/manifest.webmanifest',
   '/sw.js',
@@ -84,22 +85,24 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
+  const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value
+  const hasValidSession = await verifySessionToken(sessionCookie)
+
+  if (isPublicPath(pathname)) {
+    // The landing page and /login must stay reachable even if SITE_PASSWORD
+    // is misconfigured — only the gated /app surface depends on it.
+    if (pathname === '/login' && hasValidSession) {
+      const target = toSafeInternalPath(request.nextUrl.searchParams.get('from')) ?? '/app/dashboard'
+      return NextResponse.redirect(new URL(target, request.url))
+    }
+    return NextResponse.next()
+  }
+
   if (!isSitePasswordConfigured()) {
     return new NextResponse('Server misconfiguration: SITE_PASSWORD is not set.', {
       status: 500,
       headers: { 'content-type': 'text/plain' },
     })
-  }
-
-  const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value
-  const hasValidSession = await verifySessionToken(sessionCookie)
-
-  if (isPublicPath(pathname)) {
-    if (pathname === '/login' && hasValidSession) {
-      const target = toSafeInternalPath(request.nextUrl.searchParams.get('from')) ?? '/dashboard'
-      return NextResponse.redirect(new URL(target, request.url))
-    }
-    return NextResponse.next()
   }
 
   if (hasValidSession) {
