@@ -1,5 +1,9 @@
 'use client'
 
+import Link from 'next/link'
+import { ListOrdered } from 'lucide-react'
+
+import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatCourseFee } from '@/domain/training/format'
 import { COURSE_CATEGORY_LABELS } from '@/domain/training/schema'
@@ -52,6 +56,16 @@ export function CoursesTable({ courses }: { courses: AdminCourseListItem[] }) {
             </TableCell>
             <TableCell className="text-right">
               <div className="flex items-center justify-end gap-1">
+                {course.waitlistEnabled && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="View waitlist"
+                    render={<Link href={`/training/admin/courses/${course.id}/waitlist`} />}
+                  >
+                    <ListOrdered />
+                  </Button>
+                )}
                 <CourseFormDialog course={course} />
                 {!course.archivedAt && <ArchiveCourseDialog courseId={course.id} courseName={course.name} />}
               </div>

@@ -20,3 +20,15 @@ export function formatCourseDateLong(date: Date): string {
 export function formatCourseTimeRange(startTime: Date, endTime: Date): string {
   return `${dateToTimeString(startTime)}–${dateToTimeString(endTime)} (Cairo time)`
 }
+
+/** registeredAt/cancelledAt/promotedAt are stored as UTC instants — shown to admins in Africa/Cairo wall-clock time, per the module's timezone rule. */
+export function formatAdminTimestamp(date: Date): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Africa/Cairo',
+  }).format(date)
+}

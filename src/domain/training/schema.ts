@@ -18,6 +18,9 @@ export type CourseCategory = z.infer<typeof CourseCategory>
 export const DeliveryMethod = z.enum(['ONLINE', 'IN_PERSON', 'HYBRID'])
 export type DeliveryMethod = z.infer<typeof DeliveryMethod>
 
+/** Server and client both need this — the server to paginate the query, the client table to compute page count. Kept outside src/lib/training (marked 'server-only') so the client table component can import it directly. */
+export const REGISTRATIONS_PAGE_SIZE = 50
+
 export const COURSE_CATEGORY_LABELS: Record<CourseCategory, string> = {
   LEADERSHIP: 'Leadership',
   TEACHING_LEARNING: 'Teaching & Learning',

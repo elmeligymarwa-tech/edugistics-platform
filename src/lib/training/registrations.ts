@@ -1,0 +1,208 @@
+import 'server-only'
+
+import type { EmailStatus, Prisma, RegistrationStatus } from '@prisma/client'
+
+import { REGISTRATIONS_PAGE_SIZE } from '@/domain/training/schema'
+import { cairoDateTimeLocalToUtc } from '@/domain/training/timezone'
+import { prisma } from './prisma'
+
+export { REGISTRATIONS_PAGE_SIZE }
+
+export interface RegistrationFilters {
+  search?: string
+  courseId?: string
+  status?: RegistrationStatus
+  emailStatus?: EmailStatus
+  dateFrom?: Date
+  dateTo?: Date
+}
+
+export interface RegistrationListItem {
+  id: string
+  reference: string
+  registeredAt: Date
+  courseId: string
+  courseName: string
+  fullName: string
+  email: string
+  phone: string
+  schoolName: string
+  subject: string
+  grade: string
+  status: RegistrationStatus
+  waitlistPosition: number | null
+  marketingConsent: boolean
+  emailStatus: EmailStatus
+}
+
+export interface CourseFilterOption {
+  id: string
+  name: string
+}
+
+/** Shared between the registrations table and the Excel export so both always see the same rows for a given filter set. */
+export function buildRegistrationWhere(filters: RegistrationFilters): Prisma.RegistrationWhereInput {
+  const where: Prisma.RegistrationWhereInput = {}
+
+  if (filters.courseId) where.courseId = filters.courseId
+  if (filters.status) where.status = filters.status
+  if (filters.emailStatus) where.emailStatus = filters.emailStatus
+
+  if (filters.dateFrom || filters.dateTo) {
+    where.registeredAt = {
+      ...(filters.dateFrom ? { gte: filters.dateFrom } : {}),
+      ...(filters.dateTo ? { lte: filters.dateTo } : {}),
+    }
+  }
+
+  const search = filters.search?.trim()
+  if (search) {
+    where.OR = [
+      { reference: { contains: search, mode: 'insensitive' } },
+      { teacher: { fullName: { contains: search, mode: 'insensitive' } } },
+      { teacher: { emailOriginal: { contains: search, mode: 'insensitive' } } },
+      { teacher: { schoolNameOriginal: { contains: search, mode: 'insensitive' } } },
+    ]
+  }
+
+  return where
+}
+
+function toListItem(
+  row: Prisma.RegistrationGetPayload<{ include: { teacher: true; course: { select: { name: true } } } }>,
+): RegistrationListItem {
+  return {
+    id: row.id,
+    reference: row.reference,
+    registeredAt: row.registeredAt,
+    courseId: row.courseId,
+    courseName: row.course.name,
+    fullName: row.teacher.fullName,
+    email: row.teacher.emailOriginal,
+    phone: row.teacher.phone,
+    schoolName: row.teacher.schoolNameOriginal,
+    subject: row.teacher.subjectOriginal,
+    grade: row.teacher.gradeOriginal,
+    status: row.status,
+    waitlistPosition: row.waitlistPosition,
+    marketingConsent: row.teacher.marketingConsent,
+    emailStatus: row.emailStatus,
+  }
+}
+
+/** Page of registrations for the admin table — never fetches more than one page's worth of rows. */
+export async function listRegistrationsForAdmin(
+  filters: RegistrationFilters,
+  page: number,
+): Promise<{ rows: RegistrationListItem[]; totalCount: number }> {
+  const where = buildRegistrationWhere(filters)
+  const [rows, totalCount] = await Promise.all([
+    prisma.registration.findMany({
+      where,
+      include: { teacher: true, course: { select: { name: true } } },
+      orderBy: { registeredAt: 'desc' },
+      skip: page * REGISTRATIONS_PAGE_SIZE,
+      take: REGISTRATIONS_PAGE_SIZE,
+    }),
+    prisma.registration.count({ where }),
+  ])
+
+  return { rows: rows.map(toListItem), totalCount }
+}
+
+const EXPORT_INCLUDE = { teacher: { include: { school: true } }, course: true } satisfies Prisma.RegistrationInclude
+
+export type ExportRegistrationRow = Prisma.RegistrationGetPayload<{ include: typeof EXPORT_INCLUDE }>
+
+/** All rows matching the filters, for the Excel export — bypasses pagination but reuses the exact same where-clause as the table. */
+export async function listAllRegistrationsForExport(filters: RegistrationFilters): Promise<ExportRegistrationRow[]> {
+  const where = buildRegistrationWhere(filters)
+  return prisma.registration.findMany({
+    where,
+    include: EXPORT_INCLUDE,
+    orderBy: { registeredAt: 'desc' },
+  })
+}
+
+const STATUS_VALUES = new Set<string>(['CONFIRMED', 'WAITLISTED', 'CANCELLED'])
+const EMAIL_STATUS_VALUES = new Set<string>(['PENDING', 'SENT', 'FAILED'])
+
+/** Shared between the registrations page and the export route so a filtered URL always produces the same result set in both places. */
+export function parseRegistrationSearchParams(params: Record<string, string | undefined>): RegistrationFilters {
+  const filters: RegistrationFilters = {}
+  if (params.q?.trim()) filters.search = params.q.trim()
+  if (params.courseId) filters.courseId = params.courseId
+  if (params.status && STATUS_VALUES.has(params.status)) filters.status = params.status as RegistrationStatus
+  if (params.emailStatus && EMAIL_STATUS_VALUES.has(params.emailStatus)) {
+    filters.emailStatus = params.emailStatus as EmailStatus
+  }
+  if (params.from) filters.dateFrom = cairoDateTimeLocalToUtc(`${params.from}T00:00`)
+  if (params.to) filters.dateTo = cairoDateTimeLocalToUtc(`${params.to}T23:59`)
+  return filters
+}
+
+export async function listCourseFilterOptions(): Promise<CourseFilterOption[]> {
+  const courses = await prisma.course.findMany({
+    select: { id: true, name: true },
+    orderBy: { courseDate: 'desc' },
+  })
+  return courses
+}
+
+export interface RegistrationDetail {
+  id: string
+  reference: string
+  status: RegistrationStatus
+  registeredAt: Date
+  waitlistPosition: number | null
+  promotedAt: Date | null
+  cancelledAt: Date | null
+  emailStatus: EmailStatus
+  emailType: 'CONFIRMED' | 'WAITLISTED' | 'PROMOTED'
+  emailError: string | null
+  courseId: string
+  courseName: string
+  courseDate: Date
+  teacherId: string
+  fullName: string
+  email: string
+  phone: string
+  address: string | null
+  schoolName: string
+  subject: string
+  grade: string
+  marketingConsent: boolean
+}
+
+export async function getRegistrationDetail(id: string): Promise<RegistrationDetail | null> {
+  const row = await prisma.registration.findUnique({
+    where: { id },
+    include: { teacher: true, course: { select: { id: true, name: true, courseDate: true } } },
+  })
+  if (!row) return null
+
+  return {
+    id: row.id,
+    reference: row.reference,
+    status: row.status,
+    registeredAt: row.registeredAt,
+    waitlistPosition: row.waitlistPosition,
+    promotedAt: row.promotedAt,
+    cancelledAt: row.cancelledAt,
+    emailStatus: row.emailStatus,
+    emailType: row.emailType,
+    emailError: row.emailError,
+    courseId: row.course.id,
+    courseName: row.course.name,
+    courseDate: row.course.courseDate,
+    teacherId: row.teacher.id,
+    fullName: row.teacher.fullName,
+    email: row.teacher.emailOriginal,
+    phone: row.teacher.phone,
+    address: row.teacher.address,
+    schoolName: row.teacher.schoolNameOriginal,
+    subject: row.teacher.subjectOriginal,
+    grade: row.teacher.gradeOriginal,
+    marketingConsent: row.teacher.marketingConsent,
+  }
+}
