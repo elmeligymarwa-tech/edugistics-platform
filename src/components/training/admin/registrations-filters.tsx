@@ -23,6 +23,12 @@ const EMAIL_STATUS_OPTIONS = [
   { value: 'FAILED', label: 'Failed' },
 ]
 
+const CONSENT_OPTIONS = [
+  { value: 'ALL', label: 'All' },
+  { value: 'true', label: 'Consented' },
+  { value: 'false', label: 'Not consented' },
+]
+
 export function RegistrationsFilters({ courseOptions }: { courseOptions: CourseFilterOption[] }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -92,6 +98,15 @@ export function RegistrationsFilters({ courseOptions }: { courseOptions: CourseF
           value={searchParams.get('emailStatus') ?? 'ALL'}
           onValueChange={(value) => updateParam('emailStatus', value)}
           triggerClassName="w-44"
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <span className="text-xs text-muted-foreground">Marketing consent</span>
+        <Select
+          items={CONSENT_OPTIONS}
+          value={searchParams.get('consent') ?? 'ALL'}
+          onValueChange={(value) => updateParam('consent', value)}
+          triggerClassName="w-40"
         />
       </div>
       <div className="flex flex-col gap-1">

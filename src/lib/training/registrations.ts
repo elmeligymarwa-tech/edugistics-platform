@@ -13,6 +13,7 @@ export interface RegistrationFilters {
   courseId?: string
   status?: RegistrationStatus
   emailStatus?: EmailStatus
+  marketingConsent?: boolean
   dateFrom?: Date
   dateTo?: Date
 }
@@ -47,6 +48,7 @@ export function buildRegistrationWhere(filters: RegistrationFilters): Prisma.Reg
   if (filters.courseId) where.courseId = filters.courseId
   if (filters.status) where.status = filters.status
   if (filters.emailStatus) where.emailStatus = filters.emailStatus
+  if (filters.marketingConsent !== undefined) where.teacher = { marketingConsent: filters.marketingConsent }
 
   if (filters.dateFrom || filters.dateTo) {
     where.registeredAt = {
@@ -193,6 +195,8 @@ export function parseRegistrationSearchParams(params: Record<string, string | un
   if (params.emailStatus && EMAIL_STATUS_VALUES.has(params.emailStatus)) {
     filters.emailStatus = params.emailStatus as EmailStatus
   }
+  if (params.consent === 'true') filters.marketingConsent = true
+  else if (params.consent === 'false') filters.marketingConsent = false
   if (params.from) filters.dateFrom = cairoDateTimeLocalToUtc(`${params.from}T00:00`)
   if (params.to) filters.dateTo = cairoDateTimeLocalToUtc(`${params.to}T23:59`)
   return filters

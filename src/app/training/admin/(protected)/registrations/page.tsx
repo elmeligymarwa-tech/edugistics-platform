@@ -23,6 +23,7 @@ interface RegistrationsSearchParams {
   courseId?: string
   status?: string
   emailStatus?: string
+  consent?: string
   from?: string
   to?: string
   view?: string

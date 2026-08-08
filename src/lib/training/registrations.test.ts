@@ -1,7 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { listRegistrationCourseGroups, listRegistrationsForAdmin } from './registrations'
+import { listRegistrationCourseGroups, listRegistrationsForAdmin, parseRegistrationSearchParams } from './registrations'
 import { prisma } from './prisma'
+
+describe('parseRegistrationSearchParams', () => {
+  it('parses consent=true and consent=false into marketingConsent, and omits it otherwise', () => {
+    expect(parseRegistrationSearchParams({ consent: 'true' }).marketingConsent).toBe(true)
+    expect(parseRegistrationSearchParams({ consent: 'false' }).marketingConsent).toBe(false)
+    expect(parseRegistrationSearchParams({}).marketingConsent).toBeUndefined()
+    expect(parseRegistrationSearchParams({ consent: 'nonsense' }).marketingConsent).toBeUndefined()
+  })
+})
 
 // Self-contained and uniquely marked — unlike the shared analytics fixture,
 // this suite tears down everything it creates in afterAll.
@@ -75,6 +84,8 @@ beforeAll(async () => {
           subjectNormalised: 'mathematics',
           gradeOriginal: 'Grade 3',
           gradeNormalised: 'grade 3',
+          marketingConsent: i === 0,
+          marketingConsentAt: i === 0 ? new Date() : null,
           firstRegisteredAt: new Date(),
           lastRegisteredAt: new Date(),
         },
@@ -186,5 +197,19 @@ describe('listRegistrationsForAdmin scoped to one course', () => {
     const { rows, totalCount } = await listRegistrationsForAdmin({ courseId: courseAId }, 0)
     expect(totalCount).toBe(2)
     expect(rows.every((r) => r.courseId === courseAId)).toBe(true)
+  })
+
+  it('filters to only registrations whose teacher has given marketing consent', async () => {
+    const { rows } = await listRegistrationsForAdmin({ courseId: courseAId, marketingConsent: true }, 0)
+    expect(rows.every((r) => r.marketingConsent === true)).toBe(true)
+    expect(rows.map((r) => r.reference)).toContain(`${MARKER}-1`)
+    expect(rows.map((r) => r.reference)).not.toContain(`${MARKER}-2`)
+  })
+
+  it('filters to only registrations whose teacher has not consented', async () => {
+    const { rows } = await listRegistrationsForAdmin({ courseId: courseAId, marketingConsent: false }, 0)
+    expect(rows.every((r) => r.marketingConsent === false)).toBe(true)
+    expect(rows.map((r) => r.reference)).toContain(`${MARKER}-2`)
+    expect(rows.map((r) => r.reference)).not.toContain(`${MARKER}-1`)
   })
 })

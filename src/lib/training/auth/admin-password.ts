@@ -1,3 +1,5 @@
+import 'server-only'
+
 import { verify } from '@node-rs/argon2'
 
 export class MissingAdminPasswordHashError extends Error {
