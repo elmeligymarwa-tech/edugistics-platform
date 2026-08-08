@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Controller, useForm } from 'react-hook-form'
 
@@ -9,9 +9,16 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldDescription, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { formatCourseDateLong, formatCourseFee, formatCourseTimeRange } from '@/domain/training/format'
 import type { PublicCourse } from '@/lib/training/public-courses'
+import { cn } from '@/lib/utils'
 import { ConfirmationCard, type Confirmation } from './confirmation-card'
 import { CourseOptionCard } from './course-option-card'
+
+/** A single course is only worth auto-selecting if a visitor could actually submit it — a lone full course with no waitlist would otherwise strand them on an unselectable step 1. */
+function isCourseSelectable(course: PublicCourse): boolean {
+  return !course.isFull || course.waitlistEnabled
+}
 
 /**
  * Raw values as the HTML controls actually produce them, mirroring the
@@ -63,8 +70,23 @@ export function RegistrationExperience({ courses }: { courses: PublicCourse[] })
     handleSubmit,
     reset,
     setError,
+    setValue,
+    watch,
     formState: { errors },
   } = useForm<RegistrationFormInputs>({ defaultValues: DEFAULT_VALUES })
+
+  const selectedCourseId = watch('courseId')
+  const selectedCourse = courses.find((course) => course.id === selectedCourseId)
+
+  // A single open course is preselected so the visitor lands straight on step 2 — but only
+  // when they could actually submit it; a lone full-with-no-waitlist course still needs step 1
+  // so they can see why nothing is selectable.
+  useEffect(() => {
+    if (courses.length === 1 && isCourseSelectable(courses[0]!)) {
+      setValue('courseId', courses[0]!.id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function onSubmit(values: RegistrationFormInputs) {
     setFormError(null)
@@ -122,123 +144,163 @@ export function RegistrationExperience({ courses }: { courses: PublicCourse[] })
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="mx-auto flex max-w-md flex-col gap-6">
-      <fieldset className="flex flex-col gap-3">
-        <legend className="mb-1 text-sm font-medium text-foreground">Choose a course</legend>
-        <Controller
-          name="courseId"
-          control={control}
-          rules={{ required: 'Please select a course.' }}
-          render={({ field }) => (
-            <div role="radiogroup" className="flex flex-col gap-2">
-              {courses.map((course) => (
-                <CourseOptionCard
-                  key={course.id}
-                  course={course}
-                  selected={field.value === course.id}
-                  onSelect={() => field.onChange(course.id)}
-                />
-              ))}
-            </div>
-          )}
-        />
+      <fieldset className="m-0 flex w-full flex-col gap-3 border-0 p-0">
+        <legend className="mb-1 w-full p-0 text-sm font-semibold text-heading">Step 1. Choose your course</legend>
+
+        {selectedCourse ? (
+          <div className="flex flex-col gap-2 rounded-xl border border-primary bg-accent p-4">
+            <p className="text-base font-semibold text-heading">{selectedCourse.name}</p>
+            <p className="text-sm text-muted-foreground">{formatCourseDateLong(selectedCourse.courseDate)}</p>
+            <p className="text-sm text-muted-foreground">
+              {formatCourseTimeRange(selectedCourse.startTime, selectedCourse.endTime)}
+            </p>
+            <p className="text-sm font-medium text-foreground">
+              {selectedCourse.feeAmount === 0 ? 'Free' : formatCourseFee(selectedCourse.feeAmount, selectedCourse.currency)}
+            </p>
+            {courses.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setValue('courseId', '')}
+                className="self-start text-sm font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+              >
+                Change course
+              </button>
+            )}
+          </div>
+        ) : (
+          <Controller
+            name="courseId"
+            control={control}
+            rules={{ required: 'Please select a course.' }}
+            render={({ field }) => (
+              <div role="radiogroup" className="flex flex-col gap-2">
+                {courses.map((course) => (
+                  <CourseOptionCard
+                    key={course.id}
+                    course={course}
+                    selected={field.value === course.id}
+                    onSelect={() => field.onChange(course.id)}
+                  />
+                ))}
+              </div>
+            )}
+          />
+        )}
         <FieldError>{errors.courseId?.message}</FieldError>
       </fieldset>
 
-      <div className="flex flex-col gap-3">
-        <Field>
-          <FieldLabel htmlFor="fullName">Full name</FieldLabel>
-          <Input
-            id="fullName"
-            autoComplete="name"
-            required
-            {...register('fullName')}
-            aria-invalid={Boolean(errors.fullName)}
-          />
-          <FieldError>{errors.fullName?.message}</FieldError>
-        </Field>
-
-        <Field>
-          <FieldLabel htmlFor="email">Email</FieldLabel>
-          <Input
-            id="email"
-            type="email"
-            autoComplete="email"
-            inputMode="email"
-            required
-            {...register('email')}
-            aria-invalid={Boolean(errors.email)}
-          />
-          <FieldError>{errors.email?.message}</FieldError>
-        </Field>
-
-        <Field>
-          <FieldLabel htmlFor="phone">Phone</FieldLabel>
-          <Input
-            id="phone"
-            type="tel"
-            autoComplete="tel"
-            inputMode="tel"
-            required
-            {...register('phone')}
-            aria-invalid={Boolean(errors.phone)}
-          />
-          <FieldError>{errors.phone?.message}</FieldError>
-        </Field>
-
-        <Field>
-          <FieldLabel htmlFor="schoolName">Current school or institution</FieldLabel>
-          <Input id="schoolName" required {...register('schoolName')} aria-invalid={Boolean(errors.schoolName)} />
-          <FieldError>{errors.schoolName?.message}</FieldError>
-        </Field>
-
-        <Field>
-          <FieldLabel htmlFor="subject">Subject taught</FieldLabel>
-          <Input id="subject" required {...register('subject')} aria-invalid={Boolean(errors.subject)} />
-          <FieldError>{errors.subject?.message}</FieldError>
-        </Field>
-
-        <Field>
-          <FieldLabel htmlFor="grade">Grade or year group taught</FieldLabel>
-          <Input id="grade" required {...register('grade')} aria-invalid={Boolean(errors.grade)} />
-          <FieldError>{errors.grade?.message}</FieldError>
-        </Field>
-
-        <Field>
-          <FieldLabel htmlFor="address">Address (optional)</FieldLabel>
-          <Textarea id="address" rows={2} {...register('address')} />
-        </Field>
-      </div>
-
-      <Controller
-        name="marketingConsent"
-        control={control}
-        render={({ field }) => (
-          <label className="flex items-start gap-2.5 text-sm text-muted-foreground">
-            <Checkbox checked={field.value} onCheckedChange={field.onChange} className="mt-0.5" />
-            <span>I&apos;d like to receive occasional emails about future Edugistics training courses.</span>
-          </label>
+      <fieldset
+        disabled={!selectedCourseId}
+        className={cn(
+          'm-0 flex w-full flex-col gap-4 border-0 p-0',
+          !selectedCourseId && 'pointer-events-none opacity-50',
         )}
-      />
+      >
+        <legend className="mb-1 w-full p-0 text-sm font-semibold text-heading">Step 2. Your details</legend>
 
-      {/* Honeypot — hidden from real visitors via CSS and kept out of the tab order; any value here marks the submission as automated. */}
-      <div className="sr-only" aria-hidden="true">
-        <label htmlFor="website">Website</label>
-        <input id="website" type="text" tabIndex={-1} autoComplete="off" {...register('website')} />
-      </div>
+        {!selectedCourseId && <p className="-mt-2 text-sm text-muted-foreground">Select a course above to continue.</p>}
 
-      <FieldDescription>
-        By submitting this form you agree to our{' '}
-        <a href="/training/privacy" className="underline underline-offset-2 hover:text-foreground">
-          privacy notice
-        </a>
-        .
-      </FieldDescription>
+        <div className="flex flex-col gap-3">
+          <Field>
+            <FieldLabel htmlFor="fullName">Full name</FieldLabel>
+            <Input
+              id="fullName"
+              autoComplete="name"
+              required
+              {...register('fullName')}
+              aria-invalid={Boolean(errors.fullName)}
+            />
+            <FieldError>{errors.fullName?.message}</FieldError>
+          </Field>
 
-      <FieldError>{formError}</FieldError>
+          <Field>
+            <FieldLabel htmlFor="email">Email</FieldLabel>
+            <Input
+              id="email"
+              type="email"
+              autoComplete="email"
+              inputMode="email"
+              required
+              {...register('email')}
+              aria-invalid={Boolean(errors.email)}
+            />
+            <FieldError>{errors.email?.message}</FieldError>
+          </Field>
 
-      <Button type="submit" disabled={isSubmitting} size="lg" className="w-full">
-        {isSubmitting ? 'Submitting…' : 'Register'}
-      </Button>
+          <Field>
+            <FieldLabel htmlFor="phone">Phone</FieldLabel>
+            <Input
+              id="phone"
+              type="tel"
+              autoComplete="tel"
+              inputMode="tel"
+              required
+              {...register('phone')}
+              aria-invalid={Boolean(errors.phone)}
+            />
+            <FieldError>{errors.phone?.message}</FieldError>
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="schoolName">Current school or institution</FieldLabel>
+            <Input id="schoolName" required {...register('schoolName')} aria-invalid={Boolean(errors.schoolName)} />
+            <FieldError>{errors.schoolName?.message}</FieldError>
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="subject">Subject taught</FieldLabel>
+            <Input id="subject" required {...register('subject')} aria-invalid={Boolean(errors.subject)} />
+            <FieldError>{errors.subject?.message}</FieldError>
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="grade">Grade or year group taught</FieldLabel>
+            <Input id="grade" required {...register('grade')} aria-invalid={Boolean(errors.grade)} />
+            <FieldError>{errors.grade?.message}</FieldError>
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="address">Address (optional)</FieldLabel>
+            <Textarea id="address" rows={2} {...register('address')} />
+          </Field>
+        </div>
+
+        <Controller
+          name="marketingConsent"
+          control={control}
+          render={({ field }) => (
+            <label className="flex items-start gap-2.5 text-sm text-muted-foreground">
+              <Checkbox
+                checked={field.value}
+                onCheckedChange={field.onChange}
+                disabled={!selectedCourseId}
+                className="mt-0.5"
+              />
+              <span>I&apos;d like to receive occasional emails about future Edugistics training courses.</span>
+            </label>
+          )}
+        />
+
+        {/* Honeypot — hidden from real visitors via CSS and kept out of the tab order; any value here marks the submission as automated. */}
+        <div className="sr-only" aria-hidden="true">
+          <label htmlFor="website">Website</label>
+          <input id="website" type="text" tabIndex={-1} autoComplete="off" {...register('website')} />
+        </div>
+
+        <FieldDescription>
+          By submitting this form you agree to our{' '}
+          <a href="/training/privacy" className="underline underline-offset-2 hover:text-foreground">
+            privacy notice
+          </a>
+          .
+        </FieldDescription>
+
+        <FieldError>{formError}</FieldError>
+
+        <Button type="submit" disabled={isSubmitting || !selectedCourseId} size="lg" className="w-full">
+          {isSubmitting ? 'Submitting…' : 'Register'}
+        </Button>
+      </fieldset>
     </form>
   )
 }
