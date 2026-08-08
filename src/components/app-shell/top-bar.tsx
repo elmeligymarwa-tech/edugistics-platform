@@ -3,6 +3,7 @@ import { Breadcrumbs } from './breadcrumbs'
 import { MobileNav } from './mobile-nav'
 import { ProjectSwitcher } from './project-switcher'
 import { SavedIndicator } from './saved-indicator'
+import { SignOutButton } from './sign-out-button'
 import { UsdToggle } from './usd-toggle'
 
 export function TopBar() {
@@ -15,6 +16,7 @@ export function TopBar() {
         <UsdToggle />
         <ProjectSwitcher />
         <ThemeToggle />
+        <SignOutButton />
       </div>
     </header>
   )

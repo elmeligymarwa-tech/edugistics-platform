@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Fraunces, Geist, Geist_Mono } from "next/font/google";
 
-import { AppShell } from "@/components/app-shell/app-shell";
 import { ServiceWorkerRegistrar } from "@/components/pwa/service-worker-registrar";
 import { ThemeProvider, THEME_INIT_SCRIPT } from "@/components/theme/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -54,7 +53,7 @@ export default function RootLayout({
         <ThemeProvider>
           <TooltipProvider>
             <ServiceWorkerRegistrar />
-            <AppShell>{children}</AppShell>
+            {children}
           </TooltipProvider>
         </ThemeProvider>
       </body>
