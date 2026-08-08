@@ -77,11 +77,6 @@ function optionalPositiveInt(message: string) {
 
 const courseBaseSchema = z.object({
   name: z.string().trim().min(1, 'Name is required.'),
-  slug: z
-    .string()
-    .trim()
-    .min(1, 'Slug is required.')
-    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug must be lowercase letters, numbers and hyphens only.'),
   shortDescription: z.string().trim().min(1, 'Short description is required.'),
   fullDescription: z.string().trim().min(1, 'Full description is required.'),
   category: CourseCategory,

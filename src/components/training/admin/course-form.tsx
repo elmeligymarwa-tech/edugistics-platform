@@ -40,7 +40,6 @@ const DELIVERY_METHOD_OPTIONS: SelectOption[] = DeliveryMethod.options.map((valu
  */
 interface CourseFormInputs {
   name: string
-  slug: string
   shortDescription: string
   fullDescription: string
   category: CourseCategoryType
@@ -66,7 +65,6 @@ function toDefaultValues(course?: CourseDetail): CourseFormInputs {
   if (!course) {
     return {
       name: '',
-      slug: '',
       shortDescription: '',
       fullDescription: '',
       category: 'PROFESSIONAL_DEVELOPMENT',
@@ -91,7 +89,6 @@ function toDefaultValues(course?: CourseDetail): CourseFormInputs {
 
   return {
     name: course.name,
-    slug: course.slug,
     shortDescription: course.shortDescription,
     fullDescription: course.fullDescription,
     category: course.category,
@@ -175,13 +172,6 @@ export function CourseForm({ course, onSuccess }: { course?: CourseDetail; onSuc
           <FieldLabel htmlFor="name">Name</FieldLabel>
           <Input id="name" {...register('name')} aria-invalid={Boolean(errors.name)} />
           <FieldError>{errors.name?.message}</FieldError>
-        </Field>
-
-        <Field className="col-span-2">
-          <FieldLabel htmlFor="slug">Slug</FieldLabel>
-          <Input id="slug" {...register('slug')} aria-invalid={Boolean(errors.slug)} />
-          <FieldDescription>Used in the public URL — lowercase letters, numbers and hyphens only.</FieldDescription>
-          <FieldError>{errors.slug?.message}</FieldError>
         </Field>
 
         <Field className="col-span-2">

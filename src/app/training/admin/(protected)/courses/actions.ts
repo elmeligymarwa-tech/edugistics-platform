@@ -6,6 +6,7 @@ import type { z } from 'zod'
 
 import { prisma } from '@/lib/training/prisma'
 import { requireAdminSession } from '@/lib/training/auth/require-admin'
+import { generateUniqueCourseSlug } from '@/lib/training/course-slug'
 import { courseFormSchema, type CourseFormValues } from '@/domain/training/schema'
 import { timeStringToDate } from '@/domain/training/time'
 import { cairoDateTimeLocalToUtc } from '@/domain/training/timezone'
@@ -26,7 +27,6 @@ function fieldErrorsFromZod(error: z.ZodError): Record<string, string> {
 function toCourseData(values: CourseFormValues) {
   return {
     name: values.name,
-    slug: values.slug,
     shortDescription: values.shortDescription,
     fullDescription: values.fullDescription,
     category: values.category,
@@ -61,22 +61,23 @@ export async function createCourseAction(input: unknown): Promise<ActionResult<{
     return { success: false, error: 'Please fix the highlighted fields.', fieldErrors: fieldErrorsFromZod(parsed.error) }
   }
 
+  const slug = await generateUniqueCourseSlug(parsed.data.name)
+
   try {
-    const course = await prisma.course.create({ data: toCourseData(parsed.data) })
+    const course = await prisma.course.create({ data: { ...toCourseData(parsed.data), slug } })
     revalidatePath('/training/admin/courses')
     return { success: true, data: { id: course.id } }
   } catch (error) {
     if (isSlugConflict(error)) {
-      return {
-        success: false,
-        error: 'A course with this slug already exists.',
-        fieldErrors: { slug: 'This slug is already in use.' },
-      }
+      return { success: false, error: 'A course with this name was just created — please try saving again.' }
     }
     throw error
   }
 }
 
+// The slug is intentionally left out of the update payload — it is set once
+// on create and never regenerated, so links already shared for this course
+// keep working.
 export async function updateCourseAction(id: string, input: unknown): Promise<ActionResult<{ id: string }>> {
   await requireAdminSession()
 
@@ -85,20 +86,9 @@ export async function updateCourseAction(id: string, input: unknown): Promise<Ac
     return { success: false, error: 'Please fix the highlighted fields.', fieldErrors: fieldErrorsFromZod(parsed.error) }
   }
 
-  try {
-    const course = await prisma.course.update({ where: { id }, data: toCourseData(parsed.data) })
-    revalidatePath('/training/admin/courses')
-    return { success: true, data: { id: course.id } }
-  } catch (error) {
-    if (isSlugConflict(error)) {
-      return {
-        success: false,
-        error: 'A course with this slug already exists.',
-        fieldErrors: { slug: 'This slug is already in use.' },
-      }
-    }
-    throw error
-  }
+  const course = await prisma.course.update({ where: { id }, data: toCourseData(parsed.data) })
+  revalidatePath('/training/admin/courses')
+  return { success: true, data: { id: course.id } }
 }
 
 export async function archiveCourseAction(id: string): Promise<ActionResult> {
