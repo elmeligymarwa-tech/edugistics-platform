@@ -12,6 +12,11 @@ import { requireAdminSession } from '@/lib/training/auth/require-admin'
 import { sendConfirmedEmail, sendPromotedEmail, sendWaitlistedEmail } from '@/lib/training/email/send-registration-email'
 import { normaliseEmail, normaliseGrade, normalisePhone, normaliseSubject } from '@/lib/training/normalise'
 import { prisma } from '@/lib/training/prisma'
+import {
+  listRegistrationsForAdmin,
+  parseRegistrationSearchParams,
+  type RegistrationListItem,
+} from '@/lib/training/registrations'
 import { resolveSchool } from '@/lib/training/school-matching'
 
 export type ActionResult<T = undefined> =
@@ -30,6 +35,21 @@ function fieldErrorsFromZod(error: z.ZodError): Record<string, string> {
 function revalidateRegistration(id: string) {
   revalidatePath('/training/admin/registrations')
   revalidatePath(`/training/admin/registrations/${id}`)
+}
+
+/**
+ * One page of a single course's registrations for the "By course" view.
+ * Re-parses the raw URL search params with the same parser the flat table
+ * uses, so a section's contents always honour the page's current filters.
+ */
+export async function fetchCourseRegistrationsPageAction(
+  courseId: string,
+  searchParams: Record<string, string | undefined>,
+  page: number,
+): Promise<{ rows: RegistrationListItem[]; totalCount: number }> {
+  await requireAdminSession()
+  const filters = parseRegistrationSearchParams(searchParams)
+  return listRegistrationsForAdmin({ ...filters, courseId }, page)
 }
 
 export async function cancelRegistrationAction(id: string): Promise<ActionResult> {

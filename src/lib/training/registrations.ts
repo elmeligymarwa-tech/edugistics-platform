@@ -110,6 +110,63 @@ export async function listRegistrationsForAdmin(
   return { rows: rows.map(toListItem), totalCount }
 }
 
+export interface RegistrationCourseGroup {
+  courseId: string
+  courseName: string
+  courseDate: Date
+  confirmedCount: number
+  waitlistedCount: number
+  capacity: number | null
+}
+
+/**
+ * One row per course with at least one registration matching the current
+ * filters, ordered by course date descending — the section list for the "By
+ * course" view. confirmedCount, waitlistedCount and capacity describe the
+ * course as a whole (same figures as the courses admin screen), not the
+ * filtered subset; filters only decide which courses appear here and which
+ * registrations are visible once a section is expanded.
+ */
+export async function listRegistrationCourseGroups(filters: RegistrationFilters): Promise<RegistrationCourseGroup[]> {
+  const where = buildRegistrationWhere(filters)
+  const matches = await prisma.registration.findMany({ where, select: { courseId: true }, distinct: ['courseId'] })
+  const courseIds = matches.map((row) => row.courseId)
+  if (courseIds.length === 0) return []
+
+  const [courses, statusCounts] = await Promise.all([
+    prisma.course.findMany({
+      where: { id: { in: courseIds } },
+      select: { id: true, name: true, courseDate: true, maxCapacity: true },
+      orderBy: { courseDate: 'desc' },
+    }),
+    prisma.registration.groupBy({
+      by: ['courseId', 'status'],
+      where: { courseId: { in: courseIds }, status: { in: ['CONFIRMED', 'WAITLISTED'] } },
+      _count: { _all: true },
+    }),
+  ])
+
+  const countsByCourseId = new Map<string, { confirmed: number; waitlisted: number }>()
+  for (const row of statusCounts) {
+    const entry = countsByCourseId.get(row.courseId) ?? { confirmed: 0, waitlisted: 0 }
+    if (row.status === 'CONFIRMED') entry.confirmed = row._count._all
+    if (row.status === 'WAITLISTED') entry.waitlisted = row._count._all
+    countsByCourseId.set(row.courseId, entry)
+  }
+
+  return courses.map((course) => {
+    const counts = countsByCourseId.get(course.id) ?? { confirmed: 0, waitlisted: 0 }
+    return {
+      courseId: course.id,
+      courseName: course.name,
+      courseDate: course.courseDate,
+      confirmedCount: counts.confirmed,
+      waitlistedCount: counts.waitlisted,
+      capacity: course.maxCapacity,
+    }
+  })
+}
+
 const EXPORT_INCLUDE = { teacher: { include: { school: true } }, course: true } satisfies Prisma.RegistrationInclude
 
 export type ExportRegistrationRow = Prisma.RegistrationGetPayload<{ include: typeof EXPORT_INCLUDE }>
