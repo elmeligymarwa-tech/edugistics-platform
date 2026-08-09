@@ -240,8 +240,6 @@ describe('sendCampaignAction', () => {
     const teacher = await makeTeacher()
     const reg = await makeRegistration(teacher.id, course.id)
 
-    const before = await prisma.emailCampaign.count()
-
     const result = await sendCampaignAction({
       criteria: { mode: 'ids', registrationIds: [reg.id] },
       emailType: 'CUSTOM',
@@ -254,14 +252,15 @@ describe('sendCampaignAction', () => {
     if (result.success) return
     expect(result.kind).toBe('count-mismatch')
     expect(sendMock).not.toHaveBeenCalled()
-    expect(await prisma.emailCampaign.count()).toBe(before)
+    // Scoped to this test's own course — an unfiltered global count races with other
+    // test files creating/deleting campaigns concurrently against the same database.
+    expect(await prisma.emailCampaign.count({ where: { courseId: course.id } })).toBe(0)
   })
 
   it('rejects a subject containing a newline and creates no campaign (header-injection guard)', async () => {
     const course = await makeCourse()
     const teacher = await makeTeacher()
     const reg = await makeRegistration(teacher.id, course.id)
-    const before = await prisma.emailCampaign.count()
 
     const result = await sendCampaignAction({
       criteria: { mode: 'ids', registrationIds: [reg.id] },
@@ -274,7 +273,7 @@ describe('sendCampaignAction', () => {
     expect(result.success).toBe(false)
     if (result.success) return
     expect(result.kind).toBe('validation')
-    expect(await prisma.emailCampaign.count()).toBe(before)
+    expect(await prisma.emailCampaign.count({ where: { courseId: course.id } })).toBe(0)
   })
 
   it('blocks a send above the configurable safety limit', async () => {
@@ -285,7 +284,6 @@ describe('sendCampaignAction', () => {
     const regA = await makeRegistration(teacherA.id, course.id)
     const regB = await makeRegistration(teacherB.id, course.id)
     const regC = await makeRegistration(teacherC.id, course.id)
-    const before = await prisma.emailCampaign.count()
 
     process.env.BULK_EMAIL_MAX_RECIPIENTS = '2'
 
@@ -301,7 +299,7 @@ describe('sendCampaignAction', () => {
     if (result.success) return
     expect(result.kind).toBe('over-limit')
     expect(sendMock).not.toHaveBeenCalled()
-    expect(await prisma.emailCampaign.count()).toBe(before)
+    expect(await prisma.emailCampaign.count({ where: { courseId: course.id } })).toBe(0)
   })
 
   it('a double click with the same idempotency key produces one campaign, not two', async () => {
@@ -518,7 +516,6 @@ describe('retryFailedRecipientsAction', () => {
     await capturedWork?.()
 
     const sentBefore = await prisma.emailCampaignRecipient.findFirstOrThrow({ where: { campaignId: result.data.campaignId, status: 'SENT' } })
-    const campaignCountBefore = await prisma.emailCampaign.count()
 
     sendMock.mockResolvedValueOnce(successResponse('msg-retry'))
     const retryResult = await retryFailedRecipientsAction(result.data.campaignId)
@@ -528,7 +525,8 @@ describe('retryFailedRecipientsAction', () => {
 
     await capturedWork?.()
 
-    expect(await prisma.emailCampaign.count()).toBe(campaignCountBefore)
+    // Scoped to this test's own course — retry must not have created a second campaign row.
+    expect(await prisma.emailCampaign.count({ where: { courseId: course.id } })).toBe(1)
 
     const sentAfter = await prisma.emailCampaignRecipient.findUniqueOrThrow({ where: { id: sentBefore.id } })
     expect(sentAfter.providerMessageId).toBe(sentBefore.providerMessageId)
@@ -580,7 +578,6 @@ describe('sendTestEmailAction', () => {
     const reg = await makeRegistration(teacher.id, course.id)
 
     sendMock.mockResolvedValueOnce(successResponse('msg-test'))
-    const before = await prisma.emailCampaign.count()
 
     const result = await sendTestEmailAction({
       criteria: { mode: 'ids', registrationIds: [reg.id] },
@@ -598,7 +595,7 @@ describe('sendTestEmailAction', () => {
     expect(payload.subject).not.toContain('{{')
     expect(payload.subject).toContain('Test Mode Course')
 
-    expect(await prisma.emailCampaign.count()).toBe(before)
+    expect(await prisma.emailCampaign.count({ where: { courseId: course.id } })).toBe(0)
   })
 
   it('rejects a subject containing a newline', async () => {

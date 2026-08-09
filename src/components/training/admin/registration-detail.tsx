@@ -4,17 +4,28 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Controller, useForm } from 'react-hook-form'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DetailItem } from '@/components/ui/detail-item'
 import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { AdminEditRegistrationValues } from '@/domain/training/registration-schema'
 import { formatAdminTimestamp } from '@/domain/training/format'
 import type { RegistrationDetail as RegistrationDetailData } from '@/lib/training/registrations'
+import type { CommunicationHistoryItem } from '@/lib/training/email/campaign-analytics'
 import { updateRegistrationAction } from '@/app/training/admin/(protected)/registrations/actions'
 import { EmailStatusBadge, RegistrationStatusBadge } from './registration-badges'
+
+function SourceBadge({ source }: { source: CommunicationHistoryItem['source'] }) {
+  return source === 'CAMPAIGN' ? (
+    <Badge variant="brand">Campaign</Badge>
+  ) : (
+    <Badge variant="outline">Registration</Badge>
+  )
+}
 
 function toDefaultValues(detail: RegistrationDetailData): AdminEditRegistrationValues {
   return {
@@ -29,7 +40,15 @@ function toDefaultValues(detail: RegistrationDetailData): AdminEditRegistrationV
   }
 }
 
-export function RegistrationDetailView({ detail, startInEdit }: { detail: RegistrationDetailData; startInEdit: boolean }) {
+export function RegistrationDetailView({
+  detail,
+  startInEdit,
+  communicationHistory,
+}: {
+  detail: RegistrationDetailData
+  startInEdit: boolean
+  communicationHistory: CommunicationHistoryItem[]
+}) {
   const router = useRouter()
   const [isEditing, setIsEditing] = useState(startInEdit)
   const [formError, setFormError] = useState<string | null>(null)
@@ -191,6 +210,48 @@ export function RegistrationDetailView({ detail, startInEdit }: { detail: Regist
               <DetailItem label="Grade" value={detail.grade} />
               <DetailItem label="Marketing consent" value={detail.marketingConsent ? 'Yes' : 'No'} />
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Communication history</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {communicationHistory.length === 0 ? (
+            <p className="text-sm text-muted-foreground">This teacher hasn&apos;t been sent any email yet.</p>
+          ) : (
+            <Table className="data-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Course</TableHead>
+                  <TableHead>Subject</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Source</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Failure reason</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {communicationHistory.map((item) => (
+                  <TableRow key={`${item.source}-${item.id}`}>
+                    <TableCell>{formatAdminTimestamp(item.date)}</TableCell>
+                    <TableCell>{item.courseName}</TableCell>
+                    <TableCell>{item.subject}</TableCell>
+                    <TableCell>{item.emailType}</TableCell>
+                    <TableCell>
+                      <SourceBadge source={item.source} />
+                    </TableCell>
+                    <TableCell>
+                      <EmailStatusBadge status={item.status} />
+                    </TableCell>
+                    <TableCell>{item.failureReason ?? '—'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>

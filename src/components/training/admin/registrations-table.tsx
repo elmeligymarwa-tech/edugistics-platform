@@ -93,6 +93,20 @@ const registrationColumns = [
     header: 'Email status',
     cell: (info) => <EmailStatusBadge status={info.getValue()} />,
   }),
+  columnHelper.accessor('campaignEmailCount', {
+    header: 'Campaign emails',
+    // Compact "stop mailing the same person again" signal — count and last-sent date, nothing more.
+    cell: (info) => {
+      const count = info.getValue()
+      if (count === 0) return <span className="text-muted-foreground">—</span>
+      const lastSentAt = info.row.original.lastCampaignEmailAt
+      return (
+        <span className="text-sm text-foreground">
+          {count} {lastSentAt ? `· ${formatAdminTimestamp(lastSentAt)}` : null}
+        </span>
+      )
+    },
+  }),
   columnHelper.display({
     id: 'actions',
     header: '',

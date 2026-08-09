@@ -199,6 +199,7 @@ export async function sendCampaignAction(input: {
 
 export interface CampaignRecipientStatus {
   id: string
+  teacherName: string
   emailAddress: string
   status: EmailStatus
   errorMessage: string | null
@@ -226,7 +227,7 @@ export async function getCampaignStatusAction(campaignId: string): Promise<Statu
     where: { id: campaignId },
     include: {
       recipients: {
-        select: { id: true, emailAddress: true, status: true, errorMessage: true, sentAt: true },
+        select: { id: true, emailAddress: true, status: true, errorMessage: true, sentAt: true, teacher: { select: { fullName: true } } },
         orderBy: { createdAt: 'asc' },
       },
     },
@@ -245,6 +246,7 @@ export async function getCampaignStatusAction(campaignId: string): Promise<Statu
       createdAt: campaign.createdAt.toISOString(),
       recipients: campaign.recipients.map((recipient) => ({
         id: recipient.id,
+        teacherName: recipient.teacher.fullName,
         emailAddress: recipient.emailAddress,
         status: recipient.status,
         errorMessage: recipient.errorMessage,
