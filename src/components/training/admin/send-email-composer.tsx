@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Bold, Italic, Link as LinkIcon, List } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -17,9 +18,10 @@ import {
   getTemplateForSelectionAction,
   previewCampaignAction,
   type CampaignPreview,
-  type RecipientCriteriaInput,
   type RecipientSummary,
 } from '@/app/training/admin/(protected)/registrations/email-actions'
+import { sendCampaignAction, sendTestEmailAction } from '@/app/training/admin/(protected)/registrations/send-actions'
+import type { RecipientCriteriaInput } from '@/lib/training/email/criteria'
 
 const TEMPLATE_OPTIONS: SelectOption[] = CampaignEmailType.options.map((value) => ({
   value,
@@ -33,8 +35,12 @@ interface SendEmailComposerProps {
   initialSummary: RecipientSummary
 }
 
+type Step = 'compose' | 'preview' | 'duplicate-warning'
+
 export function SendEmailComposer({ open, onOpenChange, criteria, initialSummary }: SendEmailComposerProps) {
-  const [step, setStep] = useState<'compose' | 'preview'>('compose')
+  const router = useRouter()
+
+  const [step, setStep] = useState<Step>('compose')
   const [emailType, setEmailType] = useState<CampaignEmailType>('CUSTOM')
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
@@ -45,6 +51,13 @@ export function SendEmailComposer({ open, onOpenChange, criteria, initialSummary
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [confirmationInput, setConfirmationInput] = useState('')
+  const [idempotencyKey, setIdempotencyKey] = useState('')
+  const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
+  const [duplicateInfo, setDuplicateInfo] = useState<{ duplicateCount: number; totalCount: number } | null>(null)
+  const [testAddress, setTestAddress] = useState('')
+  const [testSending, setTestSending] = useState(false)
+  const [testMessage, setTestMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
@@ -53,6 +66,9 @@ export function SendEmailComposer({ open, onOpenChange, criteria, initialSummary
       setPreview(null)
       setPreviewError(null)
       setConfirmationInput('')
+      setSendError(null)
+      setDuplicateInfo(null)
+      setTestMessage(null)
     }
   }, [open])
 
@@ -144,7 +160,61 @@ export function SendEmailComposer({ open, onOpenChange, criteria, initialSummary
       return
     }
     setPreview(result.data)
+    setSendError(null)
+    setDuplicateInfo(null)
+    // A fresh preview is a fresh logical send intent — its own idempotency key, so a
+    // "Send Anyway" that follows a duplicate warning reuses this same key rather than
+    // minting a new one, while going Back to compose and forward again gets a new one.
+    setIdempotencyKey(crypto.randomUUID())
     setStep('preview')
+  }
+
+  async function handleSend(overrideDuplicates: boolean) {
+    if (!preview) return
+    setSending(true)
+    setSendError(null)
+
+    const result = await sendCampaignAction({
+      criteria,
+      emailType,
+      content: { subject, body },
+      confirmedCount: preview.uniqueTeacherCount,
+      overrideDuplicates,
+      idempotencyKey,
+    })
+
+    if (result.success) {
+      const url = new URL(window.location.href)
+      url.searchParams.set('campaignId', result.data.campaignId)
+      router.replace(`${url.pathname}?${url.searchParams.toString()}`)
+      onOpenChange(false)
+      return
+    }
+
+    setSending(false)
+    if (result.kind === 'duplicates') {
+      setDuplicateInfo({ duplicateCount: result.duplicateCount, totalCount: result.totalCount })
+      setStep('duplicate-warning')
+      return
+    }
+    setSendError(result.error)
+    setStep('preview')
+  }
+
+  async function handleSendTest() {
+    setTestMessage(null)
+    if (!testAddress.trim()) {
+      setTestMessage({ kind: 'error', text: 'Enter an address to send the test to.' })
+      return
+    }
+    setTestSending(true)
+    const result = await sendTestEmailAction({ criteria, content: { subject, body }, testAddress })
+    setTestSending(false)
+    setTestMessage(
+      result.success
+        ? { kind: 'success', text: 'Test email sent — check the inbox.' }
+        : { kind: 'error', text: result.error },
+    )
   }
 
   const confirmationMatches = preview !== null && confirmationInput.trim() === String(preview.uniqueTeacherCount)
@@ -275,6 +345,30 @@ export function SendEmailComposer({ open, onOpenChange, criteria, initialSummary
                 </div>
               </div>
 
+              <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-muted/30 p-3">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Send Test to Myself — one message, rendered with a real recipient&apos;s values, to an address you type.
+                  Creates no campaign and does not count as a send.
+                </p>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={testAddress}
+                    onChange={(event) => setTestAddress(event.target.value)}
+                    placeholder="you@example.com"
+                    inputMode="email"
+                    className="max-w-xs"
+                  />
+                  <Button type="button" variant="outline" size="sm" onClick={handleSendTest} disabled={testSending}>
+                    {testSending ? 'Sending…' : 'Send Test to Myself'}
+                  </Button>
+                </div>
+                {testMessage && (
+                  <p className={`text-xs ${testMessage.kind === 'success' ? 'text-success' : 'text-destructive'}`}>
+                    {testMessage.text}
+                  </p>
+                )}
+              </div>
+
               {previewError && <FieldError>{previewError}</FieldError>}
             </div>
 
@@ -287,7 +381,7 @@ export function SendEmailComposer({ open, onOpenChange, criteria, initialSummary
               </Button>
             </DialogFooter>
           </>
-        ) : preview ? (
+        ) : step === 'preview' && preview ? (
           <>
             <DialogHeader>
               <DialogTitle>Preview</DialogTitle>
@@ -358,20 +452,44 @@ export function SendEmailComposer({ open, onOpenChange, criteria, initialSummary
                   </p>
                 )}
               </Field>
+
+              {sendError && <FieldError>{sendError}</FieldError>}
             </div>
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setStep('compose')}>
+              <Button type="button" variant="outline" onClick={() => setStep('compose')} disabled={sending}>
                 Back
               </Button>
-              <Tooltip>
-                <TooltipTrigger render={<span />}>
-                  <Button type="button" disabled>
-                    Sending available in the next phase
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Sending is built in a later phase — this button is intentionally disabled.</TooltipContent>
-              </Tooltip>
+              <Button type="button" onClick={() => void handleSend(false)} disabled={!confirmationMatches || sending}>
+                {sending ? 'Sending…' : `Send to ${preview.uniqueTeacherCount} teachers`}
+              </Button>
+            </DialogFooter>
+          </>
+        ) : step === 'duplicate-warning' && duplicateInfo && preview ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Possible duplicate send</DialogTitle>
+              <DialogDescription>These teachers already received this email type recently.</DialogDescription>
+            </DialogHeader>
+
+            <div className="flex flex-col gap-4">
+              <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning-foreground">
+                {duplicateInfo.duplicateCount} of the {duplicateInfo.totalCount} selected teachers already received a{' '}
+                {CAMPAIGN_EMAIL_TYPE_LABELS[emailType]} for this course in the last 24 hours.
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Sending again will email them a second time. This choice is recorded in the audit log.
+              </p>
+              {sendError && <FieldError>{sendError}</FieldError>}
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setStep('preview')} disabled={sending}>
+                Cancel
+              </Button>
+              <Button type="button" variant="destructive" onClick={() => void handleSend(true)} disabled={sending}>
+                {sending ? 'Sending…' : 'Send Anyway'}
+              </Button>
             </DialogFooter>
           </>
         ) : null}

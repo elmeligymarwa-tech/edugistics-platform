@@ -4,7 +4,8 @@ import { useState } from 'react'
 import { Mail } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { getRecipientSummaryAction, type RecipientCriteriaInput, type RecipientSummary } from '@/app/training/admin/(protected)/registrations/email-actions'
+import { getRecipientSummaryAction, type RecipientSummary } from '@/app/training/admin/(protected)/registrations/email-actions'
+import type { RecipientCriteriaInput } from '@/lib/training/email/criteria'
 import { SendEmailComposer } from './send-email-composer'
 
 /** Opens the composer preselecting every confirmed registrant for one course — the course-detail entry point to the bulk composer, alongside the registrations-screen selection flow. */

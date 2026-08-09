@@ -1,58 +1,17 @@
 'use server'
 
-import { z } from 'zod'
-
 import { getDefaultCampaignTemplate } from '@/domain/training/campaign-templates'
 import { usesZoomLinkToken } from '@/domain/training/personalization'
 import { CampaignEmailType } from '@/domain/training/schema'
 import { requireAdminSession } from '@/lib/training/auth/require-admin'
 import { renderCampaignEmail } from '@/lib/training/email/campaign-render'
+import { contentSchema, criteriaInputSchema, fieldErrorsFromZod, toCriteria, type RecipientCriteriaInput } from '@/lib/training/email/criteria'
 import { renderCampaignBodyHtml } from '@/lib/training/email/rich-text'
-import { resolveRecipients, type RecipientSelectionCriteria } from '@/lib/training/email/recipients'
-import { parseRegistrationSearchParams } from '@/lib/training/registrations'
+import { resolveRecipients, toPersonalizationValues } from '@/lib/training/email/recipients'
 
 export type ActionResult<T = undefined> =
   | { success: true; data: T }
   | { success: false; error: string; fieldErrors?: Record<string, string> }
-
-function fieldErrorsFromZod(error: z.ZodError): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const issue of error.issues) {
-    const key = issue.path.join('.')
-    if (!out[key]) out[key] = issue.message
-  }
-  return out
-}
-
-/**
- * The wire shape the client sends for "which registrations". It only ever
- * carries ids or raw filter query-string values (the same strings already in
- * the URL) plus an explicit exclude list for the "select all matching
- * filters, minus a few" case — never an email address, course name, teacher
- * name or Zoom link. Every one of those is re-fetched server-side from the
- * ids/filters below.
- */
-const criteriaInputSchema = z.object({
-  mode: z.enum(['ids', 'filters']),
-  registrationIds: z.array(z.string()).optional(),
-  searchParams: z.record(z.string(), z.string()).optional(),
-  excludeIds: z.array(z.string()).optional(),
-  includeWaitlisted: z.boolean().optional(),
-})
-
-export type RecipientCriteriaInput = z.infer<typeof criteriaInputSchema>
-
-function toCriteria(input: RecipientCriteriaInput): RecipientSelectionCriteria {
-  if (input.mode === 'ids') {
-    return { mode: 'ids', registrationIds: input.registrationIds ?? [], includeWaitlisted: input.includeWaitlisted }
-  }
-  return {
-    mode: 'filters',
-    filters: parseRegistrationSearchParams(input.searchParams ?? {}),
-    excludeIds: input.excludeIds ?? [],
-    includeWaitlisted: input.includeWaitlisted,
-  }
-}
 
 export interface RecipientSummary {
   rawRegistrationCount: number
@@ -128,15 +87,6 @@ export async function getTemplateForSelectionAction(
   return { success: true, data: { ...fallback, overrideApplied: false } }
 }
 
-const contentSchema = z.object({
-  subject: z
-    .string()
-    .trim()
-    .min(1, 'Subject is required.')
-    .refine((value) => !/[\r\n]/.test(value), 'Subject cannot contain line breaks.'),
-  body: z.string().trim().min(1, 'Message is required.'),
-})
-
 export interface CampaignPreview {
   uniqueTeacherCount: number
   rawRegistrationCount: number
@@ -180,16 +130,7 @@ export async function previewCampaignAction(
   const usesZoomLink = usesZoomLinkToken(parsedContent.data.subject) || usesZoomLinkToken(parsedContent.data.body)
   const zoomLinkMissingCount = usesZoomLink ? resolution.recipients.filter((r) => !r.zoomLink).length : 0
 
-  const rendered = renderCampaignEmail(parsedContent.data.subject, parsedContent.data.body, {
-    firstName: example.firstName,
-    fullName: example.fullName,
-    courseName: example.courseName,
-    courseDate: example.courseDate,
-    courseTime: example.courseTime,
-    schoolName: example.schoolName,
-    zoomLink: example.zoomLink ?? '',
-    reference: example.reference,
-  })
+  const rendered = renderCampaignEmail(parsedContent.data.subject, parsedContent.data.body, toPersonalizationValues(example))
 
   return {
     success: true,

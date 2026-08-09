@@ -3,7 +3,7 @@ import 'server-only'
 import type { Prisma } from '@prisma/client'
 
 import { formatCourseDateLong, formatCourseTimeRange } from '@/domain/training/format'
-import { deriveFirstName } from '@/domain/training/personalization'
+import { deriveFirstName, type PersonalizationValues } from '@/domain/training/personalization'
 import { buildRegistrationWhere, type RegistrationFilters } from '../registrations'
 import { prisma } from '../prisma'
 
@@ -124,5 +124,19 @@ export async function resolveRecipients(criteria: RecipientSelectionCriteria): P
     uniqueTeacherCount: recipients.length,
     courses: [...courseMap.entries()].map(([id, name]) => ({ id, name })),
     waitlistedRawCount,
+  }
+}
+
+/** The single place a ResolvedRecipient becomes token values — used by both the preview and the real send so the two can never resolve a token differently. */
+export function toPersonalizationValues(recipient: ResolvedRecipient): PersonalizationValues {
+  return {
+    firstName: recipient.firstName,
+    fullName: recipient.fullName,
+    courseName: recipient.courseName,
+    courseDate: recipient.courseDate,
+    courseTime: recipient.courseTime,
+    schoolName: recipient.schoolName,
+    zoomLink: recipient.zoomLink ?? '',
+    reference: recipient.reference,
   }
 }

@@ -5,11 +5,8 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { isSelectionEmpty } from '@/domain/training/registration-selection'
-import {
-  getRecipientSummaryAction,
-  type RecipientCriteriaInput,
-  type RecipientSummary,
-} from '@/app/training/admin/(protected)/registrations/email-actions'
+import { getRecipientSummaryAction, type RecipientSummary } from '@/app/training/admin/(protected)/registrations/email-actions'
+import type { RecipientCriteriaInput } from '@/lib/training/email/criteria'
 import { SendEmailComposer } from './send-email-composer'
 import { useRegistrationsSelection } from './registrations-selection-context'
 

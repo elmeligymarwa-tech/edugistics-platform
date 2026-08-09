@@ -7,6 +7,7 @@ import {
   listRegistrationsForAdmin,
   parseRegistrationSearchParams,
 } from '@/lib/training/registrations'
+import { CampaignResumeDialog } from '@/components/training/admin/campaign-resume-dialog'
 import { RegistrationsByCourse } from '@/components/training/admin/registrations-by-course'
 import { RegistrationsFilters } from '@/components/training/admin/registrations-filters'
 import { RegistrationsSelectionBar } from '@/components/training/admin/registrations-selection-bar'
@@ -62,6 +63,7 @@ export default async function TrainingAdminRegistrationsPage({
             <RegistrationsByCourse groups={groups ?? []} />
           )}
           <RegistrationsSelectionBar />
+          <CampaignResumeDialog />
         </RegistrationsSelectionProvider>
       </Suspense>
     </div>
