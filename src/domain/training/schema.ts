@@ -75,6 +75,14 @@ function optionalPositiveInt(message: string) {
   )
 }
 
+/** Blank strings, undefined and null all normalise to null. When present, must be a valid, trimmed URL. */
+function optionalUrl(message: string) {
+  return z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? null : typeof value === 'string' ? value.trim() : value),
+    z.url(message).nullable().optional().transform((value) => value ?? null),
+  )
+}
+
 const courseBaseSchema = z.object({
   name: z.string().trim().min(1, 'Name is required.'),
   shortDescription: z.string().trim().min(1, 'Short description is required.'),
@@ -99,6 +107,14 @@ const courseBaseSchema = z.object({
   waitlistCapacity: optionalPositiveInt('Waitlist capacity must be a positive number.'),
   isActive: z.boolean().default(false),
   isFeatured: z.boolean().default(false),
+  // Communication fields — used when sending reminders and joining links to
+  // registered teachers (Phase B). All optional; never required to save or
+  // activate a course.
+  zoomLink: optionalUrl('Enter a valid URL.'),
+  zoomMeetingId: optionalTrimmedString(),
+  zoomPasscode: optionalTrimmedString(),
+  reminderSubject: optionalTrimmedString(),
+  reminderMessage: optionalTrimmedString(),
 })
 
 /**

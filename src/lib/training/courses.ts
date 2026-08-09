@@ -27,6 +27,11 @@ export interface CourseDetail {
   isActive: boolean
   isFeatured: boolean
   archivedAt: Date | null
+  zoomLink: string | null
+  zoomMeetingId: string | null
+  zoomPasscode: string | null
+  reminderSubject: string | null
+  reminderMessage: string | null
 }
 
 export interface AdminCourseListItem extends CourseDetail {
@@ -59,6 +64,11 @@ function toCourseDetail(course: Course): CourseDetail {
     isActive: course.isActive,
     isFeatured: course.isFeatured,
     archivedAt: course.archivedAt,
+    zoomLink: course.zoomLink,
+    zoomMeetingId: course.zoomMeetingId,
+    zoomPasscode: course.zoomPasscode,
+    reminderSubject: course.reminderSubject,
+    reminderMessage: course.reminderMessage,
   }
 }
 
