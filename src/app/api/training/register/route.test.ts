@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 
-import { POST } from './route'
+vi.mock('@/lib/training/email/send-registration-email', () => ({
+  sendConfirmedEmail: vi.fn().mockResolvedValue('email-id'),
+  sendWaitlistedEmail: vi.fn().mockResolvedValue('email-id'),
+}))
+
+const { prisma } = await import('@/lib/training/prisma')
+const { POST } = await import('./route')
 
 // Uses a non-existent (but well-formed) courseId so each call reaches
 // registerForCourse's real-database row-lock check and rejects with 409
@@ -33,6 +39,51 @@ function uniqueIp() {
   ipCounter += 1
   return `10.1.0.${ipCounter}`
 }
+
+const MARKER = 'register-route-test'
+const courseIds: string[] = []
+const promoCodeIds: string[] = []
+const teacherEmails: string[] = []
+
+async function makeCourse() {
+  const slug = `${MARKER}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const course = await prisma.course.create({
+    data: {
+      name: slug,
+      slug,
+      shortDescription: 'x',
+      fullDescription: 'x',
+      category: 'LEADERSHIP',
+      courseDate: new Date('2026-09-01T00:00:00.000Z'),
+      startTime: new Date('1970-01-01T09:00:00.000Z'),
+      endTime: new Date('1970-01-01T10:00:00.000Z'),
+      durationMinutes: 60,
+      deliveryMethod: 'ONLINE',
+      isActive: true,
+      feeAmount: 2000,
+      currency: 'EGP',
+    },
+  })
+  courseIds.push(course.id)
+  return course
+}
+
+async function makePromoCode() {
+  const code = `ROUTETEST${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`.toUpperCase().replace(/[^A-Z0-9]/g, '')
+  const promoCode = await prisma.promoCode.create({
+    data: { code, description: MARKER, discountType: 'PERCENTAGE', discountValue: 20, appliesToAllCourses: true },
+  })
+  promoCodeIds.push(promoCode.id)
+  return promoCode
+}
+
+afterAll(async () => {
+  await prisma.registration.deleteMany({ where: { courseId: { in: courseIds } } })
+  await prisma.teacher.deleteMany({ where: { emailNormalised: { in: teacherEmails } } })
+  await prisma.course.deleteMany({ where: { id: { in: courseIds } } })
+  await prisma.promoCode.deleteMany({ where: { id: { in: promoCodeIds } } })
+  await prisma.$disconnect()
+})
 
 describe('POST /api/training/register', () => {
   it('rejects each missing required field', async () => {
@@ -73,5 +124,40 @@ describe('POST /api/training/register', () => {
     const freshIp = uniqueIp()
     const response = await POST(makeRequest(validBody(), freshIp))
     expect(response.status).toBe(409) // reaches registerForCourse, not blocked by rate limit
+  })
+
+  it('ignores a browser-supplied discount, final fee and course fee entirely — the server computes its own', async () => {
+    const course = await makeCourse()
+    const promo = await makePromoCode()
+    const email = `${MARKER}-${Date.now()}@test.local`
+    teacherEmails.push(email)
+
+    const body = {
+      courseId: course.id,
+      fullName: 'Test Teacher',
+      email,
+      phone: '+201000000000',
+      schoolName: 'Test School',
+      subject: 'Mathematics',
+      grade: 'Grade 3',
+      marketingConsent: false,
+      promoCode: promo.code,
+      // None of these are real fields on the schema — a malicious client
+      // sending them must have zero effect on what gets stored.
+      discountAmount: 999999,
+      finalFee: 1,
+      courseFee: 1,
+      originalFee: 1,
+    }
+
+    const response = await POST(makeRequest(body, uniqueIp()))
+    expect(response.status).toBe(200)
+    const json = await response.json()
+    expect(json.data.promo).toEqual(expect.objectContaining({ discountAmount: 400, originalFee: 2000, finalFee: 1600 }))
+
+    const saved = await prisma.registration.findUnique({ where: { reference: json.data.reference } })
+    expect(Number(saved?.discountAmount)).toBe(400)
+    expect(Number(saved?.originalFee)).toBe(2000)
+    expect(Number(saved?.finalFee)).toBe(1600)
   })
 })

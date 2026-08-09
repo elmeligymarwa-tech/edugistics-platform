@@ -1,5 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { formatCourseFee } from '@/domain/training/format'
+import type { PromoBreakdown } from '@/domain/training/promo-code'
 
 export interface ConfirmedConfirmation {
   status: 'CONFIRMED'
@@ -9,6 +11,7 @@ export interface ConfirmedConfirmation {
   courseName: string
   courseDateLong: string
   courseTimeRange: string
+  promo: PromoBreakdown | null
 }
 
 export interface WaitlistedConfirmation {
@@ -18,9 +21,40 @@ export interface WaitlistedConfirmation {
   teacherEmail: string
   courseName: string
   waitlistPosition: number
+  promo: PromoBreakdown | null
 }
 
 export type Confirmation = ConfirmedConfirmation | WaitlistedConfirmation
+
+function PromoBreakdownSummary({ promo }: { promo: PromoBreakdown }) {
+  return (
+    <div className="flex flex-col gap-1 rounded-lg bg-muted p-3 text-sm">
+      <div className="flex items-center justify-between">
+        <span className="text-muted-foreground">Original fee</span>
+        <span>{formatCourseFee(promo.originalFee, promo.currency)}</span>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-muted-foreground">Promo code</span>
+        <span className="font-medium text-foreground">{promo.code}</span>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-muted-foreground">Discount</span>
+        <span>{promo.discountLabel}</span>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-muted-foreground">You save</span>
+        <span>{formatCourseFee(promo.discountAmount, promo.currency)}</span>
+      </div>
+      <div className="flex items-center justify-between font-semibold text-foreground">
+        <span>Final fee</span>
+        <span>{formatCourseFee(promo.finalFee, promo.currency)}</span>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Payment is not collected through this form. Payment instructions will be sent separately.
+      </p>
+    </div>
+  )
+}
 
 export function ConfirmationCard({
   confirmation,
@@ -58,6 +92,8 @@ export function ConfirmationCard({
             waiting list. We will email you if a place becomes available.
           </p>
         )}
+
+        {confirmation.promo && <PromoBreakdownSummary promo={confirmation.promo} />}
 
         <div className="rounded-lg bg-muted p-3 text-sm">
           <p>

@@ -83,3 +83,11 @@ export const promoCodeFormSchema = promoCodeBaseSchema.superRefine((data, ctx) =
 })
 
 export type PromoCodeFormValues = z.infer<typeof promoCodeFormSchema>
+
+/** The public "apply a promo code" request — deliberately just a code and a course id. The browser never sends a fee, a discount or a final figure; the server looks all of that up itself. */
+export const promoCodeValidationRequestSchema = z.object({
+  code: z.string().trim().min(1, 'Enter a promo code.'),
+  courseId: z.string().trim().min(1, 'Please select a course.'),
+})
+
+export type PromoCodeValidationRequest = z.infer<typeof promoCodeValidationRequestSchema>

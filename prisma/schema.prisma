@@ -227,8 +227,25 @@ model Registration {
   createdAt              DateTime           @default(now())
   updatedAt              DateTime           @updatedAt
 
+  // Promo code snapshot (Phase B) — a permanent record of what was applied
+  // at the moment of submission or promotion. Once written, never
+  // recalculated: editing or archiving the PromoCode row afterwards must
+  // never change what a historical registration shows. courseFeeSnapshot
+  // above is untouched by any of this; originalFee deliberately duplicates
+  // it so this promo record reads correctly in isolation. All null when no
+  // promo code was applied.
+  promoCodeId           String?
+  promoCodeSnapshot     String?
+  discountTypeSnapshot  PromoCodeDiscountType?
+  discountValueSnapshot Decimal?               @db.Decimal(10, 2)
+  discountAmount        Decimal?               @db.Decimal(10, 2)
+  originalFee           Decimal?               @db.Decimal(10, 2)
+  finalFee              Decimal?               @db.Decimal(10, 2)
+  promoAppliedAt        DateTime?              @db.Timestamptz
+
   teacher                 Teacher                  @relation(fields: [teacherId], references: [id])
   course                  Course                   @relation(fields: [courseId], references: [id])
+  promoCode               PromoCode?               @relation(fields: [promoCodeId], references: [id])
   emailCampaignRecipients EmailCampaignRecipient[]
 
   // Database-level duplicate prevention: at most one registration row per
@@ -241,6 +258,7 @@ model Registration {
   @@index([teacherId])
   @@index([registeredAt])
   @@index([status])
+  @@index([promoCodeId])
 }
 
 model AuditLog {
@@ -283,7 +301,8 @@ model PromoCode {
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
 
-  courses PromoCodeCourse[]
+  courses       PromoCodeCourse[]
+  registrations Registration[]
 
   @@index([code])
   @@index([archivedAt])

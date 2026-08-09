@@ -18,6 +18,7 @@ const { prisma } = await import('./prisma')
 const MARKER = 'register-for-course-test'
 const courseIds: string[] = []
 const teacherEmails: string[] = []
+const promoCodeIds: string[] = []
 
 const courseDefaults = {
   shortDescription: 'x',
@@ -57,9 +58,31 @@ function makeInput(courseId: string, overrides: Partial<Parameters<typeof regist
     grade: 'Grade 3',
     address: null,
     marketingConsent: false,
+    promoCode: null,
     ip: '127.0.0.1',
     ...overrides,
   }
+}
+
+let codeCounter = 0
+function randomCode(): string {
+  codeCounter += 1
+  return `RFCTEST${Date.now().toString(36)}${codeCounter}`.toUpperCase().replace(/[^A-Z0-9]/g, '')
+}
+
+async function makePromoCode(overrides: Partial<Parameters<typeof prisma.promoCode.create>[0]['data']> = {}) {
+  const promoCode = await prisma.promoCode.create({
+    data: {
+      code: randomCode(),
+      description: MARKER,
+      discountType: 'PERCENTAGE',
+      discountValue: 20,
+      appliesToAllCourses: true,
+      ...overrides,
+    },
+  })
+  promoCodeIds.push(promoCode.id)
+  return promoCode
 }
 
 afterEach(() => {
@@ -74,6 +97,8 @@ afterAll(async () => {
   await prisma.teacher.deleteMany({ where: { emailNormalised: { in: teacherEmails } } })
   await prisma.course.deleteMany({ where: { id: { in: courseIds } } })
   await prisma.school.deleteMany({ where: { canonicalName: { startsWith: MARKER } } })
+  await prisma.promoCodeCourse.deleteMany({ where: { promoCodeId: { in: promoCodeIds } } })
+  await prisma.promoCode.deleteMany({ where: { id: { in: promoCodeIds } } })
   await prisma.$disconnect()
 })
 
@@ -198,4 +223,174 @@ describe('registerForCourse', () => {
     expect(tickedRow?.consentGiven).toBe(true)
     expect(tickedRow?.consentAt).not.toBeNull()
   }, 20_000)
+})
+
+describe('registerForCourse — promo codes', () => {
+  it('applies a valid percentage discount and writes the full snapshot', async () => {
+    const course = await makeCourse({ maxCapacity: null, feeAmount: 2000, currency: 'EGP' })
+    const promo = await makePromoCode({ discountType: 'PERCENTAGE', discountValue: 20 })
+
+    const outcome = await registerForCourse(makeInput(course.id, { promoCode: promo.code }))
+    expect(outcome.status).toBe('CONFIRMED')
+    expect(outcome.promo).toEqual(
+      expect.objectContaining({ code: promo.code, discountAmount: 400, originalFee: 2000, finalFee: 1600 }),
+    )
+
+    const saved = await prisma.registration.findUnique({ where: { reference: outcome.reference } })
+    expect(saved?.promoCodeId).toBe(promo.id)
+    expect(saved?.promoCodeSnapshot).toBe(promo.code)
+    expect(saved?.discountTypeSnapshot).toBe('PERCENTAGE')
+    expect(Number(saved?.discountValueSnapshot)).toBe(20)
+    expect(Number(saved?.discountAmount)).toBe(400)
+    expect(Number(saved?.originalFee)).toBe(2000)
+    expect(Number(saved?.finalFee)).toBe(1600)
+    expect(saved?.promoAppliedAt).not.toBeNull()
+    // courseFeeSnapshot is untouched by the promo — it's always the full course fee.
+    expect(Number(saved?.courseFeeSnapshot)).toBe(2000)
+  })
+
+  it('a fixed discount larger than the course fee clamps the final fee to zero, never negative', async () => {
+    const course = await makeCourse({ maxCapacity: null, feeAmount: 100, currency: 'EGP' })
+    const promo = await makePromoCode({ discountType: 'FIXED_AMOUNT', discountValue: 500, currency: 'EGP' })
+
+    const outcome = await registerForCourse(makeInput(course.id, { promoCode: promo.code }))
+    expect(outcome.promo?.discountAmount).toBe(100)
+    expect(outcome.promo?.finalFee).toBe(0)
+  })
+
+  it('rejects an unrecognised promo code with the generic message and does not register at full price', async () => {
+    const course = await makeCourse({ maxCapacity: null })
+    const input = makeInput(course.id, { promoCode: 'NOSUCHCODE999' })
+
+    await expect(registerForCourse(input)).rejects.toThrow('Invalid promo code.')
+    const saved = await prisma.registration.findFirst({ where: { courseId: course.id } })
+    expect(saved).toBeNull()
+  })
+
+  it('the total usage limit blocks the next registration', async () => {
+    const course = await makeCourse({ maxCapacity: null })
+    const promo = await makePromoCode({ maxTotalUses: 1 })
+
+    const first = await registerForCourse(makeInput(course.id, { promoCode: promo.code }))
+    expect(first.status).toBe('CONFIRMED')
+
+    await expect(registerForCourse(makeInput(course.id, { promoCode: promo.code }))).rejects.toThrow(
+      'This promo code has reached its usage limit.',
+    )
+  })
+
+  it('the per-teacher limit blocks the same email a second time, on a different course', async () => {
+    const courseA = await makeCourse({ maxCapacity: null })
+    const courseB = await makeCourse({ maxCapacity: null })
+    const promo = await makePromoCode({ maxUsesPerTeacher: 1 })
+    const input = makeInput(courseA.id, { promoCode: promo.code })
+
+    const first = await registerForCourse(input)
+    expect(first.status).toBe('CONFIRMED')
+
+    await expect(
+      registerForCourse({ ...input, courseId: courseB.id }),
+    ).rejects.toThrow('This promo code has already been used with this email address.')
+  })
+
+  it('a different teacher can still use a code that one teacher has exhausted for themselves', async () => {
+    const course = await makeCourse({ maxCapacity: null })
+    const promo = await makePromoCode({ maxUsesPerTeacher: 1 })
+
+    const teacherA = await registerForCourse(makeInput(course.id, { promoCode: promo.code }))
+    expect(teacherA.status).toBe('CONFIRMED')
+
+    const courseB = await makeCourse({ maxCapacity: null })
+    const teacherB = await registerForCourse(makeInput(courseB.id, { promoCode: promo.code }))
+    expect(teacherB.status).toBe('CONFIRMED')
+    expect(teacherB.promo?.code).toBe(promo.code)
+  })
+
+  it('two simultaneous submissions for the final use produce exactly one success', async () => {
+    const course = await makeCourse({ maxCapacity: null })
+    const promo = await makePromoCode({ maxTotalUses: 1 })
+
+    const results = await Promise.allSettled([
+      registerForCourse(makeInput(course.id, { promoCode: promo.code })),
+      registerForCourse(makeInput(course.id, { promoCode: promo.code })),
+    ])
+
+    const fulfilled = results.filter((result) => result.status === 'fulfilled')
+    const rejected = results.filter((result) => result.status === 'rejected')
+    expect(fulfilled).toHaveLength(1)
+    expect(rejected).toHaveLength(1)
+    expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(RegistrationRejectedError)
+
+    const confirmedUses = await prisma.registration.count({ where: { promoCodeId: promo.id, status: 'CONFIRMED' } })
+    expect(confirmedUses).toBe(1)
+    // The losing submission failed entirely — never registered at full price.
+    const totalRegistrationsForCourse = await prisma.registration.count({ where: { courseId: course.id } })
+    expect(totalRegistrationsForCourse).toBe(1)
+  }, 20_000)
+
+  it('a WAITLISTED registration does not consume a use', async () => {
+    const course = await makeCourse({ maxCapacity: 1, waitlistEnabled: true, waitlistCapacity: 5 })
+    const promo = await makePromoCode({ maxTotalUses: 5 })
+
+    // Fills the course without a promo code, so the second registrant is waitlisted.
+    await registerForCourse(makeInput(course.id))
+
+    const waitlisted = await registerForCourse(makeInput(course.id, { promoCode: promo.code }))
+    expect(waitlisted.status).toBe('WAITLISTED')
+    expect(waitlisted.promo?.code).toBe(promo.code)
+
+    const saved = await prisma.registration.findUnique({ where: { reference: waitlisted.reference } })
+    expect(saved?.promoCodeSnapshot).toBe(promo.code)
+    expect(saved?.finalFee).not.toBeNull()
+
+    const confirmedUses = await prisma.registration.count({ where: { promoCodeId: promo.id, status: 'CONFIRMED' } })
+    expect(confirmedUses).toBe(0)
+  }, 20_000)
+
+  it('cancelling a registration releases the use', async () => {
+    const course = await makeCourse({ maxCapacity: null })
+    const promo = await makePromoCode({ maxTotalUses: 1 })
+
+    const outcome = await registerForCourse(makeInput(course.id, { promoCode: promo.code }))
+    await prisma.registration.update({
+      where: { reference: outcome.reference },
+      data: { status: 'CANCELLED', cancelledAt: new Date() },
+    })
+
+    // The snapshot remains on the cancelled record for audit...
+    const cancelled = await prisma.registration.findUnique({ where: { reference: outcome.reference } })
+    expect(cancelled?.promoCodeSnapshot).toBe(promo.code)
+
+    // ...but the use it held is released, so a new registration can take it.
+    const courseB = await makeCourse({ maxCapacity: null })
+    const next = await registerForCourse(makeInput(courseB.id, { promoCode: promo.code }))
+    expect(next.status).toBe('CONFIRMED')
+  })
+
+  it('editing a promo code afterwards does not change any historical registration', async () => {
+    const course = await makeCourse({ maxCapacity: null, feeAmount: 1000 })
+    const promo = await makePromoCode({ discountType: 'PERCENTAGE', discountValue: 10 })
+
+    const outcome = await registerForCourse(makeInput(course.id, { promoCode: promo.code }))
+    expect(outcome.promo?.discountAmount).toBe(100)
+
+    await prisma.promoCode.update({ where: { id: promo.id }, data: { discountValue: 90, description: 'edited' } })
+
+    const saved = await prisma.registration.findUnique({ where: { reference: outcome.reference } })
+    expect(Number(saved?.discountValueSnapshot)).toBe(10)
+    expect(Number(saved?.discountAmount)).toBe(100)
+    expect(Number(saved?.finalFee)).toBe(900)
+  })
+
+  it('archiving a promo code afterwards does not change any historical registration', async () => {
+    const course = await makeCourse({ maxCapacity: null, feeAmount: 1000 })
+    const promo = await makePromoCode({ discountType: 'PERCENTAGE', discountValue: 10 })
+
+    const outcome = await registerForCourse(makeInput(course.id, { promoCode: promo.code }))
+    await prisma.promoCode.update({ where: { id: promo.id }, data: { archivedAt: new Date() } })
+
+    const saved = await prisma.registration.findUnique({ where: { reference: outcome.reference } })
+    expect(saved?.promoCodeSnapshot).toBe(promo.code)
+    expect(Number(saved?.finalFee)).toBe(900)
+  })
 })

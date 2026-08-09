@@ -75,10 +75,9 @@ export function derivePromoCodeStatus(input: PromoCodeStatusInput, now: Date = n
 
 // ---------------------------------------------------------------------------
 // Usage counting — Phase A defines the rule and tests it as a pure function.
-// No registration can reference a promo code yet (no promoCodeId column
-// exists on Registration in this phase), so there is nothing to wire up to
-// a live query. Phase B adds that column and must count uses with
-// `prisma.registration.count({ where: { promoCodeId, status: 'CONFIRMED' } })`
+// Phase B wires it up to a live query — see validatePromoCodeForCourse in
+// src/lib/training/promo-code-validation.ts, which counts uses with
+// `db.registration.count({ where: { promoCodeId, status: 'CONFIRMED' } })`
 // — the same rule this function encodes, so the two can never drift apart.
 // ---------------------------------------------------------------------------
 
@@ -107,4 +106,89 @@ export function countPromoCodeUses(registrations: PromoCodeUsageRecord[]): numbe
 /** When appliesToAllCourses is true, any individually selected courses are cleared rather than stored alongside it — a promo code is never both "all courses" and "these specific courses" at once. */
 export function resolveCourseIds(appliesToAllCourses: boolean, courseIds: string[]): string[] {
   return appliesToAllCourses ? [] : courseIds
+}
+
+// ---------------------------------------------------------------------------
+// Discount calculation (Phase B) — the single authoritative implementation.
+// Both the public validation endpoint and the registration submission
+// transaction call this rather than each doing their own arithmetic, so the
+// number a teacher is shown before submitting can never drift from the
+// number actually written to the registration's snapshot.
+// ---------------------------------------------------------------------------
+
+export interface PromoDiscountResult {
+  discountAmount: number
+  finalFee: number
+}
+
+/**
+ * The fee breakdown as shown to a teacher — on the public form after Apply,
+ * on the confirmation screen, and in the confirmation email. Lives here
+ * (not in a 'server-only' lib module) specifically so client components
+ * importing it never risk pulling server-only code into the client bundle.
+ */
+export interface PromoBreakdown {
+  code: string
+  discountType: PromoCodeDiscountType
+  discountValue: number
+  discountLabel: string
+  discountAmount: number
+  originalFee: number
+  finalFee: number
+  currency: string
+}
+
+/** Round-half-up to two decimal places — the one rounding rule used everywhere a discount or fee is computed, so a percentage split never produces a fee with more than two decimal places. */
+export function roundToTwoDecimals(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100
+}
+
+/**
+ * PERCENTAGE: discountValue% of courseFee. FIXED_AMOUNT: discountValue
+ * itself, in the promo code's currency. Either way the discount is clamped
+ * so it can never exceed courseFee — finalFee can reach exactly zero but
+ * never go negative.
+ */
+export function applyPromoDiscount(
+  courseFee: number,
+  discountType: PromoCodeDiscountType,
+  discountValue: number,
+): PromoDiscountResult {
+  const rawDiscount = discountType === 'PERCENTAGE' ? (courseFee * discountValue) / 100 : discountValue
+  const discountAmount = roundToTwoDecimals(Math.min(Math.max(rawDiscount, 0), courseFee))
+  const finalFee = roundToTwoDecimals(courseFee - discountAmount)
+  return { discountAmount, finalFee }
+}
+
+/** "20%" or "EGP 50" — the one place this label is built, reused by the admin table, the public form and transactional emails. */
+export function formatPromoDiscountLabel(discountType: PromoCodeDiscountType, discountValue: number, currency: string): string {
+  return discountType === 'PERCENTAGE' ? `${discountValue}%` : `${currency} ${discountValue}`
+}
+
+// ---------------------------------------------------------------------------
+// Validation rejection messages (Phase B) — exact, fixed wording. Never more
+// revealing than this: no message here discloses a discount value, a
+// remaining-use count, or the existence of a code the teacher isn't
+// eligible for. Shared between the apply-time validation endpoint and the
+// submission transaction's re-validation so the two can never disagree on
+// wording.
+// ---------------------------------------------------------------------------
+
+export const PROMO_CODE_INVALID_MESSAGE = 'Invalid promo code.'
+export const PROMO_CODE_COURSE_INELIGIBLE_MESSAGE = 'This promo code is not available for this course.'
+
+/** ACTIVE has nothing to reject — callers only reach this once status !== 'ACTIVE'. ARCHIVED is defensive only: every lookup already filters archivedAt: null, so an archived code is found as "no such code" long before its status would need deriving. */
+export function promoCodeStatusRejectionMessage(status: Exclude<PromoCodeStatus, 'ACTIVE'>): string {
+  switch (status) {
+    case 'ARCHIVED':
+      return PROMO_CODE_INVALID_MESSAGE
+    case 'PAUSED':
+      return 'This promo code is no longer available.'
+    case 'SCHEDULED':
+      return 'This promo code is not yet available.'
+    case 'EXPIRED':
+      return 'This promo code has expired.'
+    case 'EXHAUSTED':
+      return 'This promo code has reached its usage limit.'
+  }
 }

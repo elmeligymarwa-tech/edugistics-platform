@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client'
 import type { z } from 'zod'
 
 import { formatCourseDateLong, formatCourseTimeRange } from '@/domain/training/format'
+import { formatPromoDiscountLabel } from '@/domain/training/promo-code'
 import { DELIVERY_METHOD_LABELS } from '@/domain/training/schema'
 import { adminEditRegistrationSchema } from '@/domain/training/registration-schema'
 import { writeAuditLog } from '@/lib/training/audit-log'
@@ -95,6 +96,15 @@ export async function resendRegistrationEmailAction(id: string): Promise<ActionR
 
   const { teacher, course } = registration
 
+  const promo = registration.promoCodeSnapshot
+    ? {
+        code: registration.promoCodeSnapshot,
+        discountLabel: formatPromoDiscountLabel(registration.discountTypeSnapshot!, Number(registration.discountValueSnapshot), course.currency),
+        discountAmount: Number(registration.discountAmount),
+        originalFee: Number(registration.originalFee),
+      }
+    : null
+
   try {
     if (registration.emailType === 'CONFIRMED' || registration.emailType === 'PROMOTED') {
       const params = {
@@ -105,9 +115,10 @@ export async function resendRegistrationEmailAction(id: string): Promise<ActionR
         deliveryMethodLabel: DELIVERY_METHOD_LABELS[course.deliveryMethod],
         location: course.location,
         joiningInstructions: course.joiningInstructions,
-        feeAmount: Number(course.feeAmount),
+        feeAmount: registration.finalFee != null ? Number(registration.finalFee) : Number(course.feeAmount),
         currency: course.currency,
         reference: registration.reference,
+        promo,
       }
       if (registration.emailType === 'CONFIRMED') {
         await sendConfirmedEmail(teacher.emailOriginal, params)

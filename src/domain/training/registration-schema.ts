@@ -23,6 +23,10 @@ export const publicRegistrationSchema = z.object({
   grade: z.string().trim().min(1, 'Grade or year group taught is required.'),
   address: optionalTrimmedString(),
   marketingConsent: z.boolean().default(false),
+  // The browser only ever sends the code string it was given back after a
+  // successful Apply — never a fee, a discount or a final figure. The
+  // submission re-validates this code from scratch; see registerForCourse.
+  promoCode: optionalTrimmedString(),
   // Honeypot — real visitors never see or fill this field. Any non-empty
   // value here means the submission is automated and is dropped silently.
   website: z.string().optional(),

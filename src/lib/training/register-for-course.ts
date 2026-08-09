@@ -3,11 +3,13 @@ import 'server-only'
 import { Prisma } from '@prisma/client'
 
 import { formatCourseDateLong, formatCourseTimeRange } from '@/domain/training/format'
+import { formatPromoDiscountLabel, type PromoBreakdown } from '@/domain/training/promo-code'
 import { DELIVERY_METHOD_LABELS } from '@/domain/training/schema'
 import { sendConfirmedEmail, sendWaitlistedEmail } from './email/send-registration-email'
 import { hashIp } from './ip-hash'
 import { normaliseEmail, normaliseGrade, normalisePhone, normaliseSubject } from './normalise'
 import { prisma } from './prisma'
+import { validatePromoCodeForCourse } from './promo-code-validation'
 import { generateRegistrationReference } from './reference'
 import { isCourseOpenForRegistration } from './registration-window'
 import { resolveSchool } from './school-matching'
@@ -25,8 +27,12 @@ export interface RegisterInput {
   grade: string
   address: string | null
   marketingConsent: boolean
+  /** The code string the browser sends back after a successful Apply, or null. Never trusted — re-validated from scratch inside the transaction below. */
+  promoCode: string | null
   ip: string
 }
+
+export type { PromoBreakdown }
 
 interface ConfirmedOutcome {
   status: 'CONFIRMED'
@@ -37,6 +43,7 @@ interface ConfirmedOutcome {
   courseDateLong: string
   courseTimeRange: string
   emailStatus: 'SENT' | 'FAILED'
+  promo: PromoBreakdown | null
 }
 
 interface WaitlistedOutcome {
@@ -47,6 +54,7 @@ interface WaitlistedOutcome {
   courseName: string
   waitlistPosition: number
   emailStatus: 'SENT' | 'FAILED'
+  promo: PromoBreakdown | null
 }
 
 export type RegistrationOutcome = ConfirmedOutcome | WaitlistedOutcome
@@ -93,6 +101,32 @@ export async function registerForCourse(input: RegisterInput): Promise<Registrat
 
     if (!isCourseOpenForRegistration(course, now)) {
       throw new RegistrationRejectedError('This course is no longer accepting registrations.')
+    }
+
+    // Promo code: re-run the entire validation from scratch inside this
+    // transaction — the browser's earlier Apply result is never trusted.
+    // lockRow: true locks the PromoCode row before counting uses, so two
+    // simultaneous submissions racing for the final use serialise on it
+    // rather than both reading the same pre-lock count; this doubles as the
+    // "re-check the total usage limit inside the transaction" step. The
+    // per-teacher limit is checked separately just below, since it needs
+    // this teacher's normalised email rather than anything the shared
+    // validator already has.
+    let promoResult: Extract<Awaited<ReturnType<typeof validatePromoCodeForCourse>>, { ok: true }> | null = null
+    if (input.promoCode) {
+      const validation = await validatePromoCodeForCourse({ db: tx, code: input.promoCode, course, now, lockRow: true })
+      if (!validation.ok) {
+        throw new RegistrationRejectedError(validation.message)
+      }
+
+      const teacherUseCount = await tx.registration.count({
+        where: { promoCodeId: validation.promoCode.id, status: 'CONFIRMED', teacher: { emailNormalised } },
+      })
+      if (teacherUseCount >= validation.promoCode.maxUsesPerTeacher) {
+        throw new RegistrationRejectedError('This promo code has already been used with this email address.')
+      }
+
+      promoResult = validation
     }
 
     const confirmedCount = await tx.registration.count({ where: { courseId: course.id, status: 'CONFIRMED' } })
@@ -177,6 +211,17 @@ export async function registerForCourse(input: RegisterInput): Promise<Registrat
             emailStatus: 'PENDING',
             emailType: status,
             sourceIpHash,
+            // Written once, here, and never recalculated afterwards — a
+            // WAITLISTED row gets this same snapshot but doesn't consume a
+            // use, since usage counting only ever counts CONFIRMED rows.
+            promoCodeId: promoResult?.promoCode.id ?? null,
+            promoCodeSnapshot: promoResult?.promoCode.code ?? null,
+            discountTypeSnapshot: promoResult?.promoCode.discountType ?? null,
+            discountValueSnapshot: promoResult?.promoCode.discountValue ?? null,
+            discountAmount: promoResult?.discountAmount ?? null,
+            originalFee: promoResult?.originalFee ?? null,
+            finalFee: promoResult?.finalFee ?? null,
+            promoAppliedAt: promoResult ? now : null,
           },
         })
         break
@@ -196,6 +241,22 @@ export async function registerForCourse(input: RegisterInput): Promise<Registrat
   const courseDateLong = formatCourseDateLong(course.courseDate)
   const courseTimeRange = formatCourseTimeRange(course.startTime, course.endTime)
 
+  // Built from the registration's own stored snapshot, never recalculated —
+  // if a promo was applied, this is what both the confirmation screen and
+  // the confirmation email show.
+  const promo: PromoBreakdown | null = registration.promoCodeSnapshot
+    ? {
+        code: registration.promoCodeSnapshot,
+        discountType: registration.discountTypeSnapshot!,
+        discountValue: Number(registration.discountValueSnapshot),
+        discountLabel: formatPromoDiscountLabel(registration.discountTypeSnapshot!, Number(registration.discountValueSnapshot), course.currency),
+        discountAmount: Number(registration.discountAmount),
+        originalFee: Number(registration.originalFee),
+        finalFee: Number(registration.finalFee),
+        currency: course.currency,
+      }
+    : null
+
   let emailStatus: 'SENT' | 'FAILED'
   try {
     if (registration.status === 'CONFIRMED') {
@@ -207,9 +268,10 @@ export async function registerForCourse(input: RegisterInput): Promise<Registrat
         deliveryMethodLabel: DELIVERY_METHOD_LABELS[course.deliveryMethod],
         location: course.location,
         joiningInstructions: course.joiningInstructions,
-        feeAmount: Number(course.feeAmount),
+        feeAmount: promo ? promo.finalFee : Number(course.feeAmount),
         currency: course.currency,
         reference: registration.reference,
+        promo,
       })
     } else {
       await sendWaitlistedEmail(teacher.emailOriginal, {
@@ -242,6 +304,7 @@ export async function registerForCourse(input: RegisterInput): Promise<Registrat
       courseDateLong,
       courseTimeRange,
       emailStatus,
+      promo,
     }
   }
 
@@ -252,6 +315,7 @@ export async function registerForCourse(input: RegisterInput): Promise<Registrat
     teacherEmail: teacher.emailOriginal,
     courseName: course.name,
     waitlistPosition: waitlistPosition!,
+    promo,
     emailStatus,
   }
 }

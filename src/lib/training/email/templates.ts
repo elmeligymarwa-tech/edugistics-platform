@@ -7,6 +7,14 @@ export interface EmailContent {
   text: string
 }
 
+/** Built from a registration's own stored snapshot fields, never recalculated — see register-for-course.ts and resendRegistrationEmailAction. */
+export interface PromoEmailDetails {
+  code: string
+  discountLabel: string
+  discountAmount: number
+  originalFee: number
+}
+
 export interface CourseEmailDetails {
   courseName: string
   courseDateLong: string
@@ -14,9 +22,11 @@ export interface CourseEmailDetails {
   deliveryMethodLabel: string
   location: string | null
   joiningInstructions: string | null
+  /** The fee to invoice — the promo's finalFee when a promo was applied, otherwise the full course fee. */
   feeAmount: number
   currency: string
   reference: string
+  promo?: PromoEmailDetails | null
 }
 
 export const BRAND_NAVY = '#2b3a67'
@@ -64,7 +74,17 @@ export function renderLayout(preheader: string, bodyHtml: string): string {
 </html>`
 }
 
-function feeHtml(feeAmount: number, currency: string): string {
+const PAYMENT_NOTE = 'Payment is not collected through the registration system. Payment instructions will be sent separately. The final fee above is the amount that will be invoiced.'
+
+function feeHtml(feeAmount: number, currency: string, promo?: PromoEmailDetails | null): string {
+  if (promo) {
+    return `<p style="margin:0 0 2px 0;">Original fee: ${escapeHtml(formatCourseFee(promo.originalFee, currency))}</p>
+<p style="margin:0 0 2px 0;">Promo code: ${escapeHtml(promo.code)}</p>
+<p style="margin:0 0 2px 0;">Discount: ${escapeHtml(promo.discountLabel)}</p>
+<p style="margin:0 0 2px 0;">You save: ${escapeHtml(formatCourseFee(promo.discountAmount, currency))}</p>
+<p style="margin:0 0 4px 0;"><strong>Final fee: ${escapeHtml(formatCourseFee(feeAmount, currency))}</strong></p>
+<p style="margin:0 0 12px 0;color:${INK_SECONDARY};font-size:13px;">${PAYMENT_NOTE}</p>`
+  }
   if (feeAmount === 0) {
     return `<p style="margin:0 0 12px 0;"><strong>Fee:</strong> Free of charge.</p>`
   }
@@ -72,7 +92,15 @@ function feeHtml(feeAmount: number, currency: string): string {
 <p style="margin:0 0 12px 0;color:${INK_SECONDARY};font-size:13px;">Payment is not collected through the registration system. Payment instructions will be sent separately.</p>`
 }
 
-function feeText(feeAmount: number, currency: string): string {
+function feeText(feeAmount: number, currency: string, promo?: PromoEmailDetails | null): string {
+  if (promo) {
+    return `Original fee: ${formatCourseFee(promo.originalFee, currency)}
+Promo code: ${promo.code}
+Discount: ${promo.discountLabel}
+You save: ${formatCourseFee(promo.discountAmount, currency)}
+Final fee: ${formatCourseFee(feeAmount, currency)}
+${PAYMENT_NOTE}`
+  }
   if (feeAmount === 0) return 'Fee: Free of charge.'
   return `Fee: ${formatCourseFee(feeAmount, currency)}\nPayment is not collected through the registration system. Payment instructions will be sent separately.`
 }
@@ -89,7 +117,7 @@ function joiningText(details: CourseEmailDetails): string {
 }
 
 export function buildConfirmedEmail(params: { teacherName: string } & CourseEmailDetails): EmailContent {
-  const { teacherName, courseName, courseDateLong, courseTimeRange, deliveryMethodLabel, feeAmount, currency, reference } = params
+  const { teacherName, courseName, courseDateLong, courseTimeRange, deliveryMethodLabel, feeAmount, currency, reference, promo } = params
   const subject = `Registration confirmed: ${courseName}`
 
   const html = renderLayout(
@@ -101,7 +129,7 @@ export function buildConfirmedEmail(params: { teacherName: string } & CourseEmai
 <p style="margin:0 0 12px 0;">${escapeHtml(courseTimeRange)}</p>
 <p style="margin:0 0 12px 0;"><strong>Delivery:</strong> ${escapeHtml(deliveryMethodLabel)}</p>
 ${joiningHtml(params)}
-${feeHtml(feeAmount, currency)}
+${feeHtml(feeAmount, currency, promo)}
 <p style="margin:16px 0 0 0;padding:12px;background-color:#f6f7fa;border-radius:8px;font-size:13px;color:${INK_SECONDARY};">Reference: <strong style="color:${INK};">${escapeHtml(reference)}</strong></p>`,
   )
 
@@ -112,7 +140,7 @@ ${courseName}
 ${courseDateLong}
 ${courseTimeRange}
 Delivery: ${deliveryMethodLabel}
-${joiningText(params)}${feeText(feeAmount, currency)}
+${joiningText(params)}${feeText(feeAmount, currency, promo)}
 
 Reference: ${reference}`
 
@@ -149,7 +177,7 @@ Reference: ${reference}`
 }
 
 export function buildPromotedEmail(params: { teacherName: string } & CourseEmailDetails): EmailContent {
-  const { teacherName, courseName, courseDateLong, courseTimeRange, deliveryMethodLabel, feeAmount, currency, reference } = params
+  const { teacherName, courseName, courseDateLong, courseTimeRange, deliveryMethodLabel, feeAmount, currency, reference, promo } = params
   const subject = `A place is now confirmed: ${courseName}`
 
   const html = renderLayout(
@@ -161,7 +189,7 @@ export function buildPromotedEmail(params: { teacherName: string } & CourseEmail
 <p style="margin:0 0 12px 0;">${escapeHtml(courseTimeRange)}</p>
 <p style="margin:0 0 12px 0;"><strong>Delivery:</strong> ${escapeHtml(deliveryMethodLabel)}</p>
 ${joiningHtml(params)}
-${feeHtml(feeAmount, currency)}
+${feeHtml(feeAmount, currency, promo)}
 <p style="margin:16px 0 0 0;padding:12px;background-color:#f6f7fa;border-radius:8px;font-size:13px;color:${INK_SECONDARY};">Reference: <strong style="color:${INK};">${escapeHtml(reference)}</strong></p>`,
   )
 
@@ -172,7 +200,7 @@ ${courseName}
 ${courseDateLong}
 ${courseTimeRange}
 Delivery: ${deliveryMethodLabel}
-${joiningText(params)}${feeText(feeAmount, currency)}
+${joiningText(params)}${feeText(feeAmount, currency, promo)}
 
 Reference: ${reference}`
 

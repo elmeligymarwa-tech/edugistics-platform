@@ -3,7 +3,7 @@
 import { useMemo } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, TriangleAlert } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -29,7 +29,20 @@ function formatUses(row: PromoCodeListItem): string {
 function buildColumns(courses: CourseOption[]) {
   return [
     columnHelper.accessor('code', { header: 'Code', cell: (info) => <span className="font-medium text-foreground">{info.getValue()}</span> }),
-    columnHelper.display({ id: 'discount', header: 'Discount', cell: (info) => formatDiscount(info.row.original) }),
+    columnHelper.display({
+      id: 'discount',
+      header: 'Discount',
+      cell: (info) => (
+        <span className="inline-flex items-center gap-1.5">
+          {formatDiscount(info.row.original)}
+          {info.row.original.currencyMismatch && (
+            <span title="This code's currency doesn't match at least one eligible course's currency — it will be silently rejected at registration.">
+              <TriangleAlert className="size-3.5 text-destructive" />
+            </span>
+          )}
+        </span>
+      ),
+    }),
     columnHelper.accessor('appliesToLabel', { header: 'Applies to' }),
     columnHelper.display({ id: 'uses', header: 'Uses', cell: (info) => formatUses(info.row.original) }),
     columnHelper.accessor('expiresAt', {

@@ -3,7 +3,6 @@ import 'server-only'
 import type { Prisma } from '@prisma/client'
 
 import {
-  countPromoCodeUses,
   derivePromoCodeStatus,
   PROMO_CODE_PAGE_SIZE,
   PROMO_CODE_STATUSES,
@@ -62,10 +61,12 @@ export interface PromoCodeListItem {
   createdAt: Date
   status: PromoCodeStatus
   useCount: number
+  /** True only for a FIXED_AMOUNT code whose currency doesn't match at least one course it's eligible for — computed live from the code's linked courses (or, for an all-courses code, every active course), never stored. Registration validation already rejects the code silently in this case; this is how an administrator finds out why. */
+  currencyMismatch: boolean
 }
 
 const LIST_INCLUDE = {
-  courses: { include: { course: { select: { name: true } } } },
+  courses: { include: { course: { select: { name: true, currency: true } } } },
 } satisfies Prisma.PromoCodeInclude
 
 type PromoCodeWithCourses = Prisma.PromoCodeGetPayload<{ include: typeof LIST_INCLUDE }>
@@ -76,19 +77,15 @@ function toAppliesToLabel(row: PromoCodeWithCourses): string {
   return `${row.courses.length} courses`
 }
 
-/**
- * Nothing can reference a promo code yet — Registration has no promoCodeId
- * column in Phase A, so every code's real usage is 0. Phase B, once that
- * column exists, replaces this with `prisma.registration.count({ where: {
- * promoCodeId: row.id, status: 'CONFIRMED' } })` — the exact rule
- * countPromoCodeUses documents and tests.
- */
-function currentUseCount(): number {
-  return countPromoCodeUses([])
+function hasCurrencyMismatch(row: PromoCodeWithCourses, activeCourseCurrencies: Set<string>): boolean {
+  if (row.discountType !== 'FIXED_AMOUNT') return false
+  if (row.appliesToAllCourses) {
+    return [...activeCourseCurrencies].some((currency) => currency !== row.currency)
+  }
+  return row.courses.some((entry) => entry.course.currency !== row.currency)
 }
 
-function toListItem(row: PromoCodeWithCourses, now: Date): PromoCodeListItem {
-  const useCount = currentUseCount()
+function toListItem(row: PromoCodeWithCourses, now: Date, useCount: number, activeCourseCurrencies: Set<string>): PromoCodeListItem {
   return {
     id: row.id,
     code: row.code,
@@ -118,6 +115,7 @@ function toListItem(row: PromoCodeWithCourses, now: Date): PromoCodeListItem {
       now,
     ),
     useCount,
+    currencyMismatch: hasCurrencyMismatch(row, activeCourseCurrencies),
   }
 }
 
@@ -135,11 +133,12 @@ function buildSearchWhere(search: string | undefined): Prisma.PromoCodeWhereInpu
 /**
  * Translates the same precedence rules as derivePromoCodeStatus into a
  * Prisma where-clause, so the list can filter by status server side without
- * loading every row into memory to compute it in JS. EXHAUSTED can never
- * match in Phase A — see currentUseCount — so it's a deliberate empty
- * result, not a bug; Phase B must revisit this once real usage exists.
+ * loading every row into memory to compute it in JS. EXHAUSTED can't be
+ * expressed as a plain column comparison — it depends on a live count of
+ * CONFIRMED registrations against maxTotalUses — so its ids are precomputed
+ * with a raw query (see exhaustedPromoCodeIds) and passed in here.
  */
-function buildStatusWhere(status: PromoCodeStatus | undefined, now: Date): Prisma.PromoCodeWhereInput {
+function buildStatusWhere(status: PromoCodeStatus | undefined, now: Date, exhaustedIds: string[]): Prisma.PromoCodeWhereInput {
   if (!status) return {}
   switch (status) {
     case 'ARCHIVED':
@@ -156,7 +155,7 @@ function buildStatusWhere(status: PromoCodeStatus | undefined, now: Date): Prism
         OR: [{ startsAt: null }, { startsAt: { lte: now } }],
       }
     case 'EXHAUSTED':
-      return { id: '' }
+      return { id: { in: exhaustedIds } }
     case 'ACTIVE':
       return {
         archivedAt: null,
@@ -169,10 +168,24 @@ function buildStatusWhere(status: PromoCodeStatus | undefined, now: Date): Prism
   }
 }
 
+/** Ids of every non-archived, non-paused, currently-started, unexpired promo code whose CONFIRMED use count has reached its maxTotalUses — i.e. exactly the rows derivePromoCodeStatus would call EXHAUSTED. Only run when the EXHAUSTED filter is actually selected. */
+async function exhaustedPromoCodeIds(now: Date): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT pc.id FROM "PromoCode" pc
+    WHERE pc."archivedAt" IS NULL
+      AND pc."isPaused" = false
+      AND (pc."startsAt" IS NULL OR pc."startsAt" <= ${now})
+      AND (pc."expiresAt" IS NULL OR pc."expiresAt" >= ${now})
+      AND pc."maxTotalUses" IS NOT NULL
+      AND (SELECT COUNT(*) FROM "Registration" r WHERE r."promoCodeId" = pc.id AND r.status = 'CONFIRMED') >= pc."maxTotalUses"
+  `
+  return rows.map((row) => row.id)
+}
+
 function buildOrderBy(sortField: PromoCodeSortField, sortDir: SortDirection): Prisma.PromoCodeOrderByWithRelationInput {
   if (sortField === 'expiresAt') return { expiresAt: sortDir }
-  // 'usage': every code ties at 0 in Phase A (see currentUseCount) — createdAt
-  // gives a stable, well-defined order until Phase B has real counts to sort by.
+  // 'usage': Prisma can't order by a derived, counted relation without a raw
+  // query — createdAt gives a stable, well-defined fallback order instead.
   if (sortField === 'usage') return { createdAt: sortDir }
   return { createdAt: sortDir }
 }
@@ -185,9 +198,12 @@ export async function listPromoCodesForAdmin(
   sortDir: SortDirection = 'desc',
 ): Promise<{ rows: PromoCodeListItem[]; totalCount: number }> {
   const now = new Date()
-  const where: Prisma.PromoCodeWhereInput = { AND: [buildSearchWhere(filters.search), buildStatusWhere(filters.status, now)] }
+  const exhaustedIds = filters.status === 'EXHAUSTED' ? await exhaustedPromoCodeIds(now) : []
+  const where: Prisma.PromoCodeWhereInput = {
+    AND: [buildSearchWhere(filters.search), buildStatusWhere(filters.status, now, exhaustedIds)],
+  }
 
-  const [rows, totalCount] = await Promise.all([
+  const [rows, totalCount, activeCourses] = await Promise.all([
     prisma.promoCode.findMany({
       where,
       include: LIST_INCLUDE,
@@ -196,9 +212,21 @@ export async function listPromoCodesForAdmin(
       take: PROMO_CODE_PAGE_SIZE,
     }),
     prisma.promoCode.count({ where }),
+    prisma.course.findMany({ where: { isActive: true, archivedAt: null }, select: { currency: true }, distinct: ['currency'] }),
   ])
 
-  return { rows: rows.map((row) => toListItem(row, now)), totalCount }
+  const useCounts = await prisma.registration.groupBy({
+    by: ['promoCodeId'],
+    _count: { _all: true },
+    where: { promoCodeId: { in: rows.map((row) => row.id) }, status: 'CONFIRMED' },
+  })
+  const useCountByPromoCodeId = new Map(useCounts.map((entry) => [entry.promoCodeId, entry._count._all]))
+  const activeCourseCurrencies = new Set(activeCourses.map((course) => course.currency))
+
+  return {
+    rows: rows.map((row) => toListItem(row, now, useCountByPromoCodeId.get(row.id) ?? 0, activeCourseCurrencies)),
+    totalCount,
+  }
 }
 
 /** True when `normalisedCode` is free to use — no non-archived promo code already has it. Pass excludeId when checking during an edit so a code doesn't conflict with itself. */

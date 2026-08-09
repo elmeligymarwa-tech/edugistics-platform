@@ -111,3 +111,46 @@ describe('RegistrationExperience — step 1 / step 2 flow', () => {
     expect(screen.getByLabelText('Full name')).toBeEnabled()
   })
 })
+
+describe('RegistrationExperience — promo code field', () => {
+  it('is hidden for a free course', () => {
+    render(<RegistrationExperience courses={[makeCourse({ id: 'only', name: 'Free Course', feeAmount: 0 })]} />)
+
+    expect(screen.queryByLabelText('Promo code (optional)')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Promo code/)).not.toBeInTheDocument()
+  })
+
+  it('is shown for a course with a fee above zero', () => {
+    render(<RegistrationExperience courses={[makeCourse({ id: 'only', name: 'Paid Course', feeAmount: 2000 })]} />)
+
+    expect(screen.getByLabelText('Promo code (optional)')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Apply' })).toBeInTheDocument()
+    expect(screen.getByText('Course fee: EGP 2,000')).toBeInTheDocument()
+  })
+
+  it('disables Apply until a code is typed', () => {
+    render(<RegistrationExperience courses={[makeCourse({ id: 'only', name: 'Paid Course', feeAmount: 2000 })]} />)
+
+    expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('Promo code (optional)'), { target: { value: 'EDU20' } })
+    expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled()
+  })
+
+  it('hides the field again after switching to a free course', () => {
+    render(
+      <RegistrationExperience
+        courses={[
+          makeCourse({ id: 'paid', name: 'Paid Course', feeAmount: 2000 }),
+          makeCourse({ id: 'free', name: 'Free Course', feeAmount: 0 }),
+        ]}
+      />,
+    )
+
+    fireEvent.click(screen.getByText('Paid Course'))
+    expect(screen.getByLabelText('Promo code (optional)')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Change course'))
+    fireEvent.click(screen.getByText('Free Course'))
+    expect(screen.queryByLabelText('Promo code (optional)')).not.toBeInTheDocument()
+  })
+})

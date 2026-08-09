@@ -10,10 +10,33 @@ import { Field, FieldDescription, FieldError, FieldLabel } from '@/components/ui
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { formatCourseDateLong, formatCourseFee, formatCourseTimeRange } from '@/domain/training/format'
+import { formatPromoDiscountLabel, type PromoBreakdown } from '@/domain/training/promo-code'
 import type { PublicCourse } from '@/lib/training/public-courses'
 import { cn } from '@/lib/utils'
 import { ConfirmationCard, type Confirmation } from './confirmation-card'
 import { CourseOptionCard } from './course-option-card'
+
+type PromoApplyState =
+  | { status: 'idle' }
+  | { status: 'applying' }
+  | { status: 'applied'; promo: PromoBreakdown }
+  | { status: 'error'; message: string }
+
+interface PromoValidateErrorBody {
+  error: string
+}
+
+interface PromoValidateSuccessBody {
+  data: {
+    code: string
+    discountType: PromoBreakdown['discountType']
+    discountValue: number
+    currency: string
+    originalFee: number
+    discountAmount: number
+    finalFee: number
+  }
+}
 
 /** A single course is only worth auto-selecting if a visitor could actually submit it — a lone full course with no waitlist would otherwise strand them on an unselectable step 1. */
 function isCourseSelectable(course: PublicCourse): boolean {
@@ -63,6 +86,8 @@ export function RegistrationExperience({ courses }: { courses: PublicCourse[] })
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [promoCodeInput, setPromoCodeInput] = useState('')
+  const [promoState, setPromoState] = useState<PromoApplyState>({ status: 'idle' })
 
   const {
     register,
@@ -88,11 +113,63 @@ export function RegistrationExperience({ courses }: { courses: PublicCourse[] })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Switching courses invalidates any applied code — it may not be eligible
+  // for the new course, and the fee it was calculated against has changed.
+  useEffect(() => {
+    setPromoCodeInput('')
+    setPromoState({ status: 'idle' })
+  }, [selectedCourseId])
+
+  async function handleApplyPromo() {
+    if (!selectedCourseId || !promoCodeInput.trim()) return
+    setPromoState({ status: 'applying' })
+
+    try {
+      const response = await fetch('/api/training/promo-codes/validate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ code: promoCodeInput.trim(), courseId: selectedCourseId }),
+      })
+      const body = (await response.json()) as PromoValidateSuccessBody | PromoValidateErrorBody
+
+      if (!response.ok || 'error' in body) {
+        setPromoState({ status: 'error', message: (body as PromoValidateErrorBody).error ?? 'Something went wrong. Please try again.' })
+        return
+      }
+
+      const { data } = body
+      setPromoState({
+        status: 'applied',
+        promo: {
+          code: data.code,
+          discountType: data.discountType,
+          discountValue: data.discountValue,
+          discountLabel: formatPromoDiscountLabel(data.discountType, data.discountValue, data.currency),
+          discountAmount: data.discountAmount,
+          originalFee: data.originalFee,
+          finalFee: data.finalFee,
+          currency: data.currency,
+        },
+      })
+    } catch {
+      setPromoState({ status: 'error', message: 'Something went wrong. Please try again.' })
+    }
+  }
+
+  function handleRemovePromo() {
+    setPromoCodeInput('')
+    setPromoState({ status: 'idle' })
+  }
+
   async function onSubmit(values: RegistrationFormInputs) {
     setFormError(null)
     setIsSubmitting(true)
 
-    const payload = { ...values, address: values.address.trim() || null }
+    const payload = {
+      ...values,
+      address: values.address.trim() || null,
+      promoCode: promoState.status === 'applied' ? promoState.promo.code : null,
+    }
 
     try {
       const response = await fetch('/api/training/register', {
@@ -124,6 +201,8 @@ export function RegistrationExperience({ courses }: { courses: PublicCourse[] })
   function handleRegisterAnother() {
     setConfirmation(null)
     setFormError(null)
+    setPromoCodeInput('')
+    setPromoState({ status: 'idle' })
     reset(DEFAULT_VALUES)
     router.refresh()
   }
@@ -264,6 +343,70 @@ export function RegistrationExperience({ courses }: { courses: PublicCourse[] })
             <Textarea id="address" rows={2} {...register('address')} />
           </Field>
         </div>
+
+        {selectedCourse && selectedCourse.feeAmount > 0 && (
+          <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+            <FieldLabel htmlFor="promoCodeInput">Promo code (optional)</FieldLabel>
+
+            {promoState.status === 'applied' ? (
+              <div className="flex flex-col gap-1 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Original fee</span>
+                  <span>{formatCourseFee(promoState.promo.originalFee, promoState.promo.currency)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Promo code</span>
+                  <span className="font-medium text-foreground">{promoState.promo.code}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Discount</span>
+                  <span>{promoState.promo.discountLabel}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">You save</span>
+                  <span>{formatCourseFee(promoState.promo.discountAmount, promoState.promo.currency)}</span>
+                </div>
+                <div className="flex items-center justify-between font-semibold text-foreground">
+                  <span>Final fee</span>
+                  <span>{formatCourseFee(promoState.promo.finalFee, promoState.promo.currency)}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRemovePromo}
+                  className="self-start text-sm font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+                >
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm text-foreground">Course fee: {formatCourseFee(selectedCourse.feeAmount, selectedCourse.currency)}</p>
+                <div className="flex gap-2">
+                  <Input
+                    id="promoCodeInput"
+                    value={promoCodeInput}
+                    onChange={(event) => setPromoCodeInput(event.target.value)}
+                    placeholder="Enter code"
+                    disabled={promoState.status === 'applying'}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleApplyPromo}
+                    disabled={!promoCodeInput.trim() || promoState.status === 'applying'}
+                  >
+                    {promoState.status === 'applying' ? 'Applying…' : 'Apply'}
+                  </Button>
+                </div>
+                {promoState.status === 'error' && <FieldError>{promoState.message}</FieldError>}
+              </>
+            )}
+
+            <p className="text-xs text-muted-foreground">
+              Payment is not collected through this form. Payment instructions will be sent separately.
+            </p>
+          </div>
+        )}
 
         <Controller
           name="marketingConsent"

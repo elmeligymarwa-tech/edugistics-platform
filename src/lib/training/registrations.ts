@@ -2,6 +2,7 @@ import 'server-only'
 
 import type { EmailStatus, Prisma, RegistrationStatus } from '@prisma/client'
 
+import { formatPromoDiscountLabel } from '@/domain/training/promo-code'
 import { REGISTRATIONS_PAGE_SIZE } from '@/domain/training/schema'
 import { cairoDateTimeLocalToUtc } from '@/domain/training/timezone'
 import { getCampaignEmailSignalsForTeachers } from './email/campaign-analytics'
@@ -244,12 +245,18 @@ export interface RegistrationDetail {
   subject: string
   grade: string
   marketingConsent: boolean
+  currency: string
+  /** A permanent record of what was applied at submission (or promotion) — never recalculated, so this stays accurate even after the promo code itself is later edited or archived. */
+  promoCodeSnapshot: string | null
+  discountLabel: string | null
+  originalFee: number | null
+  finalFee: number | null
 }
 
 export async function getRegistrationDetail(id: string): Promise<RegistrationDetail | null> {
   const row = await prisma.registration.findUnique({
     where: { id },
-    include: { teacher: true, course: { select: { id: true, name: true, courseDate: true } } },
+    include: { teacher: true, course: { select: { id: true, name: true, courseDate: true, currency: true } } },
   })
   if (!row) return null
 
@@ -276,5 +283,13 @@ export async function getRegistrationDetail(id: string): Promise<RegistrationDet
     subject: row.teacher.subjectOriginal,
     grade: row.teacher.gradeOriginal,
     marketingConsent: row.teacher.marketingConsent,
+    currency: row.course.currency,
+    promoCodeSnapshot: row.promoCodeSnapshot,
+    discountLabel:
+      row.discountTypeSnapshot && row.discountValueSnapshot != null
+        ? formatPromoDiscountLabel(row.discountTypeSnapshot, Number(row.discountValueSnapshot), row.course.currency)
+        : null,
+    originalFee: row.originalFee != null ? Number(row.originalFee) : null,
+    finalFee: row.finalFee != null ? Number(row.finalFee) : null,
   }
 }

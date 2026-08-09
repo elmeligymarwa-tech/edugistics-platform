@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Too many submissions from this connection. Please try again later.' }, { status: 429 })
   }
 
-  const { courseId, fullName, email, phone, schoolName, subject, grade, address, marketingConsent } = parsed.data
+  const { courseId, fullName, email, phone, schoolName, subject, grade, address, marketingConsent, promoCode } = parsed.data
 
   try {
     const outcome = await registerForCourse({
@@ -49,6 +49,7 @@ export async function POST(request: NextRequest) {
       grade,
       address,
       marketingConsent,
+      promoCode,
       ip,
     })
     return NextResponse.json({ data: outcome })

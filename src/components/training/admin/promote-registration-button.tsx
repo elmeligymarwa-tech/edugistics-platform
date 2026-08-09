@@ -22,6 +22,7 @@ export function PromoteRegistrationButton({ registrationId, fullName }: { regist
   const [isPending, startTransition] = useTransition()
   const [overrideOpen, setOverrideOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [discountLostNote, setDiscountLostNote] = useState(false)
 
   function promote(override: boolean) {
     startTransition(async () => {
@@ -36,6 +37,7 @@ export function PromoteRegistrationButton({ registrationId, fullName }: { regist
       }
       setError(null)
       setOverrideOpen(false)
+      setDiscountLostNote(result.data.discountLost)
       router.refresh()
     })
   }
@@ -47,6 +49,11 @@ export function PromoteRegistrationButton({ registrationId, fullName }: { regist
           <ArrowUpCircle /> {isPending ? 'Promoting…' : 'Promote'}
         </Button>
         {error && <p className="text-xs text-destructive">{error}</p>}
+        {discountLostNote && (
+          <p className="max-w-[16rem] text-right text-xs text-warning">
+            Promoted at full price — the promo code could no longer be honoured.
+          </p>
+        )}
       </div>
 
       <AlertDialog open={overrideOpen} onOpenChange={setOverrideOpen}>

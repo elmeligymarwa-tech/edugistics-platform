@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  applyPromoDiscount,
   countPromoCodeUses,
   derivePromoCodeStatus,
+  formatPromoDiscountLabel,
   isValidPromoCodeFormat,
   normalisePromoCode,
+  promoCodeStatusRejectionMessage,
   resolveCourseIds,
+  roundToTwoDecimals,
 } from './promo-code'
 import { cairoDateTimeLocalToUtc } from './timezone'
 
@@ -139,5 +143,66 @@ describe('derivePromoCodeStatus', () => {
     // if it were already UTC — Cairo is never UTC+0, so the two instants must differ.
     const naiveUtcInstant = new Date('2026-06-15T23:59:59.999Z')
     expect(expiresAt.getTime()).not.toBe(naiveUtcInstant.getTime())
+  })
+})
+
+describe('applyPromoDiscount', () => {
+  it('a valid percentage discount produces the correct final fee', () => {
+    const result = applyPromoDiscount(2000, 'PERCENTAGE', 20)
+    expect(result.discountAmount).toBe(400)
+    expect(result.finalFee).toBe(1600)
+  })
+
+  it('a valid fixed amount discount produces the correct final fee', () => {
+    const result = applyPromoDiscount(1000, 'FIXED_AMOUNT', 50)
+    expect(result.discountAmount).toBe(50)
+    expect(result.finalFee).toBe(950)
+  })
+
+  it('a fixed discount larger than the course fee clamps the final fee to zero, never negative', () => {
+    const result = applyPromoDiscount(100, 'FIXED_AMOUNT', 500)
+    expect(result.discountAmount).toBe(100)
+    expect(result.finalFee).toBe(0)
+  })
+
+  it('a percentage discount can reach exactly 100% without going negative', () => {
+    const result = applyPromoDiscount(500, 'PERCENTAGE', 100)
+    expect(result.discountAmount).toBe(500)
+    expect(result.finalFee).toBe(0)
+  })
+
+  it('rounds to two decimal places, round-half-up', () => {
+    const result = applyPromoDiscount(99.99, 'PERCENTAGE', 33)
+    // 99.99 * 33 / 100 = 32.9967 -> 33.00
+    expect(result.discountAmount).toBe(33)
+    expect(result.finalFee).toBe(66.99)
+  })
+})
+
+describe('roundToTwoDecimals', () => {
+  it('rounds half up to two decimal places', () => {
+    expect(roundToTwoDecimals(1.005)).toBe(1.01)
+    expect(roundToTwoDecimals(1.004)).toBe(1)
+    expect(roundToTwoDecimals(10)).toBe(10)
+  })
+})
+
+describe('formatPromoDiscountLabel', () => {
+  it('formats a percentage discount as a plain percentage', () => {
+    expect(formatPromoDiscountLabel('PERCENTAGE', 20, 'EGP')).toBe('20%')
+  })
+
+  it('formats a fixed amount discount with its currency', () => {
+    expect(formatPromoDiscountLabel('FIXED_AMOUNT', 50, 'EGP')).toBe('EGP 50')
+  })
+})
+
+describe('promoCodeStatusRejectionMessage', () => {
+  it('returns the exact required wording for each non-ACTIVE status', () => {
+    expect(promoCodeStatusRejectionMessage('EXPIRED')).toBe('This promo code has expired.')
+    expect(promoCodeStatusRejectionMessage('SCHEDULED')).toBe('This promo code is not yet available.')
+    expect(promoCodeStatusRejectionMessage('PAUSED')).toBe('This promo code is no longer available.')
+    expect(promoCodeStatusRejectionMessage('EXHAUSTED')).toBe('This promo code has reached its usage limit.')
+    expect(promoCodeStatusRejectionMessage('ARCHIVED')).toBe('Invalid promo code.')
   })
 })

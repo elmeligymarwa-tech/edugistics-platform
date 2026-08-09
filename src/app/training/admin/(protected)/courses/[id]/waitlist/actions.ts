@@ -1,13 +1,16 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import type { Prisma } from '@prisma/client'
 
 import { formatCourseDateLong, formatCourseTimeRange } from '@/domain/training/format'
+import { formatPromoDiscountLabel } from '@/domain/training/promo-code'
 import { DELIVERY_METHOD_LABELS } from '@/domain/training/schema'
 import { ADMIN_ACTOR } from '@/lib/training/audit-log'
 import { requireAdminSession } from '@/lib/training/auth/require-admin'
 import { sendPromotedEmail } from '@/lib/training/email/send-registration-email'
 import { prisma } from '@/lib/training/prisma'
+import { validatePromoCodeForCourse } from '@/lib/training/promo-code-validation'
 
 export type ActionResult<T = undefined> =
   | { success: true; data: T }
@@ -18,7 +21,10 @@ export type ActionResult<T = undefined> =
  * unless `override` is set, in which case the override itself is what gets
  * audited alongside the promotion — see the spec's "log every override" rule.
  */
-export async function promoteRegistrationAction(registrationId: string, override = false): Promise<ActionResult> {
+export async function promoteRegistrationAction(
+  registrationId: string,
+  override = false,
+): Promise<ActionResult<{ discountLost: boolean }>> {
   await requireAdminSession()
 
   const outcome = await prisma.$transaction(async (tx) => {
@@ -44,15 +50,47 @@ export async function promoteRegistrationAction(registrationId: string, override
     const before = { status: registration.status, waitlistPosition: registration.waitlistPosition }
     const promotedAt = new Date()
 
+    const updateData: Prisma.RegistrationUncheckedUpdateInput = {
+      status: 'CONFIRMED',
+      promotedAt,
+      waitlistPosition: null,
+      emailType: 'PROMOTED',
+      emailStatus: 'PENDING',
+    }
+
+    // Re-validate the promo code at the moment of promotion — the moment a
+    // use is actually about to be consumed, since usage counting only ever
+    // counts CONFIRMED rows. Locks the PromoCode row (same order as the
+    // public submission transaction: Course, then PromoCode) so this can't
+    // race a simultaneous registration for the code's final use.
+    let discountLost = false
+    if (registration.promoCodeId && registration.promoCodeSnapshot) {
+      const validation = await validatePromoCodeForCourse({
+        db: tx,
+        code: registration.promoCodeSnapshot,
+        course,
+        now: promotedAt,
+        lockRow: true,
+      })
+      if (validation.ok) {
+        // Still valid and has capacity — the snapshot stands untouched, and
+        // the use is consumed the instant status flips to CONFIRMED below.
+      } else {
+        discountLost = true
+        updateData.promoCodeId = null
+        updateData.promoCodeSnapshot = null
+        updateData.discountTypeSnapshot = null
+        updateData.discountValueSnapshot = null
+        updateData.discountAmount = null
+        updateData.originalFee = null
+        updateData.finalFee = null
+        updateData.promoAppliedAt = null
+      }
+    }
+
     const updated = await tx.registration.update({
       where: { id: registration.id },
-      data: {
-        status: 'CONFIRMED',
-        promotedAt,
-        waitlistPosition: null,
-        emailType: 'PROMOTED',
-        emailStatus: 'PENDING',
-      },
+      data: updateData,
     })
 
     const remaining = await tx.registration.findMany({
@@ -76,11 +114,11 @@ export async function promoteRegistrationAction(registrationId: string, override
         entityType: 'Registration',
         entityId: registration.id,
         beforeJson: before,
-        afterJson: { status: 'CONFIRMED', promotedAt: promotedAt.toISOString() },
+        afterJson: { status: 'CONFIRMED', promotedAt: promotedAt.toISOString(), discountLost },
       },
     })
 
-    return { kind: 'promoted' as const, registration: updated, teacher: registration.teacher, course }
+    return { kind: 'promoted' as const, registration: updated, teacher: registration.teacher, course, discountLost }
   })
 
   if (outcome.kind === 'not-found') return { success: false, error: 'Registration not found.' }
@@ -93,7 +131,16 @@ export async function promoteRegistrationAction(registrationId: string, override
     }
   }
 
-  const { registration, teacher, course } = outcome
+  const { registration, teacher, course, discountLost } = outcome
+
+  const promo = registration.promoCodeSnapshot
+    ? {
+        code: registration.promoCodeSnapshot,
+        discountLabel: formatPromoDiscountLabel(registration.discountTypeSnapshot!, Number(registration.discountValueSnapshot), course.currency),
+        discountAmount: Number(registration.discountAmount),
+        originalFee: Number(registration.originalFee),
+      }
+    : null
 
   try {
     await sendPromotedEmail(teacher.emailOriginal, {
@@ -104,9 +151,10 @@ export async function promoteRegistrationAction(registrationId: string, override
       deliveryMethodLabel: DELIVERY_METHOD_LABELS[course.deliveryMethod],
       location: course.location,
       joiningInstructions: course.joiningInstructions,
-      feeAmount: Number(course.feeAmount),
+      feeAmount: registration.finalFee != null ? Number(registration.finalFee) : Number(course.feeAmount),
       currency: course.currency,
       reference: registration.reference,
+      promo,
     })
     await prisma.registration.update({
       where: { id: registration.id },
@@ -122,5 +170,5 @@ export async function promoteRegistrationAction(registrationId: string, override
   revalidatePath(`/training/admin/courses/${course.id}/waitlist`)
   revalidatePath('/training/admin/registrations')
   revalidatePath('/training/admin/courses')
-  return { success: true, data: undefined }
+  return { success: true, data: { discountLost } }
 }

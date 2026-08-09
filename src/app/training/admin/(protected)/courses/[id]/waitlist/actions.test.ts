@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Prisma } from '@prisma/client'
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/training/auth/require-admin', () => ({ requireAdminSession: vi.fn().mockResolvedValue(undefined) }))
@@ -18,6 +19,28 @@ const MARKER = 'promote-action-test'
 let courseId: string
 const teacherIds: string[] = []
 const registrationIds: string[] = []
+const promoCodeIds: string[] = []
+
+let codeCounter = 0
+function randomCode(): string {
+  codeCounter += 1
+  return `PROMOTETEST${Date.now().toString(36)}${codeCounter}`.toUpperCase().replace(/[^A-Z0-9]/g, '')
+}
+
+async function makePromoCode(overrides: Partial<Parameters<typeof prisma.promoCode.create>[0]['data']> = {}) {
+  const promoCode = await prisma.promoCode.create({
+    data: {
+      code: randomCode(),
+      description: MARKER,
+      discountType: 'PERCENTAGE',
+      discountValue: 10,
+      appliesToAllCourses: true,
+      ...overrides,
+    },
+  })
+  promoCodeIds.push(promoCode.id)
+  return promoCode
+}
 
 async function makeTeacher(index: number) {
   const teacher = await prisma.teacher.create({
@@ -40,7 +63,12 @@ async function makeTeacher(index: number) {
   return teacher
 }
 
-async function makeRegistration(teacherId: string, status: 'CONFIRMED' | 'WAITLISTED', waitlistPosition: number | null) {
+async function makeRegistration(
+  teacherId: string,
+  status: 'CONFIRMED' | 'WAITLISTED',
+  waitlistPosition: number | null,
+  overrides: Partial<Prisma.RegistrationUncheckedCreateInput> = {},
+) {
   const registration = await prisma.registration.create({
     data: {
       reference: `${MARKER}-${teacherId}`,
@@ -53,6 +81,7 @@ async function makeRegistration(teacherId: string, status: 'CONFIRMED' | 'WAITLI
       status,
       waitlistPosition,
       emailType: status,
+      ...overrides,
     },
   })
   registrationIds.push(registration.id)
@@ -89,6 +118,7 @@ afterAll(async () => {
   await prisma.registration.deleteMany({ where: { id: { in: registrationIds } } })
   await prisma.teacher.deleteMany({ where: { id: { in: teacherIds } } })
   await prisma.course.deleteMany({ where: { slug: { startsWith: MARKER } } })
+  await prisma.promoCode.deleteMany({ where: { id: { in: promoCodeIds } } })
   await prisma.$disconnect()
 })
 
@@ -139,5 +169,79 @@ describe('promoteRegistrationAction', () => {
       where: { entityId: regB.id, action: 'REGISTRATION_PROMOTED_OVERRIDE' },
     })
     expect(auditEntry).not.toBeNull()
+  }, 20_000)
+
+  it('promoting a waitlisted registration consumes the use when the code is still valid', async () => {
+    await prisma.course.update({ where: { id: courseId }, data: { maxCapacity: 5, feeAmount: 1000 } })
+    const promo = await makePromoCode({ discountType: 'PERCENTAGE', discountValue: 10 })
+    const teacher = await makeTeacher(6)
+    const reg = await makeRegistration(teacher.id, 'WAITLISTED', 1, {
+      promoCodeId: promo.id,
+      promoCodeSnapshot: promo.code,
+      discountTypeSnapshot: 'PERCENTAGE',
+      discountValueSnapshot: 10,
+      discountAmount: 100,
+      originalFee: 1000,
+      finalFee: 900,
+      promoAppliedAt: new Date(),
+    })
+
+    const result = await promoteRegistrationAction(reg.id)
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.discountLost).toBe(false)
+
+    const promoted = await prisma.registration.findUniqueOrThrow({ where: { id: reg.id } })
+    expect(promoted.status).toBe('CONFIRMED')
+    // The snapshot stands — untouched by promotion.
+    expect(promoted.promoCodeSnapshot).toBe(promo.code)
+    expect(Number(promoted.finalFee)).toBe(900)
+
+    // The use is now consumed — usage counting only ever counts CONFIRMED rows.
+    const confirmedUses = await prisma.registration.count({ where: { promoCodeId: promo.id, status: 'CONFIRMED' } })
+    expect(confirmedUses).toBe(1)
+
+    expect(sendPromotedEmail).toHaveBeenCalledWith(
+      teacher.emailOriginal,
+      expect.objectContaining({ feeAmount: 900, promo: expect.objectContaining({ code: promo.code }) }),
+    )
+  }, 20_000)
+
+  it('promoting when the code is no longer valid proceeds at full price and clears the snapshot', async () => {
+    await prisma.course.update({ where: { id: courseId }, data: { maxCapacity: 5, feeAmount: 1000 } })
+    const promo = await makePromoCode({ discountType: 'PERCENTAGE', discountValue: 10 })
+    // Invalidate the code before promotion — archived, so re-validation fails.
+    await prisma.promoCode.update({ where: { id: promo.id }, data: { archivedAt: new Date() } })
+
+    const teacher = await makeTeacher(7)
+    const reg = await makeRegistration(teacher.id, 'WAITLISTED', 1, {
+      promoCodeId: promo.id,
+      promoCodeSnapshot: promo.code,
+      discountTypeSnapshot: 'PERCENTAGE',
+      discountValueSnapshot: 10,
+      discountAmount: 100,
+      originalFee: 1000,
+      finalFee: 900,
+      promoAppliedAt: new Date(),
+    })
+
+    const result = await promoteRegistrationAction(reg.id)
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.discountLost).toBe(true)
+
+    const promoted = await prisma.registration.findUniqueOrThrow({ where: { id: reg.id } })
+    expect(promoted.status).toBe('CONFIRMED')
+    expect(promoted.promoCodeId).toBeNull()
+    expect(promoted.promoCodeSnapshot).toBeNull()
+    expect(promoted.discountTypeSnapshot).toBeNull()
+    expect(promoted.discountValueSnapshot).toBeNull()
+    expect(promoted.discountAmount).toBeNull()
+    expect(promoted.originalFee).toBeNull()
+    expect(promoted.finalFee).toBeNull()
+    expect(promoted.promoAppliedAt).toBeNull()
+
+    expect(sendPromotedEmail).toHaveBeenCalledWith(
+      teacher.emailOriginal,
+      expect.objectContaining({ feeAmount: 1000, promo: null }),
+    )
   }, 20_000)
 })

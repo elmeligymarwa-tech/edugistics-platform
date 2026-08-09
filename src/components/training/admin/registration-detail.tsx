@@ -13,7 +13,7 @@ import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { AdminEditRegistrationValues } from '@/domain/training/registration-schema'
-import { formatAdminTimestamp } from '@/domain/training/format'
+import { formatAdminTimestamp, formatCourseFee } from '@/domain/training/format'
 import type { RegistrationDetail as RegistrationDetailData } from '@/lib/training/registrations'
 import type { CommunicationHistoryItem } from '@/lib/training/email/campaign-analytics'
 import { updateRegistrationAction } from '@/app/training/admin/(protected)/registrations/actions'
@@ -111,6 +111,15 @@ export function RegistrationDetailView({
           )}
           {detail.promotedAt && <DetailItem label="Promoted" value={formatAdminTimestamp(detail.promotedAt)} />}
           {detail.cancelledAt && <DetailItem label="Cancelled" value={formatAdminTimestamp(detail.cancelledAt)} />}
+          {detail.promoCodeSnapshot && (
+            <>
+              <DetailItem label="Promo code" value={`${detail.promoCodeSnapshot} (${detail.discountLabel})`} />
+              <DetailItem
+                label="Fee"
+                value={`${formatCourseFee(detail.originalFee!, detail.currency)} → ${formatCourseFee(detail.finalFee!, detail.currency)}`}
+              />
+            </>
+          )}
           {detail.emailError && <DetailItem label="Last email error" value={detail.emailError} className="col-span-2 sm:col-span-3" />}
         </CardContent>
       </Card>
