@@ -24,6 +24,9 @@ export default async function TrainingAdminProtectedLayout({ children }: { child
           <Link href="/training/admin/registrations" className="text-sm text-muted-foreground hover:text-foreground">
             Registrations
           </Link>
+          <Link href="/training/admin/promo-codes" className="text-sm text-muted-foreground hover:text-foreground">
+            Promo Codes
+          </Link>
         </nav>
         <TrainingAdminSignOutButton />
       </header>

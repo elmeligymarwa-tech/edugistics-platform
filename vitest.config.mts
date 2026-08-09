@@ -17,5 +17,8 @@ export default defineConfig({
   test: {
     environment: 'node',
     setupFiles: ['./vitest.setup.ts'],
+    // The remote Supabase database this project's tests run against adds enough
+    // round-trip latency that a multi-query action test can exceed Vitest's 5s default.
+    testTimeout: 20000,
   },
 })

@@ -48,6 +48,11 @@ enum EmailType {
   PROMOTED
 }
 
+enum PromoCodeDiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
 model Course {
   id                   String         @id @default(cuid())
   name                 String
@@ -75,7 +80,8 @@ model Course {
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
 
-  registrations Registration[]
+  registrations    Registration[]
+  promoCodeCourses PromoCodeCourse[]
 
   @@index([isActive])
   @@index([category])
@@ -187,4 +193,52 @@ model AuditLog {
 
   @@index([entityType, entityId])
   @@index([createdAt])
+}
+
+// Uniqueness of `code` is enforced only among non-archived rows — a code
+// value can be reused once its original row is archived, per spec. Prisma's
+// schema DSL can't express a partial unique index, so `code` is NOT marked
+// @unique here; the partial unique index is added by hand in this model's
+// migration.sql (CREATE UNIQUE INDEX ... WHERE "archivedAt" IS NULL), and
+// application code performs its own non-archived uniqueness check before
+// writing, backed by that index as a race-condition safety net. Never hard
+// delete a row here — archive via archivedAt so historical registrations
+// (once Phase B references promo codes) can always resolve it.
+model PromoCode {
+  id                  String                @id @default(cuid())
+  code                String
+  description         String
+  discountType        PromoCodeDiscountType
+  discountValue       Decimal               @db.Decimal(10, 2)
+  currency            String                @default("EGP")
+  appliesToAllCourses Boolean               @default(false)
+  startsAt            DateTime?             @db.Timestamptz
+  expiresAt           DateTime?             @db.Timestamptz
+  maxTotalUses        Int?
+  maxUsesPerTeacher   Int                   @default(1)
+  isPaused            Boolean               @default(false)
+  archivedAt          DateTime?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  courses PromoCodeCourse[]
+
+  @@index([code])
+  @@index([archivedAt])
+  @@index([startsAt])
+  @@index([expiresAt])
+}
+
+model PromoCodeCourse {
+  id          String   @id @default(cuid())
+  promoCodeId String
+  courseId    String
+  createdAt   DateTime @default(now())
+
+  promoCode PromoCode @relation(fields: [promoCodeId], references: [id])
+  course    Course    @relation(fields: [courseId], references: [id])
+
+  @@unique([promoCodeId, courseId])
+  @@index([promoCodeId])
+  @@index([courseId])
 }

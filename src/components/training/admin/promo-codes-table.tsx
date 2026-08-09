@@ -1,0 +1,137 @@
+'use client'
+
+import { useMemo } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
+
+import { Button } from '@/components/ui/button'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { formatAdminTimestamp } from '@/domain/training/format'
+import { PROMO_CODE_PAGE_SIZE } from '@/domain/training/promo-code'
+import type { PromoCodeListItem } from '@/lib/training/promo-codes'
+import type { CourseOption } from './promo-code-course-multi-select'
+import { ArchivePromoCodeDialog } from './archive-promo-code-dialog'
+import { PromoCodeFormDialog } from './promo-code-form-dialog'
+import { PromoCodePauseToggle } from './promo-code-pause-toggle'
+import { PromoCodeStatusBadge } from './promo-code-status-badge'
+
+const columnHelper = createColumnHelper<PromoCodeListItem>()
+
+function formatDiscount(row: PromoCodeListItem): string {
+  return row.discountType === 'PERCENTAGE' ? `${row.discountValue}%` : `${row.currency} ${row.discountValue}`
+}
+
+function formatUses(row: PromoCodeListItem): string {
+  return row.maxTotalUses == null ? '—' : `${row.useCount} / ${row.maxTotalUses}`
+}
+
+function buildColumns(courses: CourseOption[]) {
+  return [
+    columnHelper.accessor('code', { header: 'Code', cell: (info) => <span className="font-medium text-foreground">{info.getValue()}</span> }),
+    columnHelper.display({ id: 'discount', header: 'Discount', cell: (info) => formatDiscount(info.row.original) }),
+    columnHelper.accessor('appliesToLabel', { header: 'Applies to' }),
+    columnHelper.display({ id: 'uses', header: 'Uses', cell: (info) => formatUses(info.row.original) }),
+    columnHelper.accessor('expiresAt', {
+      header: 'Expiry',
+      cell: (info) => (info.getValue() ? formatAdminTimestamp(info.getValue()!) : '—'),
+    }),
+    columnHelper.accessor('status', { header: 'Status', cell: (info) => <PromoCodeStatusBadge status={info.getValue()} /> }),
+    columnHelper.display({
+      id: 'pause',
+      header: 'Active',
+      cell: (info) => (
+        <PromoCodePauseToggle
+          promoCodeId={info.row.original.id}
+          isPaused={info.row.original.isPaused}
+          disabled={Boolean(info.row.original.archivedAt)}
+        />
+      ),
+    }),
+    columnHelper.display({
+      id: 'actions',
+      header: '',
+      cell: (info) => (
+        <div className="flex items-center justify-end gap-1">
+          <PromoCodeFormDialog promoCode={info.row.original} courses={courses} />
+          {!info.row.original.archivedAt && (
+            <ArchivePromoCodeDialog promoCodeId={info.row.original.id} code={info.row.original.code} />
+          )}
+        </div>
+      ),
+    }),
+  ]
+}
+
+export function PromoCodesTable({
+  rows,
+  totalCount,
+  page,
+  courses,
+}: {
+  rows: PromoCodeListItem[]
+  totalCount: number
+  page: number
+  courses: CourseOption[]
+}) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  const columns = useMemo(() => buildColumns(courses), [courses])
+  const table = useReactTable({ data: rows, columns, getCoreRowModel: getCoreRowModel() })
+  const headerGroups = useMemo(() => table.getHeaderGroups(), [table])
+
+  function goToPage(nextPage: number) {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('page', String(nextPage + 1))
+    router.push(`${pathname}?${params.toString()}`)
+  }
+
+  if (rows.length === 0) {
+    return <p className="text-sm text-muted-foreground">No promo codes match these filters.</p>
+  }
+
+  const rangeStart = totalCount === 0 ? 0 : page * PROMO_CODE_PAGE_SIZE + 1
+  const rangeEnd = Math.min(totalCount, (page + 1) * PROMO_CODE_PAGE_SIZE)
+
+  return (
+    <div className="flex flex-col gap-3">
+      <Table className="data-table">
+        <TableHeader>
+          {headerGroups.map((headerGroup) => (
+            <TableRow key={headerGroup.id}>
+              {headerGroup.headers.map((header) => (
+                <TableHead key={header.id}>
+                  {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                </TableHead>
+              ))}
+            </TableRow>
+          ))}
+        </TableHeader>
+        <TableBody>
+          {table.getRowModel().rows.map((row) => (
+            <TableRow key={row.id}>
+              {row.getVisibleCells().map((cell) => (
+                <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Showing {rangeStart}–{rangeEnd} of {totalCount}
+        </p>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => goToPage(page - 1)} disabled={page <= 0}>
+            <ChevronLeft /> Previous
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => goToPage(page + 1)} disabled={rangeEnd >= totalCount}>
+            Next <ChevronRight />
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
