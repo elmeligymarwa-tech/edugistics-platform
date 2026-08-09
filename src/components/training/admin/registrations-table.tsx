@@ -6,16 +6,69 @@ import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatAdminTimestamp } from '@/domain/training/format'
+import { isRegistrationSelectable } from '@/domain/training/registration-selection'
 import { REGISTRATIONS_PAGE_SIZE } from '@/domain/training/schema'
 import type { RegistrationListItem } from '@/lib/training/registrations'
+import { useRegistrationsSelection } from './registrations-selection-context'
 import { EmailStatusBadge, RegistrationStatusBadge } from './registration-badges'
 import { RegistrationRowActions } from './registration-row-actions'
 
 const columnHelper = createColumnHelper<RegistrationListItem>()
 
+function RowCheckbox({ row }: { row: RegistrationListItem }) {
+  const selection = useRegistrationsSelection()
+  const selectable = isRegistrationSelectable(row.status, selection.includeWaitlisted)
+  const checked = selectable && selection.isSelected(row.id)
+
+  const checkbox = (
+    <Checkbox
+      aria-label={`Select ${row.fullName}`}
+      checked={checked}
+      disabled={!selectable}
+      onCheckedChange={() => selection.toggleRow(row.id, selectable)}
+    />
+  )
+
+  if (selectable) return checkbox
+
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span className="inline-flex" />}>{checkbox}</TooltipTrigger>
+      <TooltipContent>
+        {row.status === 'CANCELLED'
+          ? 'Cancelled registrations cannot be selected.'
+          : 'Turn on "Include waitlisted" to select waitlisted registrations.'}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+function HeaderCheckbox({ rows }: { rows: RegistrationListItem[] }) {
+  const selection = useRegistrationsSelection()
+  const selectableIds = rows.filter((row) => isRegistrationSelectable(row.status, selection.includeWaitlisted)).map((row) => row.id)
+  const allSelected = selection.areAllVisibleSelected(selectableIds)
+
+  if (selectableIds.length === 0) return null
+
+  return (
+    <Checkbox
+      aria-label="Select all visible rows"
+      checked={allSelected}
+      onCheckedChange={() => (allSelected ? selection.deselectVisible(selectableIds) : selection.selectVisible(selectableIds))}
+    />
+  )
+}
+
 const registrationColumns = [
+  columnHelper.display({
+    id: 'select',
+    header: (info) => <HeaderCheckbox rows={info.table.getRowModel().rows.map((row) => row.original)} />,
+    cell: (info) => <RowCheckbox row={info.row.original} />,
+  }),
   columnHelper.accessor('registeredAt', {
     header: 'Registered',
     cell: (info) => formatAdminTimestamp(info.getValue()),

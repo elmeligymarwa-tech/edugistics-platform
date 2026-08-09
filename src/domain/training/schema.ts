@@ -18,6 +18,16 @@ export type CourseCategory = z.infer<typeof CourseCategory>
 export const DeliveryMethod = z.enum(['ONLINE', 'IN_PERSON', 'HYBRID'])
 export type DeliveryMethod = z.infer<typeof DeliveryMethod>
 
+export const CampaignEmailType = z.enum(['REMINDER', 'ZOOM_LINK', 'UPDATE', 'CUSTOM'])
+export type CampaignEmailType = z.infer<typeof CampaignEmailType>
+
+export const CAMPAIGN_EMAIL_TYPE_LABELS: Record<CampaignEmailType, string> = {
+  REMINDER: 'Training Reminder',
+  ZOOM_LINK: 'Zoom Link',
+  UPDATE: 'Training Update',
+  CUSTOM: 'Custom Email',
+}
+
 /** Server and client both need this — the server to paginate the query, the client table to compute page count. Kept outside src/lib/training (marked 'server-only') so the client table component can import it directly. */
 export const REGISTRATIONS_PAGE_SIZE = 50
 

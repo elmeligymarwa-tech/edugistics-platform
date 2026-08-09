@@ -9,6 +9,8 @@ import {
 } from '@/lib/training/registrations'
 import { RegistrationsByCourse } from '@/components/training/admin/registrations-by-course'
 import { RegistrationsFilters } from '@/components/training/admin/registrations-filters'
+import { RegistrationsSelectionBar } from '@/components/training/admin/registrations-selection-bar'
+import { RegistrationsSelectionProvider } from '@/components/training/admin/registrations-selection-context'
 import { RegistrationsTable } from '@/components/training/admin/registrations-table'
 import { RegistrationsViewToggle, type RegistrationsView } from '@/components/training/admin/registrations-view-toggle'
 
@@ -49,15 +51,18 @@ export default async function TrainingAdminRegistrationsPage({
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-medium text-heading">Registrations</h1>
       <Suspense>
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <RegistrationsFilters courseOptions={courseOptions} />
-          <RegistrationsViewToggle view={view} />
-        </div>
-        {view === 'all' && tableData ? (
-          <RegistrationsTable rows={tableData.rows} totalCount={tableData.totalCount} page={page} />
-        ) : (
-          <RegistrationsByCourse groups={groups ?? []} />
-        )}
+        <RegistrationsSelectionProvider>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <RegistrationsFilters courseOptions={courseOptions} />
+            <RegistrationsViewToggle view={view} />
+          </div>
+          {view === 'all' && tableData ? (
+            <RegistrationsTable rows={tableData.rows} totalCount={tableData.totalCount} page={page} />
+          ) : (
+            <RegistrationsByCourse groups={groups ?? []} />
+          )}
+          <RegistrationsSelectionBar />
+        </RegistrationsSelectionProvider>
       </Suspense>
     </div>
   )
