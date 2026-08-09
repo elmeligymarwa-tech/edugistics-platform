@@ -53,6 +53,13 @@ enum PromoCodeDiscountType {
   FIXED_AMOUNT
 }
 
+enum CampaignEmailType {
+  REMINDER
+  ZOOM_LINK
+  UPDATE
+  CUSTOM
+}
+
 model Course {
   id                   String         @id @default(cuid())
   name                 String
@@ -77,14 +84,67 @@ model Course {
   isActive             Boolean        @default(false)
   isFeatured           Boolean        @default(false)
   archivedAt           DateTime?
+  // Communication fields — used when sending reminders and joining links to
+  // registered teachers (Phase B). Never selected into any public/client-facing
+  // course shape; see listPublicCourses in src/lib/training/public-courses.ts.
+  zoomLink             String?
+  zoomMeetingId        String?
+  zoomPasscode         String?
+  reminderSubject      String?
+  reminderMessage      String?
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
 
   registrations    Registration[]
   promoCodeCourses PromoCodeCourse[]
+  emailCampaigns   EmailCampaign[]
 
   @@index([isActive])
   @@index([category])
+}
+
+model EmailCampaign {
+  id             String            @id @default(cuid())
+  courseId       String?
+  subject        String
+  bodyTemplate   String
+  emailType      CampaignEmailType
+  createdBy      String
+  recipientCount Int               @default(0)
+  sentCount      Int               @default(0)
+  failedCount    Int               @default(0)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  course     Course?                  @relation(fields: [courseId], references: [id])
+  recipients EmailCampaignRecipient[]
+
+  @@index([courseId])
+}
+
+// Delivery audit trail — rows here and on EmailCampaign are append-only and
+// must never be hard deleted.
+model EmailCampaignRecipient {
+  id                String      @id @default(cuid())
+  campaignId        String
+  teacherId         String
+  registrationId    String
+  emailAddress      String
+  status            EmailStatus @default(PENDING)
+  sentAt            DateTime?
+  errorMessage      String?
+  providerMessageId String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  campaign     EmailCampaign @relation(fields: [campaignId], references: [id])
+  teacher      Teacher       @relation(fields: [teacherId], references: [id])
+  registration Registration  @relation(fields: [registrationId], references: [id])
+
+  @@index([campaignId])
+  @@index([teacherId])
+  @@index([registrationId])
+  @@index([status])
 }
 
 model Teacher {
@@ -108,8 +168,9 @@ model Teacher {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  school        School?        @relation(fields: [schoolId], references: [id])
-  registrations Registration[]
+  school                  School?                  @relation(fields: [schoolId], references: [id])
+  registrations           Registration[]
+  emailCampaignRecipients EmailCampaignRecipient[]
 
   @@index([schoolId])
 }
@@ -166,8 +227,9 @@ model Registration {
   createdAt              DateTime           @default(now())
   updatedAt              DateTime           @updatedAt
 
-  teacher Teacher @relation(fields: [teacherId], references: [id])
-  course  Course  @relation(fields: [courseId], references: [id])
+  teacher                 Teacher                  @relation(fields: [teacherId], references: [id])
+  course                  Course                   @relation(fields: [courseId], references: [id])
+  emailCampaignRecipients EmailCampaignRecipient[]
 
   // Database-level duplicate prevention: at most one registration row per
   // (course, teacher) pair, ever — including across cancellation. A teacher

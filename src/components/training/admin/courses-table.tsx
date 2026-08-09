@@ -12,6 +12,7 @@ import { ArchiveCourseDialog } from './archive-course-dialog'
 import { CourseActiveToggle } from './course-active-toggle'
 import { CourseFormDialog } from './course-form-dialog'
 import { CourseStatusBadge } from './course-status-badge'
+import { SendEmailToRegistrantsButton } from './send-email-to-registrants-button'
 
 function formatCourseDate(date: Date): string {
   return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(date)
@@ -66,6 +67,7 @@ export function CoursesTable({ courses }: { courses: AdminCourseListItem[] }) {
                     <ListOrdered />
                   </Button>
                 )}
+                <SendEmailToRegistrantsButton courseId={course.id} />
                 <CourseFormDialog course={course} />
                 {!course.archivedAt && <ArchiveCourseDialog courseId={course.id} courseName={course.name} />}
               </div>

@@ -59,6 +59,11 @@ interface CourseFormInputs {
   waitlistCapacity: string
   isActive: boolean
   isFeatured: boolean
+  zoomLink: string
+  zoomMeetingId: string
+  zoomPasscode: string
+  reminderSubject: string
+  reminderMessage: string
 }
 
 function toDefaultValues(course?: CourseDetail): CourseFormInputs {
@@ -84,6 +89,11 @@ function toDefaultValues(course?: CourseDetail): CourseFormInputs {
       waitlistCapacity: '',
       isActive: false,
       isFeatured: false,
+      zoomLink: '',
+      zoomMeetingId: '',
+      zoomPasscode: '',
+      reminderSubject: '',
+      reminderMessage: '',
     }
   }
 
@@ -108,6 +118,11 @@ function toDefaultValues(course?: CourseDetail): CourseFormInputs {
     waitlistCapacity: course.waitlistCapacity != null ? String(course.waitlistCapacity) : '',
     isActive: course.isActive,
     isFeatured: course.isFeatured,
+    zoomLink: course.zoomLink ?? '',
+    zoomMeetingId: course.zoomMeetingId ?? '',
+    zoomPasscode: course.zoomPasscode ?? '',
+    reminderSubject: course.reminderSubject ?? '',
+    reminderMessage: course.reminderMessage ?? '',
   }
 }
 
@@ -146,6 +161,11 @@ export function CourseForm({ course, onSuccess }: { course?: CourseDetail; onSuc
       registrationClosesAt: values.registrationClosesAt || null,
       maxCapacity: values.maxCapacity.trim() || null,
       waitlistCapacity: values.waitlistCapacity.trim() || null,
+      zoomLink: values.zoomLink.trim() || null,
+      zoomMeetingId: values.zoomMeetingId.trim() || null,
+      zoomPasscode: values.zoomPasscode.trim() || null,
+      reminderSubject: values.reminderSubject.trim() || null,
+      reminderMessage: values.reminderMessage.trim() || null,
     }
 
     const result = course ? await updateCourseAction(course.id, payload) : await createCourseAction(payload)
@@ -379,6 +399,50 @@ export function CourseForm({ course, onSuccess }: { course?: CourseDetail; onSuc
             />
           </div>
         </Field>
+
+        <div className="col-span-2 mt-2 rounded-lg border border-border bg-muted/30 p-4">
+          <h3 className="text-sm font-semibold">Communication</h3>
+          <FieldDescription className="mt-1">
+            These values are used when sending reminders and joining links to registered teachers. Leaving them
+            blank is fine — sensible defaults will apply.
+          </FieldDescription>
+
+          <div className="mt-4 grid grid-cols-2 gap-4">
+            <Field className="col-span-2">
+              <FieldLabel htmlFor="zoomLink">Zoom link (optional)</FieldLabel>
+              <Input id="zoomLink" {...register('zoomLink')} aria-invalid={Boolean(errors.zoomLink)} />
+              <FieldError>{errors.zoomLink?.message}</FieldError>
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="zoomMeetingId">Zoom meeting ID (optional)</FieldLabel>
+              <Input id="zoomMeetingId" {...register('zoomMeetingId')} aria-invalid={Boolean(errors.zoomMeetingId)} />
+              <FieldError>{errors.zoomMeetingId?.message}</FieldError>
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="zoomPasscode">Zoom passcode (optional)</FieldLabel>
+              <Input id="zoomPasscode" {...register('zoomPasscode')} aria-invalid={Boolean(errors.zoomPasscode)} />
+              <FieldError>{errors.zoomPasscode?.message}</FieldError>
+            </Field>
+
+            <Field className="col-span-2">
+              <FieldLabel htmlFor="reminderSubject">Reminder email subject (optional)</FieldLabel>
+              <Input
+                id="reminderSubject"
+                {...register('reminderSubject')}
+                aria-invalid={Boolean(errors.reminderSubject)}
+              />
+              <FieldError>{errors.reminderSubject?.message}</FieldError>
+            </Field>
+
+            <Field className="col-span-2">
+              <FieldLabel htmlFor="reminderMessage">Reminder email message (optional)</FieldLabel>
+              <Textarea id="reminderMessage" rows={4} {...register('reminderMessage')} />
+              <FieldError>{errors.reminderMessage?.message}</FieldError>
+            </Field>
+          </div>
+        </div>
       </div>
 
       <FieldError>{formError}</FieldError>

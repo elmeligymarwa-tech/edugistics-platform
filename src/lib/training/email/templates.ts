@@ -1,4 +1,5 @@
 import { formatCourseFee } from '@/domain/training/format'
+import { escapeHtml } from './html'
 
 export interface EmailContent {
   subject: string
@@ -18,22 +19,14 @@ export interface CourseEmailDetails {
   reference: string
 }
 
-const BRAND_NAVY = '#2b3a67'
-const BRAND_TEAL = '#3e8e96'
-const INK = '#17213d'
-const INK_SECONDARY = '#4c5570'
-const BORDER = '#e2e5ec'
+export const BRAND_NAVY = '#2b3a67'
+export const BRAND_TEAL = '#3e8e96'
+export const INK = '#17213d'
+export const INK_SECONDARY = '#4c5570'
+export const BORDER = '#e2e5ec'
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
-function renderLayout(preheader: string, bodyHtml: string): string {
+/** The one reusable Edugistics email shell — reused by every transactional and bulk-campaign email so they share the same branding. */
+export function renderLayout(preheader: string, bodyHtml: string): string {
   return `<!doctype html>
 <html lang="en">
   <head>

@@ -18,6 +18,16 @@ export type CourseCategory = z.infer<typeof CourseCategory>
 export const DeliveryMethod = z.enum(['ONLINE', 'IN_PERSON', 'HYBRID'])
 export type DeliveryMethod = z.infer<typeof DeliveryMethod>
 
+export const CampaignEmailType = z.enum(['REMINDER', 'ZOOM_LINK', 'UPDATE', 'CUSTOM'])
+export type CampaignEmailType = z.infer<typeof CampaignEmailType>
+
+export const CAMPAIGN_EMAIL_TYPE_LABELS: Record<CampaignEmailType, string> = {
+  REMINDER: 'Training Reminder',
+  ZOOM_LINK: 'Zoom Link',
+  UPDATE: 'Training Update',
+  CUSTOM: 'Custom Email',
+}
+
 /** Server and client both need this — the server to paginate the query, the client table to compute page count. Kept outside src/lib/training (marked 'server-only') so the client table component can import it directly. */
 export const REGISTRATIONS_PAGE_SIZE = 50
 
@@ -75,6 +85,14 @@ function optionalPositiveInt(message: string) {
   )
 }
 
+/** Blank strings, undefined and null all normalise to null. When present, must be a valid, trimmed URL. */
+function optionalUrl(message: string) {
+  return z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? null : typeof value === 'string' ? value.trim() : value),
+    z.url(message).nullable().optional().transform((value) => value ?? null),
+  )
+}
+
 const courseBaseSchema = z.object({
   name: z.string().trim().min(1, 'Name is required.'),
   shortDescription: z.string().trim().min(1, 'Short description is required.'),
@@ -99,6 +117,14 @@ const courseBaseSchema = z.object({
   waitlistCapacity: optionalPositiveInt('Waitlist capacity must be a positive number.'),
   isActive: z.boolean().default(false),
   isFeatured: z.boolean().default(false),
+  // Communication fields — used when sending reminders and joining links to
+  // registered teachers (Phase B). All optional; never required to save or
+  // activate a course.
+  zoomLink: optionalUrl('Enter a valid URL.'),
+  zoomMeetingId: optionalTrimmedString(),
+  zoomPasscode: optionalTrimmedString(),
+  reminderSubject: optionalTrimmedString(),
+  reminderMessage: optionalTrimmedString(),
 })
 
 /**

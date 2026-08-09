@@ -46,6 +46,11 @@ function toCourseData(values: CourseFormValues) {
     waitlistCapacity: values.waitlistCapacity ?? null,
     isActive: values.isActive,
     isFeatured: values.isFeatured,
+    zoomLink: values.zoomLink ?? null,
+    zoomMeetingId: values.zoomMeetingId ?? null,
+    zoomPasscode: values.zoomPasscode ?? null,
+    reminderSubject: values.reminderSubject ?? null,
+    reminderMessage: values.reminderMessage ?? null,
   }
 }
 

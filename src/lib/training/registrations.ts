@@ -4,6 +4,7 @@ import type { EmailStatus, Prisma, RegistrationStatus } from '@prisma/client'
 
 import { REGISTRATIONS_PAGE_SIZE } from '@/domain/training/schema'
 import { cairoDateTimeLocalToUtc } from '@/domain/training/timezone'
+import { getCampaignEmailSignalsForTeachers } from './email/campaign-analytics'
 import { prisma } from './prisma'
 
 export { REGISTRATIONS_PAGE_SIZE }
@@ -24,6 +25,7 @@ export interface RegistrationListItem {
   registeredAt: Date
   courseId: string
   courseName: string
+  teacherId: string
   fullName: string
   email: string
   phone: string
@@ -34,6 +36,9 @@ export interface RegistrationListItem {
   waitlistPosition: number | null
   marketingConsent: boolean
   emailStatus: EmailStatus
+  /** How many campaign emails this teacher has been sent (SENT status, across every campaign, not just this course) and when the most recent one went out — the "don't mail them again" signal. */
+  campaignEmailCount: number
+  lastCampaignEmailAt: Date | null
 }
 
 export interface CourseFilterOption {
@@ -72,6 +77,7 @@ export function buildRegistrationWhere(filters: RegistrationFilters): Prisma.Reg
 
 function toListItem(
   row: Prisma.RegistrationGetPayload<{ include: { teacher: true; course: { select: { name: true } } } }>,
+  campaignSignal: { count: number; lastSentAt: Date | null } | undefined,
 ): RegistrationListItem {
   return {
     id: row.id,
@@ -79,6 +85,7 @@ function toListItem(
     registeredAt: row.registeredAt,
     courseId: row.courseId,
     courseName: row.course.name,
+    teacherId: row.teacherId,
     fullName: row.teacher.fullName,
     email: row.teacher.emailOriginal,
     phone: row.teacher.phone,
@@ -89,10 +96,12 @@ function toListItem(
     waitlistPosition: row.waitlistPosition,
     marketingConsent: row.teacher.marketingConsent,
     emailStatus: row.emailStatus,
+    campaignEmailCount: campaignSignal?.count ?? 0,
+    lastCampaignEmailAt: campaignSignal?.lastSentAt ?? null,
   }
 }
 
-/** Page of registrations for the admin table — never fetches more than one page's worth of rows. */
+/** Page of registrations for the admin table — never fetches more than one page's worth of rows. The campaign-email signal is one batched query for the whole page's teacherIds, never per-row. */
 export async function listRegistrationsForAdmin(
   filters: RegistrationFilters,
   page: number,
@@ -109,7 +118,9 @@ export async function listRegistrationsForAdmin(
     prisma.registration.count({ where }),
   ])
 
-  return { rows: rows.map(toListItem), totalCount }
+  const signals = await getCampaignEmailSignalsForTeachers([...new Set(rows.map((row) => row.teacherId))])
+
+  return { rows: rows.map((row) => toListItem(row, signals.get(row.teacherId))), totalCount }
 }
 
 export interface RegistrationCourseGroup {
