@@ -15,6 +15,7 @@ const { prisma } = await import('@/lib/training/prisma')
 // Self-contained and self-cleaning, following the pattern in register-for-course.test.ts.
 const MARKER = 'registrations-actions-test'
 const courseIds: string[] = []
+const registrationIds: string[] = []
 const teacherEmails: string[] = []
 
 const courseDefaults = {
@@ -52,6 +53,7 @@ async function makeRegistration(marketingConsent: boolean) {
     ip: '127.0.0.1',
   })
   const registration = await prisma.registration.findUniqueOrThrow({ where: { reference: outcome.reference } })
+  registrationIds.push(registration.id)
   return { registration, email }
 }
 
@@ -62,7 +64,7 @@ afterAll(async () => {
   await prisma.teacher.deleteMany({ where: { emailNormalised: { in: teacherEmails } } })
   await prisma.course.deleteMany({ where: { id: { in: courseIds } } })
   await prisma.school.deleteMany({ where: { canonicalName: { startsWith: MARKER } } })
-  await prisma.auditLog.deleteMany({ where: { entityType: 'Registration', entityId: { in: courseIds } } })
+  await prisma.auditLog.deleteMany({ where: { entityType: 'Registration', entityId: { in: registrationIds } } })
   await prisma.$disconnect()
 })
 

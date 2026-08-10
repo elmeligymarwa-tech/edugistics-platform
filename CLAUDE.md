@@ -22,3 +22,13 @@
 Most training-app test files clean up the rows they create in `afterAll`, but that cleanup only runs if the process exits normally — an interrupted run (Ctrl+C, a crashed worker, a lost connection to the remote pooler) skips it and leaves real rows behind. `src/lib/training/analytics.test.ts` in particular seeds courses with `isActive:true, archivedAt:null` — the exact conditions the public `/training` page uses to decide what a visitor sees — so an interrupted run there can leave fixture courses publicly visible on the live site.
 
 **Never run the test suite while teachers or the public can reach edugistics.online/training.** Run it only when you can personally verify the site immediately afterwards, and never leave a run unattended or interrupt it partway through.
+
+`vitest.global-teardown.ts` sweeps every test-marked row from the database before the suite starts and again after every file finishes — a backstop for an interrupted run, or a per-test timeout whose in-flight write lands after that file's own `afterAll` already ran. It only ever deletes a row that matches one of the explicit markers below; it never uses a heuristic (no "contains test", no recency, no `isActive`) that could touch real data.
+
+**Convention every new test file that writes to the training database must follow, so the sweep actually catches it:**
+- Define `const MARKER = '<kebab-case-name>-test'` at the top of the file, unique to that file.
+- Use that `MARKER` as a literal prefix for every `Course.slug`, `School.canonicalName`, and `PromoCode.description` the file creates.
+- Use `@test.local` as the email domain for every `Teacher`/`Subscriber` the file creates.
+- Add the new `MARKER` string to the `FILE_MARKERS` array in `vitest.global-teardown.ts`.
+
+A test file that doesn't follow this convention can still clean up correctly on a normal run via its own `afterAll` — but its rows will not be caught by the global sweep if that run is interrupted or races a timeout, meaning a leak from that file could reach production and go unswept indefinitely.

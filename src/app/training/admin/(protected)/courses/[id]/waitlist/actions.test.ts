@@ -115,6 +115,11 @@ afterEach(() => {
 })
 
 afterAll(async () => {
+  // Promote/override writes a REGISTRATION_PROMOTED(_OVERRIDE) audit row per
+  // registration — its beforeJson/afterJson is just a status transition
+  // (no email, no marker text), so it must be deleted by entityId here;
+  // nothing outside this file can identify it once registrationIds below runs.
+  await prisma.auditLog.deleteMany({ where: { entityType: 'Registration', entityId: { in: registrationIds } } })
   await prisma.registration.deleteMany({ where: { id: { in: registrationIds } } })
   await prisma.teacher.deleteMany({ where: { id: { in: teacherIds } } })
   await prisma.course.deleteMany({ where: { slug: { startsWith: MARKER } } })
