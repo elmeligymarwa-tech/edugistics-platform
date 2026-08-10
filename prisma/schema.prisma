@@ -70,6 +70,41 @@ enum CampaignEmailType {
   CUSTOM
 }
 
+enum SubscriberStatus {
+  SUBSCRIBED
+  UNSUBSCRIBED
+}
+
+// How a Subscriber's current SUBSCRIBED state came to exist — set when a
+// row is created and again on any UNSUBSCRIBED -> SUBSCRIBED transition.
+// Left untouched when an already-SUBSCRIBED teacher simply reaffirms
+// consent (see ConsentEvent for that full history instead).
+enum ConsentSource {
+  TRAINING_REGISTRATION
+  ADMIN_MANUAL
+  MIGRATED
+}
+
+enum ConsentEventType {
+  SUBSCRIBED
+  UNSUBSCRIBED
+  RESUBSCRIBED
+}
+
+enum ConsentEventSource {
+  TRAINING_REGISTRATION
+  UNSUBSCRIBE_LINK
+  ADMIN_MANUAL
+  MIGRATED
+}
+
+// Who performed a manual status change on a Subscriber outside the normal
+// registration/unsubscribe-link flows. Nullable — null means the current
+// status was never manually overridden by an administrator.
+enum SubscriberStatusChangedBy {
+  ADMIN
+}
+
 model Course {
   id                   String         @id @default(cuid())
   name                 String
@@ -108,6 +143,8 @@ model Course {
   registrations    Registration[]
   promoCodeCourses PromoCodeCourse[]
   emailCampaigns   EmailCampaign[]
+  subscribers      Subscriber[]
+  consentEvents    ConsentEvent[]
 
   @@index([isActive])
   @@index([category])
@@ -171,6 +208,15 @@ model Teacher {
   subjectNormalised  String
   gradeOriginal      String
   gradeNormalised    String
+  // LEGACY — frozen as of the Subscriber/ConsentEvent model (Phase A of the
+  // mailing list feature). Never read this field to decide whether to send
+  // marketing email: it is silently overwritten to false whenever a
+  // consenting teacher re-registers with the checkbox left unticked, which
+  // Subscriber.status deliberately never does. Subscriber.status is the
+  // sole authority on marketing-email eligibility going forward. These two
+  // columns remain only because existing admin filters, the Excel export
+  // and the registration detail screen still read/write them; do not wire
+  // any new consumer to them.
   marketingConsent   Boolean   @default(false)
   marketingConsentAt DateTime?
   firstRegisteredAt  DateTime
@@ -181,6 +227,7 @@ model Teacher {
   school                  School?                  @relation(fields: [schoolId], references: [id])
   registrations           Registration[]
   emailCampaignRecipients EmailCampaignRecipient[]
+  subscriber              Subscriber?
 
   @@index([schoolId])
 }
@@ -333,4 +380,61 @@ model PromoCodeCourse {
   @@unique([promoCodeId, courseId])
   @@index([promoCodeId])
   @@index([courseId])
+}
+
+// Mailing list (Phase A): the sole authority on whether a teacher can be
+// sent marketing email. Never hard delete a row — unsubscribing changes
+// status only, so the row (and its unsubscribeToken) persists for the life
+// of the teacher. See the LEGACY note on Teacher.marketingConsent: that
+// field must never be consulted in place of this one.
+model Subscriber {
+  id                     String                     @id @default(cuid())
+  teacherId              String                     @unique
+  emailNormalised        String                     @unique
+  status                 SubscriberStatus
+  subscribedAt           DateTime                   @db.Timestamptz
+  unsubscribedAt         DateTime?                  @db.Timestamptz
+  consentSource          ConsentSource
+  consentCourseId        String?
+  consentWordingVersion  String
+  // Cryptographically random (>=32 bytes), URL-safe, never derived from
+  // email/teacherId/any sequential value — generated once at creation and
+  // kept for the life of the record. Holding a token unsubscribes only the
+  // one matching row.
+  unsubscribeToken       String                     @unique
+  lastMarketingEmailAt   DateTime?
+  marketingEmailsSent    Int                        @default(0)
+  statusChangedBy        SubscriberStatusChangedBy?
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
+
+  teacher       Teacher        @relation(fields: [teacherId], references: [id])
+  consentCourse Course?        @relation(fields: [consentCourseId], references: [id])
+  consentEvents ConsentEvent[]
+
+  @@index([status])
+  @@index([subscribedAt])
+  @@index([consentCourseId])
+}
+
+// Append-only audit trail of every consent change — evidence if a
+// teacher's consent is ever challenged. Application code must never
+// update or delete a row here.
+model ConsentEvent {
+  id             String             @id @default(cuid())
+  subscriberId   String
+  eventType      ConsentEventType
+  source         ConsentEventSource
+  courseId       String?
+  wordingVersion String?
+  ipHash         String?
+  occurredAt     DateTime           @db.Timestamptz
+  createdAt      DateTime           @default(now())
+
+  subscriber Subscriber @relation(fields: [subscriberId], references: [id])
+  course     Course?    @relation(fields: [courseId], references: [id])
+
+  @@index([subscriberId])
+  @@index([courseId])
+  @@index([occurredAt])
 }

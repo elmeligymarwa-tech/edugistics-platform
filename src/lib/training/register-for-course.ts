@@ -13,6 +13,7 @@ import { validatePromoCodeForCourse } from './promo-code-validation'
 import { generateRegistrationReference } from './reference'
 import { isCourseOpenForRegistration } from './registration-window'
 import { resolveSchool } from './school-matching'
+import { applyRegistrationConsent } from './subscribers'
 
 /** Carries the exact user-facing message from CLAUDE.md's server-side submission rules straight out of the transaction. */
 export class RegistrationRejectedError extends Error {}
@@ -198,6 +199,15 @@ export async function registerForCourse(input: RegisterInput): Promise<Registrat
             lastRegisteredAt: now,
           },
         })
+
+    await applyRegistrationConsent(tx, {
+      teacherId: teacher.id,
+      emailNormalised,
+      courseId: course.id,
+      marketingConsentTicked: input.marketingConsent,
+      now,
+      ipHash: sourceIpHash,
+    })
 
     let registration: Prisma.PromiseReturnType<typeof tx.registration.create> | undefined
     for (let attempt = 0; attempt < MAX_REFERENCE_ATTEMPTS; attempt += 1) {

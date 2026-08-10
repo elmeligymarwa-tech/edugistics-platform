@@ -9,6 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldDescription, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { CURRENT_CONSENT_WORDING } from '@/domain/training/consent-wording'
 import { formatCourseDateLong, formatCourseFee, formatCourseTimeRange } from '@/domain/training/format'
 import { formatPromoDiscountLabel, type PromoBreakdown } from '@/domain/training/promo-code'
 import type { PublicCourse } from '@/lib/training/public-courses'
@@ -408,18 +409,19 @@ export function RegistrationExperience({ courses }: { courses: PublicCourse[] })
           </div>
         )}
 
+        {/* Deliberately its own bordered block, separate from the privacy notice below — this is an optional marketing choice, never a condition of registering. */}
         <Controller
           name="marketingConsent"
           control={control}
           render={({ field }) => (
-            <label className="flex items-start gap-2.5 text-sm text-muted-foreground">
+            <label className="flex items-start gap-2.5 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
               <Checkbox
                 checked={field.value}
                 onCheckedChange={field.onChange}
                 disabled={!selectedCourseId}
                 className="mt-0.5"
               />
-              <span>I&apos;d like to receive occasional emails about future Edugistics training courses.</span>
+              <span>{CURRENT_CONSENT_WORDING}</span>
             </label>
           )}
         />

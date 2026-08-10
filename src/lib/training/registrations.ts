@@ -54,6 +54,12 @@ export function buildRegistrationWhere(filters: RegistrationFilters): Prisma.Reg
   if (filters.courseId) where.courseId = filters.courseId
   if (filters.status) where.status = filters.status
   if (filters.emailStatus) where.emailStatus = filters.emailStatus
+  // LEGACY filter — Teacher.marketingConsent is frozen as of the
+  // Subscriber/ConsentEvent model (see the LEGACY note on that column in
+  // schema.prisma) and must never be used to decide whether to send
+  // marketing email. This filter only narrows the admin registrations
+  // table/export view; the mailing list itself is governed solely by
+  // Subscriber.status.
   if (filters.marketingConsent !== undefined) where.teacher = { marketingConsent: filters.marketingConsent }
 
   if (filters.dateFrom || filters.dateTo) {

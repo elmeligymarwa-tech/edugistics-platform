@@ -94,6 +94,8 @@ afterEach(() => {
 
 afterAll(async () => {
   await prisma.registration.deleteMany({ where: { courseId: { in: courseIds } } })
+  await prisma.consentEvent.deleteMany({ where: { subscriber: { emailNormalised: { in: teacherEmails } } } })
+  await prisma.subscriber.deleteMany({ where: { emailNormalised: { in: teacherEmails } } })
   await prisma.teacher.deleteMany({ where: { emailNormalised: { in: teacherEmails } } })
   await prisma.course.deleteMany({ where: { id: { in: courseIds } } })
   await prisma.school.deleteMany({ where: { canonicalName: { startsWith: MARKER } } })
@@ -222,6 +224,130 @@ describe('registerForCourse', () => {
     const tickedRow = await prisma.registration.findUnique({ where: { reference: ticked.reference } })
     expect(tickedRow?.consentGiven).toBe(true)
     expect(tickedRow?.consentAt).not.toBeNull()
+  }, 20_000)
+})
+
+describe('registerForCourse — subscribers', () => {
+  it('creates a subscriber with the correct source, course and wording version when the box is ticked', async () => {
+    const course = await makeCourse({ maxCapacity: null })
+    const input = makeInput(course.id, { marketingConsent: true })
+
+    await registerForCourse(input)
+
+    const subscriber = await prisma.subscriber.findFirst({ where: { emailNormalised: input.email.toLowerCase() } })
+    expect(subscriber?.status).toBe('SUBSCRIBED')
+    expect(subscriber?.consentSource).toBe('TRAINING_REGISTRATION')
+    expect(subscriber?.consentCourseId).toBe(course.id)
+    expect(subscriber?.consentWordingVersion).toBe('v1')
+    expect(subscriber?.unsubscribeToken).toBeTruthy()
+  })
+
+  it('creates no subscriber when the box is unticked', async () => {
+    const course = await makeCourse({ maxCapacity: null })
+    const input = makeInput(course.id, { marketingConsent: false })
+
+    await registerForCourse(input)
+
+    const subscriber = await prisma.subscriber.findFirst({ where: { emailNormalised: input.email.toLowerCase() } })
+    expect(subscriber).toBeNull()
+  })
+
+  it('a second registration by the same email creates no second subscriber', async () => {
+    const courseA = await makeCourse({ maxCapacity: null })
+    const courseB = await makeCourse({ maxCapacity: null })
+    const input = makeInput(courseA.id, { marketingConsent: true })
+
+    await registerForCourse(input)
+    await registerForCourse({ ...input, courseId: courseB.id })
+
+    const subscribers = await prisma.subscriber.findMany({ where: { emailNormalised: input.email.toLowerCase() } })
+    expect(subscribers).toHaveLength(1)
+    // The subscriber's course/wording snapshot is refreshed to the most recent reaffirmation.
+    expect(subscribers[0]?.consentCourseId).toBe(courseB.id)
+  }, 20_000)
+
+  it('a subscribed teacher registering again with the box unticked stays subscribed', async () => {
+    const courseA = await makeCourse({ maxCapacity: null })
+    const courseB = await makeCourse({ maxCapacity: null })
+    const input = makeInput(courseA.id, { marketingConsent: true })
+
+    await registerForCourse(input)
+    await registerForCourse({ ...input, courseId: courseB.id, marketingConsent: false })
+
+    const subscriber = await prisma.subscriber.findFirst({ where: { emailNormalised: input.email.toLowerCase() } })
+    expect(subscriber?.status).toBe('SUBSCRIBED')
+  }, 20_000)
+
+  it('an unsubscribed teacher registering again with the box unticked stays unsubscribed', async () => {
+    const courseA = await makeCourse({ maxCapacity: null })
+    const courseB = await makeCourse({ maxCapacity: null })
+    const input = makeInput(courseA.id, { marketingConsent: true })
+    await registerForCourse(input)
+
+    await prisma.subscriber.update({
+      where: { emailNormalised: input.email.toLowerCase() },
+      data: { status: 'UNSUBSCRIBED', unsubscribedAt: new Date() },
+    })
+
+    await registerForCourse({ ...input, courseId: courseB.id, marketingConsent: false })
+
+    const subscriber = await prisma.subscriber.findFirst({ where: { emailNormalised: input.email.toLowerCase() } })
+    expect(subscriber?.status).toBe('UNSUBSCRIBED')
+  }, 20_000)
+
+  it('an unsubscribed teacher registering again with the box ticked is resubscribed and a RESUBSCRIBED event is written', async () => {
+    const courseA = await makeCourse({ maxCapacity: null })
+    const courseB = await makeCourse({ maxCapacity: null })
+    const input = makeInput(courseA.id, { marketingConsent: true })
+    await registerForCourse(input)
+
+    await prisma.subscriber.update({
+      where: { emailNormalised: input.email.toLowerCase() },
+      data: { status: 'UNSUBSCRIBED', unsubscribedAt: new Date() },
+    })
+
+    await registerForCourse({ ...input, courseId: courseB.id, marketingConsent: true })
+
+    const subscriber = await prisma.subscriber.findFirst({ where: { emailNormalised: input.email.toLowerCase() } })
+    expect(subscriber?.status).toBe('SUBSCRIBED')
+    expect(subscriber?.unsubscribedAt).toBeNull()
+
+    const events = await prisma.consentEvent.findMany({
+      where: { subscriberId: subscriber!.id },
+      orderBy: { occurredAt: 'asc' },
+    })
+    expect(events.map((e) => e.eventType)).toEqual(['SUBSCRIBED', 'RESUBSCRIBED'])
+  }, 20_000)
+
+  it('deduplicates across case variants of the same email', async () => {
+    const course = await makeCourse({ maxCapacity: null })
+    const courseB = await makeCourse({ maxCapacity: null })
+    const input = makeInput(course.id, { marketingConsent: true })
+    const upperEmail = input.email.toUpperCase()
+
+    await registerForCourse(input)
+    await registerForCourse({ ...input, email: upperEmail, courseId: courseB.id })
+
+    const subscribers = await prisma.subscriber.findMany({ where: { emailNormalised: input.email.toLowerCase() } })
+    expect(subscribers).toHaveLength(1)
+  }, 20_000)
+
+  it('every subscription writes a ConsentEvent, and events are appended rather than mutated', async () => {
+    const courseA = await makeCourse({ maxCapacity: null })
+    const courseB = await makeCourse({ maxCapacity: null })
+    const input = makeInput(courseA.id, { marketingConsent: true })
+
+    await registerForCourse(input)
+    const subscriber = await prisma.subscriber.findFirstOrThrow({ where: { emailNormalised: input.email.toLowerCase() } })
+    const firstEvent = await prisma.consentEvent.findFirstOrThrow({ where: { subscriberId: subscriber.id } })
+
+    await registerForCourse({ ...input, courseId: courseB.id, marketingConsent: true })
+
+    const events = await prisma.consentEvent.findMany({ where: { subscriberId: subscriber.id }, orderBy: { occurredAt: 'asc' } })
+    expect(events).toHaveLength(2)
+    // The first event survives untouched — never updated in place.
+    expect(events[0]).toEqual(firstEvent)
+    expect(events[1]?.courseId).toBe(courseB.id)
   }, 20_000)
 })
 
