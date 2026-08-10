@@ -119,8 +119,17 @@ export async function registerForCourse(input: RegisterInput): Promise<Registrat
         throw new RegistrationRejectedError(validation.message)
       }
 
+      // ALL_COURSES (the default) counts a teacher's uses of this code across
+      // every course; PER_COURSE scopes the same count to just this course,
+      // so using the code here doesn't stop the teacher using it again on a
+      // different course.
       const teacherUseCount = await tx.registration.count({
-        where: { promoCodeId: validation.promoCode.id, status: 'CONFIRMED', teacher: { emailNormalised } },
+        where: {
+          promoCodeId: validation.promoCode.id,
+          status: 'CONFIRMED',
+          teacher: { emailNormalised },
+          ...(validation.promoCode.maxUsesPerTeacherScope === 'PER_COURSE' ? { courseId: course.id } : {}),
+        },
       })
       if (teacherUseCount >= validation.promoCode.maxUsesPerTeacher) {
         throw new RegistrationRejectedError('This promo code has already been used with this email address.')

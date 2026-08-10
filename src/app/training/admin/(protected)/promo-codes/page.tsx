@@ -2,10 +2,11 @@ import { Suspense } from 'react'
 import type { Metadata } from 'next'
 
 import { listCourseFilterOptions } from '@/lib/training/registrations'
-import { listPromoCodesForAdmin, parsePromoCodeSearchParams } from '@/lib/training/promo-codes'
+import { getPromoCodeDashboardSummary, listPromoCodesForAdmin, parsePromoCodeSearchParams } from '@/lib/training/promo-codes'
 import { PromoCodeFormDialog } from '@/components/training/admin/promo-code-form-dialog'
 import { PromoCodesFilters } from '@/components/training/admin/promo-codes-filters'
 import { PromoCodesTable } from '@/components/training/admin/promo-codes-table'
+import { PromoDashboardSummary } from '@/components/training/admin/promo-dashboard-summary'
 
 export const metadata: Metadata = {
   title: 'Promo Codes — Edugistics Training Admin',
@@ -25,9 +26,10 @@ export default async function TrainingAdminPromoCodesPage({ searchParams }: { se
   const { filters, sortField, sortDir } = parsePromoCodeSearchParams(params)
   const page = Math.max(0, Number(params.page ?? '1') - 1)
 
-  const [{ rows, totalCount }, courses] = await Promise.all([
+  const [{ rows, totalCount }, courses, summary] = await Promise.all([
     listPromoCodesForAdmin(filters, page, sortField, sortDir),
     listCourseFilterOptions(),
+    getPromoCodeDashboardSummary(),
   ])
 
   return (
@@ -36,6 +38,7 @@ export default async function TrainingAdminPromoCodesPage({ searchParams }: { se
         <h1 className="text-2xl font-medium text-heading">Promo Codes</h1>
         <PromoCodeFormDialog courses={courses} />
       </div>
+      <PromoDashboardSummary summary={summary} currency="EGP" />
       <Suspense>
         <PromoCodesFilters />
         <PromoCodesTable rows={rows} totalCount={totalCount} page={page} courses={courses} />

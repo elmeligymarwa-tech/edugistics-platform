@@ -11,6 +11,28 @@ export const PROMO_CODE_DISCOUNT_TYPE_LABELS: Record<PromoCodeDiscountType, stri
   FIXED_AMOUNT: 'Fixed amount',
 }
 
+/**
+ * Scopes maxUsesPerTeacher (Phase C). ALL_COURSES (the default, and the
+ * only behaviour that existed before this phase) counts a teacher's
+ * CONFIRMED uses of a code across every course. PER_COURSE counts only
+ * within the specific course being registered for, so the same teacher can
+ * use the code once per course rather than once ever. Every code created
+ * before this phase keeps ALL_COURSES — the migration's column default —
+ * so existing behaviour is unchanged with no data migration needed.
+ */
+export const PromoCodeTeacherLimitScope = z.enum(['ALL_COURSES', 'PER_COURSE'])
+export type PromoCodeTeacherLimitScope = z.infer<typeof PromoCodeTeacherLimitScope>
+
+export const PROMO_CODE_TEACHER_LIMIT_SCOPE_LABELS: Record<PromoCodeTeacherLimitScope, string> = {
+  ALL_COURSES: 'Across all courses',
+  PER_COURSE: 'Per course',
+}
+
+export const PROMO_CODE_TEACHER_LIMIT_SCOPE_HELP: Record<PromoCodeTeacherLimitScope, string> = {
+  ALL_COURSES: 'A teacher can use this code once in total, no matter how many different courses they register for.',
+  PER_COURSE: 'A teacher can use this code once per course — using it on one course does not stop them using it again on a different course.',
+}
+
 /** Only letters A-Z and digits 0-9 once normalised — simple enough to type on a phone and read aloud on a webinar. */
 const PROMO_CODE_PATTERN = /^[A-Z0-9]+$/
 
@@ -191,4 +213,78 @@ export function promoCodeStatusRejectionMessage(status: Exclude<PromoCodeStatus,
     case 'EXHAUSTED':
       return 'This promo code has reached its usage limit.'
   }
+}
+
+// ---------------------------------------------------------------------------
+// Usage analytics (Phase C) — the single authoritative rule for every
+// totals figure shown on the promo codes list, the dashboard summary, a
+// code's detail view and the Excel export. Only CONFIRMED registrations
+// count towards totals — WAITLISTED holds no place yet, and CANCELLED
+// released its use back to the pool (see countPromoCodeUses above; this is
+// the same rule, extended to sum discountAmount/finalFee alongside the
+// count). Every figure is summed from the registration's own stored
+// snapshot (discountAmount, finalFee) — never recalculated from the promo
+// code's current settings — so editing or archiving a code afterwards can
+// never change a historical total.
+//
+// This function operates on an already-fetched list, for the single-code
+// detail view where every registration is fetched anyway for display. The
+// admin list, dashboard summary and export instead run the equivalent
+// aggregation as SQL (`prisma.registration.groupBy`/`aggregate` filtered to
+// `status: 'CONFIRMED'`) for efficiency across many codes at once — see
+// getPromoCodeUsageAggregates and getPromoCodeDashboardSummary in
+// src/lib/training/promo-codes.ts. Both express the identical rule; this
+// function is the rule's one written-out definition.
+// ---------------------------------------------------------------------------
+
+export interface PromoCodeUsageSummaryInput {
+  status: PromoCodeUsageStatus
+  discountAmount: number | null
+  finalFee: number | null
+}
+
+export interface PromoCodeUsageTotals {
+  totalUses: number
+  totalDiscountGiven: number
+  potentialRegistrationValue: number
+}
+
+export function summarisePromoCodeUsage(registrations: PromoCodeUsageSummaryInput[]): PromoCodeUsageTotals {
+  const confirmed = registrations.filter((registration) => registration.status === 'CONFIRMED')
+  return {
+    totalUses: confirmed.length,
+    totalDiscountGiven: roundToTwoDecimals(confirmed.reduce((sum, r) => sum + (r.discountAmount ?? 0), 0)),
+    potentialRegistrationValue: roundToTwoDecimals(confirmed.reduce((sum, r) => sum + (r.finalFee ?? 0), 0)),
+  }
+}
+
+export interface PromoCodeUsageRankingCandidate {
+  id: string
+  code: string
+  createdAt: Date
+}
+
+/**
+ * The single authoritative tie-break rule behind "most used promo code" and
+ * "highest value promo code" on the dashboard summary: strictly greater
+ * `candidateValue` wins; on an exact tie, the code created earlier wins (the
+ * first code to reach this figure); on a full tie, the alphabetically
+ * earlier code wins. Deterministic regardless of database row order, so the
+ * dashboard never flips between two equally-ranked codes on a re-render.
+ */
+export function isBetterPromoCodeRanking(
+  candidateValue: number,
+  candidate: PromoCodeUsageRankingCandidate,
+  currentValue: number,
+  current: PromoCodeUsageRankingCandidate,
+): boolean {
+  if (candidateValue !== currentValue) return candidateValue > currentValue
+  if (candidate.createdAt.getTime() !== current.createdAt.getTime()) return candidate.createdAt < current.createdAt
+  return candidate.code < current.code
+}
+
+/** maxTotalUses null means unlimited — no dash-worthy "remaining" concept, so null propagates through rather than a sentinel number. Never goes below zero even if usage briefly exceeds the limit (e.g. an admin lowering maxTotalUses after uses were already recorded). */
+export function remainingPromoCodeUses(maxTotalUses: number | null, totalUses: number): number | null {
+  if (maxTotalUses == null) return null
+  return Math.max(0, maxTotalUses - totalUses)
 }

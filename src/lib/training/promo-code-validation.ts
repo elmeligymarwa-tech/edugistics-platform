@@ -10,6 +10,7 @@ import {
   PROMO_CODE_INVALID_MESSAGE,
   promoCodeStatusRejectionMessage,
   type PromoCodeDiscountType,
+  type PromoCodeTeacherLimitScope,
 } from '@/domain/training/promo-code'
 import { prisma } from './prisma'
 
@@ -22,6 +23,7 @@ export interface ValidatedPromoCode {
   discountValue: number
   currency: string
   maxUsesPerTeacher: number
+  maxUsesPerTeacherScope: PromoCodeTeacherLimitScope
 }
 
 export type PromoCodeValidationResult =
@@ -121,6 +123,7 @@ export async function validatePromoCodeForCourse(params: ValidatePromoCodeParams
       discountValue,
       currency: promoCode.currency,
       maxUsesPerTeacher: promoCode.maxUsesPerTeacher,
+      maxUsesPerTeacherScope: promoCode.maxUsesPerTeacherScope,
     },
     originalFee,
     discountAmount,

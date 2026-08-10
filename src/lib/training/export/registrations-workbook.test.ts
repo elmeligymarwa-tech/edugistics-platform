@@ -9,6 +9,7 @@ import { buildRegistrationsWorkbook } from './registrations-workbook'
 const MARKER = 'export-workbook-test'
 let courseId: string
 let teacherIds: string[] = []
+let promoCodeId: string
 
 beforeAll(async () => {
   const course = await prisma.course.create({
@@ -57,6 +58,17 @@ beforeAll(async () => {
   )
   teacherIds = teachers.map((t) => t.id)
 
+  const promoCode = await prisma.promoCode.create({
+    data: {
+      code: `${MARKER.toUpperCase().replace(/-/g, '')}PROMO`,
+      description: MARKER,
+      discountType: 'PERCENTAGE',
+      discountValue: 20,
+      appliesToAllCourses: true,
+    },
+  })
+  promoCodeId = promoCode.id
+
   await prisma.registration.createMany({
     data: [
       {
@@ -65,11 +77,21 @@ beforeAll(async () => {
         courseId,
         courseNameSnapshot: course.name,
         courseDateSnapshot: course.courseDate,
-        courseFeeSnapshot: 0,
+        courseFeeSnapshot: 1000,
         courseCurrencySnapshot: 'EGP',
         status: 'CONFIRMED',
         emailType: 'CONFIRMED',
         emailStatus: 'SENT',
+        // The one registration that used a promo code — proves the export
+        // fills these columns in, while the other two (no code) stay blank.
+        promoCodeId: promoCode.id,
+        promoCodeSnapshot: promoCode.code,
+        discountTypeSnapshot: 'PERCENTAGE',
+        discountValueSnapshot: 20,
+        discountAmount: 200,
+        originalFee: 1000,
+        finalFee: 800,
+        promoAppliedAt: new Date(),
       },
       {
         reference: `${MARKER}-2`,
@@ -105,6 +127,7 @@ afterAll(async () => {
   await prisma.teacher.deleteMany({ where: { emailNormalised: { startsWith: MARKER } } })
   await prisma.course.deleteMany({ where: { slug: `${MARKER}-course` } })
   await prisma.school.deleteMany({ where: { nameKey: `${MARKER}-school` } })
+  await prisma.promoCode.deleteMany({ where: { id: promoCodeId } })
   await prisma.$disconnect()
 })
 
@@ -117,7 +140,7 @@ describe('buildRegistrationsWorkbook', () => {
     expect(rowCount).toBe(3)
 
     const sheetNames = workbook.worksheets.map((s) => s.name)
-    expect(sheetNames).toEqual(['Registrations', 'Teachers', 'Schools', 'Course Performance'])
+    expect(sheetNames).toEqual(['Registrations', 'Teachers', 'Schools', 'Course Performance', 'Promo Codes'])
 
     const registrationsSheet = workbook.getWorksheet('Registrations')!
     // Row 1 is the header; data starts at row 2.
@@ -133,5 +156,60 @@ describe('buildRegistrationsWorkbook', () => {
   it('respects an active status filter, matching the count reflected in the admin table', async () => {
     const { rowCount } = await buildRegistrationsWorkbook({ courseId, status: 'CONFIRMED' })
     expect(rowCount).toBe(1)
+  })
+
+  it('includes the promo columns on the Registrations sheet, blank where no code was used', async () => {
+    const { workbook } = await buildRegistrationsWorkbook({ courseId })
+    const sheet = workbook.getWorksheet('Registrations')!
+
+    const headerRow = sheet.getRow(1).values as unknown[]
+    const promoColIndex = headerRow.indexOf('Promo Code')
+    const originalFeeColIndex = headerRow.indexOf('Original Fee')
+    const discountAmountColIndex = headerRow.indexOf('Discount Amount')
+    const finalFeeColIndex = headerRow.indexOf('Final Fee')
+    expect(promoColIndex).toBeGreaterThan(-1)
+
+    // Row 2 (reference -1, i.e. teacher 0) used the promo code.
+    const promoRow = sheet.getRow(2)
+    expect(promoRow.getCell(promoColIndex).value).toBe(`${MARKER.toUpperCase().replace(/-/g, '')}PROMO`)
+    expect(promoRow.getCell(originalFeeColIndex).value).toBe(1000)
+    expect(promoRow.getCell(discountAmountColIndex).value).toBe(200)
+    expect(promoRow.getCell(finalFeeColIndex).value).toBe(800)
+
+    // Rows 3 and 4 (waitlisted, cancelled) never used a code — blank, not zero.
+    for (const rowNumber of [3, 4]) {
+      const row = sheet.getRow(rowNumber)
+      expect(row.getCell(promoColIndex).value).toBe('')
+      expect(row.getCell(originalFeeColIndex).value).toBe('')
+      expect(row.getCell(discountAmountColIndex).value).toBe('')
+      expect(row.getCell(finalFeeColIndex).value).toBe('')
+    }
+  })
+
+  it('produces a Promo Codes sheet with the correct row count and totals', async () => {
+    const { workbook } = await buildRegistrationsWorkbook({ courseId })
+    const sheet = workbook.getWorksheet('Promo Codes')!
+
+    const headerRow = sheet.getRow(1).values as unknown[]
+    expect(headerRow).toContain('Code')
+    expect(headerRow).toContain('Uses')
+    expect(headerRow).toContain('Total Discount Given')
+
+    let foundRow: ExcelJS.Row | null = null
+    sheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return
+      if (row.getCell(headerRow.indexOf('Code')).value === `${MARKER.toUpperCase().replace(/-/g, '')}PROMO`) foundRow = row
+    })
+    expect(foundRow).not.toBeNull()
+    const row = foundRow! as ExcelJS.Row
+    expect(row.getCell(headerRow.indexOf('Uses')).value).toBe(1)
+    expect(row.getCell(headerRow.indexOf('Total Discount Given')).value).toBe(200)
+
+    // The whole workbook, including this new sheet, must still round-trip
+    // through a real .xlsx buffer — proves the file is genuinely openable.
+    const buffer = await workbook.xlsx.writeBuffer()
+    const reloaded = new ExcelJS.Workbook()
+    await reloaded.xlsx.load(buffer as unknown as ArrayBuffer)
+    expect(reloaded.getWorksheet('Promo Codes')).toBeDefined()
   })
 })

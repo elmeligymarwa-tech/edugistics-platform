@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { isValidPromoCodeFormat, normalisePromoCode, PromoCodeDiscountType } from './promo-code'
+import { isValidPromoCodeFormat, normalisePromoCode, PromoCodeDiscountType, PromoCodeTeacherLimitScope } from './promo-code'
 import { cairoDateTimeLocalToUtc } from './timezone'
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
@@ -52,6 +52,7 @@ const promoCodeBaseSchema = z.object({
   expiresAt: optionalCairoBoundaryDate('end'),
   maxTotalUses: optionalPositiveInt('Maximum total uses must be at least 1.'),
   maxUsesPerTeacher: z.coerce.number().int().min(1, 'Must be at least 1.').default(1),
+  maxUsesPerTeacherScope: PromoCodeTeacherLimitScope.default('ALL_COURSES'),
   isPaused: z.boolean().default(false),
 })
 

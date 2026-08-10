@@ -279,9 +279,10 @@ describe('registerForCourse — promo codes', () => {
     )
   })
 
-  it('the per-teacher limit blocks the same email a second time, on a different course', async () => {
+  it('per-teacher limit set to Across all courses blocks a second use on a different course', async () => {
     const courseA = await makeCourse({ maxCapacity: null })
     const courseB = await makeCourse({ maxCapacity: null })
+    // maxUsesPerTeacherScope defaults to ALL_COURSES — not set explicitly here on purpose.
     const promo = await makePromoCode({ maxUsesPerTeacher: 1 })
     const input = makeInput(courseA.id, { promoCode: promo.code })
 
@@ -291,6 +292,34 @@ describe('registerForCourse — promo codes', () => {
     await expect(
       registerForCourse({ ...input, courseId: courseB.id }),
     ).rejects.toThrow('This promo code has already been used with this email address.')
+  })
+
+  it('per-teacher limit set to Per course allows a second use on a different course', async () => {
+    const courseA = await makeCourse({ maxCapacity: null })
+    const courseB = await makeCourse({ maxCapacity: null })
+    const promo = await makePromoCode({ maxUsesPerTeacher: 1, maxUsesPerTeacherScope: 'PER_COURSE' })
+    const input = makeInput(courseA.id, { promoCode: promo.code })
+
+    const first = await registerForCourse(input)
+    expect(first.status).toBe('CONFIRMED')
+
+    const second = await registerForCourse({ ...input, courseId: courseB.id })
+    expect(second.status).toBe('CONFIRMED')
+    expect(second.promo?.code).toBe(promo.code)
+  })
+
+  it('per-teacher limit set to Per course still blocks a second use on the same course', async () => {
+    const course = await makeCourse({ maxCapacity: null, waitlistEnabled: true, waitlistCapacity: 5 })
+    const promo = await makePromoCode({ maxUsesPerTeacher: 1, maxUsesPerTeacherScope: 'PER_COURSE' })
+    const input = makeInput(course.id, { promoCode: promo.code })
+
+    const first = await registerForCourse(input)
+    expect(first.status).toBe('CONFIRMED')
+
+    // Same email, same course — blocked both by the pre-existing
+    // "already registered for this course" rule and (if that check were
+    // absent) by the per-teacher promo limit; either way it must reject.
+    await expect(registerForCourse(input)).rejects.toThrow()
   })
 
   it('a different teacher can still use a code that one teacher has exhausted for themselves', async () => {

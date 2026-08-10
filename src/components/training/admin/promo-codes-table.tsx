@@ -1,13 +1,14 @@
 'use client'
 
 import { useMemo } from 'react'
+import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { ChevronLeft, ChevronRight, TriangleAlert } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { formatAdminTimestamp } from '@/domain/training/format'
+import { formatAdminTimestamp, formatCourseFee } from '@/domain/training/format'
 import { PROMO_CODE_PAGE_SIZE } from '@/domain/training/promo-code'
 import type { PromoCodeListItem } from '@/lib/training/promo-codes'
 import type { CourseOption } from './promo-code-course-multi-select'
@@ -22,13 +23,19 @@ function formatDiscount(row: PromoCodeListItem): string {
   return row.discountType === 'PERCENTAGE' ? `${row.discountValue}%` : `${row.currency} ${row.discountValue}`
 }
 
-function formatUses(row: PromoCodeListItem): string {
-  return row.maxTotalUses == null ? '—' : `${row.useCount} / ${row.maxTotalUses}`
-}
-
 function buildColumns(courses: CourseOption[]) {
   return [
-    columnHelper.accessor('code', { header: 'Code', cell: (info) => <span className="font-medium text-foreground">{info.getValue()}</span> }),
+    columnHelper.accessor('code', {
+      header: 'Code',
+      cell: (info) => (
+        <Link
+          href={`/training/admin/promo-codes/${info.row.original.id}`}
+          className="font-medium text-foreground underline underline-offset-2 hover:text-primary"
+        >
+          {info.getValue()}
+        </Link>
+      ),
+    }),
     columnHelper.display({
       id: 'discount',
       header: 'Discount',
@@ -43,13 +50,28 @@ function buildColumns(courses: CourseOption[]) {
         </span>
       ),
     }),
-    columnHelper.accessor('appliesToLabel', { header: 'Applies to' }),
-    columnHelper.display({ id: 'uses', header: 'Uses', cell: (info) => formatUses(info.row.original) }),
+    columnHelper.accessor('appliesToLabel', { header: 'Courses' }),
+    columnHelper.accessor('useCount', { header: 'Total uses' }),
+    columnHelper.display({
+      id: 'remainingUses',
+      header: 'Uses remaining',
+      cell: (info) => info.row.original.remainingUses ?? '—',
+    }),
+    columnHelper.display({
+      id: 'totalDiscountGiven',
+      header: 'Total discount given',
+      cell: (info) => formatCourseFee(info.row.original.totalDiscountGiven, info.row.original.currency),
+    }),
+    columnHelper.display({
+      id: 'potentialRegistrationValue',
+      header: 'Potential registration value',
+      cell: (info) => formatCourseFee(info.row.original.potentialRegistrationValue, info.row.original.currency),
+    }),
+    columnHelper.accessor('status', { header: 'Status', cell: (info) => <PromoCodeStatusBadge status={info.getValue()} /> }),
     columnHelper.accessor('expiresAt', {
       header: 'Expiry',
       cell: (info) => (info.getValue() ? formatAdminTimestamp(info.getValue()!) : '—'),
     }),
-    columnHelper.accessor('status', { header: 'Status', cell: (info) => <PromoCodeStatusBadge status={info.getValue()} /> }),
     columnHelper.display({
       id: 'pause',
       header: 'Active',

@@ -51,6 +51,7 @@ function toPromoCodeData(values: z.infer<typeof promoCodeFormSchema>) {
     expiresAt: values.expiresAt,
     maxTotalUses: values.maxTotalUses,
     maxUsesPerTeacher: values.maxUsesPerTeacher,
+    maxUsesPerTeacherScope: values.maxUsesPerTeacherScope,
     isPaused: values.isPaused,
   }
 }
@@ -122,6 +123,7 @@ export async function updatePromoCodeAction(id: string, input: unknown): Promise
     expiresAt: existing.expiresAt?.toISOString() ?? null,
     maxTotalUses: existing.maxTotalUses,
     maxUsesPerTeacher: existing.maxUsesPerTeacher,
+    maxUsesPerTeacherScope: existing.maxUsesPerTeacherScope,
     isPaused: existing.isPaused,
   }
 

@@ -9,7 +9,12 @@ import { Input } from '@/components/ui/input'
 import { Select, type SelectOption } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import type { PromoCodeDiscountType } from '@/domain/training/promo-code'
+import {
+  PROMO_CODE_TEACHER_LIMIT_SCOPE_HELP,
+  PROMO_CODE_TEACHER_LIMIT_SCOPE_LABELS,
+  type PromoCodeDiscountType,
+  type PromoCodeTeacherLimitScope,
+} from '@/domain/training/promo-code'
 import { utcToCairoDateTimeLocal } from '@/domain/training/timezone'
 import type { PromoCodeListItem } from '@/lib/training/promo-codes'
 import { createPromoCodeAction, updatePromoCodeAction } from '@/app/training/admin/(protected)/promo-codes/actions'
@@ -25,6 +30,11 @@ const APPLIES_TO_OPTIONS: SelectOption[] = [
   { value: 'SELECTED', label: 'Selected Courses' },
 ]
 
+const TEACHER_LIMIT_SCOPE_OPTIONS: SelectOption[] = [
+  { value: 'ALL_COURSES', label: PROMO_CODE_TEACHER_LIMIT_SCOPE_LABELS.ALL_COURSES },
+  { value: 'PER_COURSE', label: PROMO_CODE_TEACHER_LIMIT_SCOPE_LABELS.PER_COURSE },
+]
+
 /** Raw values as the HTML controls actually produce them — the shared promoCodeFormSchema (run server-side inside the action) is the single source of validation truth; this form only shapes the payload. */
 interface PromoCodeFormInputs {
   code: string
@@ -37,6 +47,7 @@ interface PromoCodeFormInputs {
   expiresAt: string
   maxTotalUses: string
   maxUsesPerTeacher: string
+  maxUsesPerTeacherScope: PromoCodeTeacherLimitScope
   isPaused: boolean
 }
 
@@ -57,6 +68,7 @@ function toDefaultValues(promoCode?: PromoCodeListItem): PromoCodeFormInputs {
       expiresAt: '',
       maxTotalUses: '',
       maxUsesPerTeacher: '1',
+      maxUsesPerTeacherScope: 'ALL_COURSES',
       isPaused: false,
     }
   }
@@ -71,6 +83,7 @@ function toDefaultValues(promoCode?: PromoCodeListItem): PromoCodeFormInputs {
     expiresAt: promoCode.expiresAt ? toCairoDateOnly(promoCode.expiresAt) : '',
     maxTotalUses: promoCode.maxTotalUses != null ? String(promoCode.maxTotalUses) : '',
     maxUsesPerTeacher: String(promoCode.maxUsesPerTeacher),
+    maxUsesPerTeacherScope: promoCode.maxUsesPerTeacherScope,
     isPaused: promoCode.isPaused,
   }
 }
@@ -97,6 +110,7 @@ export function PromoCodeForm({
   } = useForm<PromoCodeFormInputs>({ defaultValues: toDefaultValues(promoCode) })
 
   const appliesToAllCourses = watch('appliesToAllCourses')
+  const maxUsesPerTeacherScope = watch('maxUsesPerTeacherScope')
 
   async function onSubmit(values: PromoCodeFormInputs) {
     setFormError(null)
@@ -115,6 +129,7 @@ export function PromoCodeForm({
       expiresAt: values.expiresAt,
       maxTotalUses: values.maxTotalUses,
       maxUsesPerTeacher: values.maxUsesPerTeacher,
+      maxUsesPerTeacherScope: values.maxUsesPerTeacherScope,
       isPaused: values.isPaused,
     }
 
@@ -234,6 +249,23 @@ export function PromoCodeForm({
           aria-invalid={Boolean(errors.maxUsesPerTeacher)}
         />
         <FieldError>{errors.maxUsesPerTeacher?.message}</FieldError>
+      </Field>
+
+      <Field>
+        <FieldLabel htmlFor="maxUsesPerTeacherScope">Per-teacher limit applies</FieldLabel>
+        <Controller
+          name="maxUsesPerTeacherScope"
+          control={control}
+          render={({ field }) => (
+            <Select
+              id="maxUsesPerTeacherScope"
+              items={TEACHER_LIMIT_SCOPE_OPTIONS}
+              value={field.value}
+              onValueChange={field.onChange}
+            />
+          )}
+        />
+        <FieldDescription>{PROMO_CODE_TEACHER_LIMIT_SCOPE_HELP[maxUsesPerTeacherScope]}</FieldDescription>
       </Field>
 
       <Field>

@@ -53,6 +53,16 @@ enum PromoCodeDiscountType {
   FIXED_AMOUNT
 }
 
+// Scopes maxUsesPerTeacher. ALL_COURSES (default, matches pre-Phase-C
+// behaviour for every existing code) counts a teacher's CONFIRMED uses of
+// this code across every course. PER_COURSE counts only within the specific
+// course being registered for, so a teacher can use the same code once per
+// course rather than once ever.
+enum PromoCodeTeacherLimitScope {
+  ALL_COURSES
+  PER_COURSE
+}
+
 enum CampaignEmailType {
   REMINDER
   ZOOM_LINK
@@ -285,21 +295,22 @@ model AuditLog {
 // delete a row here — archive via archivedAt so historical registrations
 // (once Phase B references promo codes) can always resolve it.
 model PromoCode {
-  id                  String                @id @default(cuid())
-  code                String
-  description         String
-  discountType        PromoCodeDiscountType
-  discountValue       Decimal               @db.Decimal(10, 2)
-  currency            String                @default("EGP")
-  appliesToAllCourses Boolean               @default(false)
-  startsAt            DateTime?             @db.Timestamptz
-  expiresAt           DateTime?             @db.Timestamptz
-  maxTotalUses        Int?
-  maxUsesPerTeacher   Int                   @default(1)
-  isPaused            Boolean               @default(false)
-  archivedAt          DateTime?
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
+  id                     String                     @id @default(cuid())
+  code                   String
+  description            String
+  discountType           PromoCodeDiscountType
+  discountValue          Decimal                    @db.Decimal(10, 2)
+  currency               String                     @default("EGP")
+  appliesToAllCourses    Boolean                    @default(false)
+  startsAt               DateTime?                  @db.Timestamptz
+  expiresAt              DateTime?                  @db.Timestamptz
+  maxTotalUses           Int?
+  maxUsesPerTeacher      Int                        @default(1)
+  maxUsesPerTeacherScope PromoCodeTeacherLimitScope @default(ALL_COURSES)
+  isPaused               Boolean                    @default(false)
+  archivedAt             DateTime?
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
 
   courses       PromoCodeCourse[]
   registrations Registration[]

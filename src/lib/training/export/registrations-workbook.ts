@@ -3,9 +3,11 @@ import 'server-only'
 import ExcelJS from 'exceljs'
 
 import { EMAIL_STATUS_LABELS, STATUS_LABELS } from '@/components/training/admin/registration-badges'
+import { PROMO_CODE_DISCOUNT_TYPE_LABELS, PROMO_CODE_STATUS_LABELS } from '@/domain/training/promo-code'
 import { COURSE_CATEGORY_LABELS } from '@/domain/training/schema'
 import { toCairoCalendarDate } from '@/domain/training/timezone'
 import { listAllRegistrationsForExport, type ExportRegistrationRow, type RegistrationFilters } from '@/lib/training/registrations'
+import { listAllPromoCodesForExport, type PromoCodeListItem } from '@/lib/training/promo-codes'
 
 const NAVY_ARGB = 'FF2B3A67'
 const WHITE_ARGB = 'FFFFFFFF'
@@ -52,6 +54,12 @@ function buildRegistrationsSheet(workbook: ExcelJS.Workbook, registrations: Expo
     { header: 'Course', key: 'course', width: 32 },
     { header: 'Course Date', key: 'courseDate', width: 14 },
     { header: 'Course Fee', key: 'courseFee', width: 14 },
+    { header: 'Original Fee', key: 'originalFee', width: 14 },
+    { header: 'Promo Code', key: 'promoCode', width: 16 },
+    { header: 'Discount Type', key: 'discountType', width: 14 },
+    { header: 'Discount Value', key: 'discountValue', width: 14 },
+    { header: 'Discount Amount', key: 'discountAmount', width: 16 },
+    { header: 'Final Fee', key: 'finalFee', width: 14 },
     { header: 'Status', key: 'status', width: 12 },
     { header: 'Waitlist Position', key: 'waitlistPosition', width: 16 },
     { header: 'Full Name', key: 'fullName', width: 22 },
@@ -66,12 +74,22 @@ function buildRegistrationsSheet(workbook: ExcelJS.Workbook, registrations: Expo
   ]
 
   for (const registration of registrations) {
+    // A blank promo cell clearly means "no code was used" — never a coerced
+    // zero, which would be indistinguishable from a code that discounted
+    // nothing.
+    const hasPromo = registration.promoCodeSnapshot != null
     const row = sheet.addRow({
       registrationDate: toCairoCalendarDate(registration.registeredAt),
       reference: registration.reference,
       course: registration.courseNameSnapshot,
       courseDate: registration.courseDateSnapshot,
       courseFee: Number(registration.courseFeeSnapshot),
+      originalFee: hasPromo ? Number(registration.originalFee) : '',
+      promoCode: registration.promoCodeSnapshot ?? '',
+      discountType: registration.discountTypeSnapshot ? PROMO_CODE_DISCOUNT_TYPE_LABELS[registration.discountTypeSnapshot] : '',
+      discountValue: hasPromo ? Number(registration.discountValueSnapshot) : '',
+      discountAmount: hasPromo ? Number(registration.discountAmount) : '',
+      finalFee: hasPromo ? Number(registration.finalFee) : '',
       status: STATUS_LABELS[registration.status],
       waitlistPosition: registration.waitlistPosition ?? '',
       fullName: registration.teacher.fullName,
@@ -87,6 +105,11 @@ function buildRegistrationsSheet(workbook: ExcelJS.Workbook, registrations: Expo
     row.getCell('registrationDate').numFmt = DATE_FORMAT
     row.getCell('courseDate').numFmt = DATE_FORMAT
     row.getCell('courseFee').numFmt = `"${registration.courseCurrencySnapshot} "#,##0.00`
+    if (hasPromo) {
+      row.getCell('originalFee').numFmt = `"${registration.courseCurrencySnapshot} "#,##0.00`
+      row.getCell('discountAmount').numFmt = `"${registration.courseCurrencySnapshot} "#,##0.00`
+      row.getCell('finalFee').numFmt = `"${registration.courseCurrencySnapshot} "#,##0.00`
+    }
   }
 
   finishSheet(sheet)
@@ -273,8 +296,60 @@ function buildCoursePerformanceSheet(workbook: ExcelJS.Workbook, registrations: 
   finishSheet(sheet)
 }
 
+/**
+ * Every figure comes from listAllPromoCodesForExport — the same
+ * getPromoCodeUsageAggregates aggregation the admin list and dashboard use,
+ * never recalculated here. "Uses"/"Remaining"/"Total discount given" count
+ * CONFIRMED registrations only, per summarisePromoCodeUsage.
+ */
+function buildPromoCodesSheet(workbook: ExcelJS.Workbook, promoCodes: PromoCodeListItem[]) {
+  const sheet = workbook.addWorksheet('Promo Codes')
+  sheet.columns = [
+    { header: 'Code', key: 'code', width: 16 },
+    { header: 'Description', key: 'description', width: 32 },
+    { header: 'Discount Type', key: 'discountType', width: 14 },
+    { header: 'Discount Value', key: 'discountValue', width: 14 },
+    { header: 'Applies To', key: 'appliesTo', width: 22 },
+    { header: 'Start Date', key: 'startDate', width: 14 },
+    { header: 'Expiry Date', key: 'expiryDate', width: 14 },
+    { header: 'Maximum Total Uses', key: 'maxTotalUses', width: 18 },
+    { header: 'Maximum Uses Per Teacher', key: 'maxUsesPerTeacher', width: 20 },
+    { header: 'Uses', key: 'uses', width: 10 },
+    { header: 'Remaining', key: 'remaining', width: 12 },
+    { header: 'Total Discount Given', key: 'totalDiscountGiven', width: 18 },
+    { header: 'Potential Registration Value', key: 'potentialRegistrationValue', width: 22 },
+    { header: 'Status', key: 'status', width: 12 },
+  ]
+
+  for (const promoCode of promoCodes) {
+    const row = sheet.addRow({
+      code: promoCode.code,
+      description: promoCode.description,
+      discountType: PROMO_CODE_DISCOUNT_TYPE_LABELS[promoCode.discountType],
+      discountValue: promoCode.discountValue,
+      appliesTo: promoCode.appliesToLabel,
+      startDate: promoCode.startsAt ? toCairoCalendarDate(promoCode.startsAt) : '',
+      expiryDate: promoCode.expiresAt ? toCairoCalendarDate(promoCode.expiresAt) : '',
+      maxTotalUses: promoCode.maxTotalUses ?? 'Unlimited',
+      maxUsesPerTeacher: promoCode.maxUsesPerTeacher,
+      uses: promoCode.useCount,
+      remaining: promoCode.remainingUses ?? 'Unlimited',
+      totalDiscountGiven: promoCode.totalDiscountGiven,
+      potentialRegistrationValue: promoCode.potentialRegistrationValue,
+      status: PROMO_CODE_STATUS_LABELS[promoCode.status],
+    })
+    if (promoCode.startsAt) row.getCell('startDate').numFmt = DATE_FORMAT
+    if (promoCode.expiresAt) row.getCell('expiryDate').numFmt = DATE_FORMAT
+    row.getCell('totalDiscountGiven').numFmt = `"${promoCode.currency} "#,##0.00`
+    row.getCell('potentialRegistrationValue').numFmt = `"${promoCode.currency} "#,##0.00`
+  }
+
+  finishSheet(sheet)
+}
+
 export async function buildRegistrationsWorkbook(filters: RegistrationFilters): Promise<{ workbook: ExcelJS.Workbook; rowCount: number }> {
   const registrations = await listAllRegistrationsForExport(filters)
+  const promoCodes = await listAllPromoCodesForExport()
 
   const workbook = new ExcelJS.Workbook()
   workbook.creator = 'Edugistics'
@@ -284,6 +359,7 @@ export async function buildRegistrationsWorkbook(filters: RegistrationFilters): 
   buildTeachersSheet(workbook, registrations)
   buildSchoolsSheet(workbook, registrations)
   buildCoursePerformanceSheet(workbook, registrations)
+  buildPromoCodesSheet(workbook, promoCodes)
 
   return { workbook, rowCount: registrations.length }
 }

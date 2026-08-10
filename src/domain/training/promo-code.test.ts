@@ -5,11 +5,14 @@ import {
   countPromoCodeUses,
   derivePromoCodeStatus,
   formatPromoDiscountLabel,
+  isBetterPromoCodeRanking,
   isValidPromoCodeFormat,
   normalisePromoCode,
   promoCodeStatusRejectionMessage,
+  remainingPromoCodeUses,
   resolveCourseIds,
   roundToTwoDecimals,
+  summarisePromoCodeUsage,
 } from './promo-code'
 import { cairoDateTimeLocalToUtc } from './timezone'
 
@@ -204,5 +207,85 @@ describe('promoCodeStatusRejectionMessage', () => {
     expect(promoCodeStatusRejectionMessage('PAUSED')).toBe('This promo code is no longer available.')
     expect(promoCodeStatusRejectionMessage('EXHAUSTED')).toBe('This promo code has reached its usage limit.')
     expect(promoCodeStatusRejectionMessage('ARCHIVED')).toBe('Invalid promo code.')
+  })
+})
+
+describe('summarisePromoCodeUsage', () => {
+  it('per-code totals count only CONFIRMED registrations', () => {
+    const totals = summarisePromoCodeUsage([
+      { status: 'CONFIRMED', discountAmount: 100, finalFee: 900 },
+      { status: 'CONFIRMED', discountAmount: 200, finalFee: 800 },
+      { status: 'WAITLISTED', discountAmount: 50, finalFee: 950 },
+      { status: 'CANCELLED', discountAmount: 300, finalFee: 700 },
+    ])
+    expect(totals.totalUses).toBe(2)
+  })
+
+  it('cancelled and waitlisted registrations are excluded from every total', () => {
+    const totals = summarisePromoCodeUsage([
+      { status: 'WAITLISTED', discountAmount: 50, finalFee: 950 },
+      { status: 'CANCELLED', discountAmount: 300, finalFee: 700 },
+    ])
+    expect(totals).toEqual({ totalUses: 0, totalDiscountGiven: 0, potentialRegistrationValue: 0 })
+  })
+
+  it('total discount given sums the stored snapshot amounts, not recalculated values', () => {
+    // discountAmount/finalFee here deliberately don't correspond to any
+    // real discount formula — proving the sum uses exactly what's stored,
+    // never recomputing from a discount type/value.
+    const totals = summarisePromoCodeUsage([
+      { status: 'CONFIRMED', discountAmount: 123.45, finalFee: 876.55 },
+      { status: 'CONFIRMED', discountAmount: 67.89, finalFee: 32.11 },
+    ])
+    expect(totals.totalDiscountGiven).toBe(191.34)
+    expect(totals.potentialRegistrationValue).toBe(908.66)
+  })
+
+  it('treats a null discountAmount/finalFee as zero rather than throwing', () => {
+    const totals = summarisePromoCodeUsage([{ status: 'CONFIRMED', discountAmount: null, finalFee: null }])
+    expect(totals).toEqual({ totalUses: 1, totalDiscountGiven: 0, potentialRegistrationValue: 0 })
+  })
+
+  it('returns all zeros for an empty list', () => {
+    expect(summarisePromoCodeUsage([])).toEqual({ totalUses: 0, totalDiscountGiven: 0, potentialRegistrationValue: 0 })
+  })
+})
+
+describe('isBetterPromoCodeRanking', () => {
+  const a = { id: 'a', code: 'ALPHA', createdAt: new Date('2026-01-01T00:00:00.000Z') }
+  const b = { id: 'b', code: 'BETA', createdAt: new Date('2026-02-01T00:00:00.000Z') }
+
+  it('a strictly higher value wins, most used and highest value resolve correctly', () => {
+    expect(isBetterPromoCodeRanking(10, b, 5, a)).toBe(true)
+    expect(isBetterPromoCodeRanking(5, b, 10, a)).toBe(false)
+  })
+
+  it('on a tied value, the code created earlier wins', () => {
+    // b was created after a, so a (already current) should not be replaced by b.
+    expect(isBetterPromoCodeRanking(5, b, 5, a)).toBe(false)
+    // a was created before b, so a should replace b as the winner.
+    expect(isBetterPromoCodeRanking(5, a, 5, b)).toBe(true)
+  })
+
+  it('on a tie of both value and createdAt, the alphabetically earlier code wins', () => {
+    const sameInstant = new Date('2026-01-01T00:00:00.000Z')
+    const alpha = { id: 'a', code: 'ALPHA', createdAt: sameInstant }
+    const beta = { id: 'b', code: 'BETA', createdAt: sameInstant }
+    expect(isBetterPromoCodeRanking(5, alpha, 5, beta)).toBe(true)
+    expect(isBetterPromoCodeRanking(5, beta, 5, alpha)).toBe(false)
+  })
+})
+
+describe('remainingPromoCodeUses', () => {
+  it('returns null (dash in the UI) when maxTotalUses is unlimited', () => {
+    expect(remainingPromoCodeUses(null, 5)).toBeNull()
+  })
+
+  it('subtracts total uses from the limit', () => {
+    expect(remainingPromoCodeUses(10, 4)).toBe(6)
+  })
+
+  it('never goes below zero even if usage exceeds a since-lowered limit', () => {
+    expect(remainingPromoCodeUses(5, 8)).toBe(0)
   })
 })
