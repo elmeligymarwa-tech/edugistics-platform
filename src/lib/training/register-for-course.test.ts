@@ -9,6 +9,7 @@ vi.mock('./email/send-registration-email', () => ({
 }))
 
 const { registerForCourse, RegistrationRejectedError } = await import('./register-for-course')
+const { subscribeFromLandingPage } = await import('./landing-subscribe')
 const { prisma } = await import('./prisma')
 
 // Self-contained and self-cleaning, following the pattern in registrations.test.ts.
@@ -348,6 +349,59 @@ describe('registerForCourse — subscribers', () => {
     // The first event survives untouched — never updated in place.
     expect(events[0]).toEqual(firstEvent)
     expect(events[1]?.courseId).toBe(courseB.id)
+  }, 20_000)
+})
+
+describe('registerForCourse — landing page subscriber linking', () => {
+  it('links an existing landing page subscriber to the newly resolved teacher, creating no duplicate', async () => {
+    const course = await makeCourse({ maxCapacity: null })
+    const input = makeInput(course.id, { marketingConsent: false })
+
+    await subscribeFromLandingPage({ fullName: 'Landing Person', email: input.email, now: new Date('2026-01-01T00:00:00.000Z') })
+    const landingSubscriber = await prisma.subscriber.findUniqueOrThrow({ where: { emailNormalised: input.email.toLowerCase() } })
+    expect(landingSubscriber.teacherId).toBeNull()
+
+    await registerForCourse(input)
+
+    const subscribers = await prisma.subscriber.findMany({ where: { emailNormalised: input.email.toLowerCase() } })
+    expect(subscribers).toHaveLength(1)
+
+    const teacher = await prisma.teacher.findUniqueOrThrow({ where: { emailNormalised: input.email.toLowerCase() } })
+    expect(subscribers[0]!.id).toBe(landingSubscriber.id)
+    expect(subscribers[0]!.teacherId).toBe(teacher.id)
+  }, 20_000)
+
+  it('links even when the registration checkbox is left unticked', async () => {
+    const course = await makeCourse({ maxCapacity: null })
+    const input = makeInput(course.id, { marketingConsent: false })
+    await subscribeFromLandingPage({ fullName: 'Landing Person', email: input.email, now: new Date() })
+
+    await registerForCourse(input)
+
+    const teacher = await prisma.teacher.findUniqueOrThrow({ where: { emailNormalised: input.email.toLowerCase() } })
+    const subscriber = await prisma.subscriber.findUniqueOrThrow({ where: { emailNormalised: input.email.toLowerCase() } })
+    expect(subscriber.teacherId).toBe(teacher.id)
+    // An unticked box is not a withdrawal of consent — the landing page subscription stays intact.
+    expect(subscriber.status).toBe('SUBSCRIBED')
+  }, 20_000)
+
+  it('preserves the original subscription date and consent history through linking', async () => {
+    const course = await makeCourse({ maxCapacity: null })
+    const input = makeInput(course.id, { marketingConsent: false })
+
+    const originalSubscribedAt = new Date('2025-06-01T00:00:00.000Z')
+    await subscribeFromLandingPage({ fullName: 'Landing Person', email: input.email, now: originalSubscribedAt })
+    const landingSubscriber = await prisma.subscriber.findUniqueOrThrow({ where: { emailNormalised: input.email.toLowerCase() } })
+    const originalEvents = await prisma.consentEvent.findMany({ where: { subscriberId: landingSubscriber.id } })
+
+    await registerForCourse(input)
+
+    const linked = await prisma.subscriber.findUniqueOrThrow({ where: { id: landingSubscriber.id } })
+    expect(linked.subscribedAt.toISOString()).toBe(originalSubscribedAt.toISOString())
+    expect(linked.consentSource).toBe('LANDING_PAGE')
+
+    const eventsAfter = await prisma.consentEvent.findMany({ where: { subscriberId: landingSubscriber.id } })
+    expect(eventsAfter).toEqual(originalEvents)
   }, 20_000)
 })
 

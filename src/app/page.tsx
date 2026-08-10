@@ -5,6 +5,8 @@ import { BarChart3, Calculator, GraduationCap, Mail, TrendingUp, Users } from 'l
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
+import { LandingSubscribeSection } from '@/components/training/public/landing-subscribe-section'
+import { EDUGISTICS_CONTACT_EMAIL } from '@/domain/training/contact'
 
 // PLACEHOLDER — replace with the final marketing description before launch.
 export const metadata: Metadata = {
@@ -35,9 +37,6 @@ const SERVICES = [
     description: 'Turn a live model into statements and reports your board and investors can act on.',
   },
 ]
-
-// PLACEHOLDER — contact address. Replace with the real inbox before launch.
-const CONTACT_EMAIL = 'info@edugistics.online'
 
 export default function LandingPage() {
   return (
@@ -132,6 +131,8 @@ export default function LandingPage() {
         </Button>
       </section>
 
+      <LandingSubscribeSection />
+
       {/* Contact — no form, direct email link only. */}
       <section id="contact" className="border-t border-border">
         <div className="mx-auto flex w-full max-w-3xl flex-col items-center gap-3 px-4 py-16 text-center">
@@ -139,10 +140,10 @@ export default function LandingPage() {
           <h2 className="font-heading text-2xl text-heading sm:text-3xl">Contact</h2>
           <p className="max-w-xl text-muted-foreground">Questions about Edugistics? Get in touch directly.</p>
           <a
-            href={`mailto:${CONTACT_EMAIL}`}
+            href={`mailto:${EDUGISTICS_CONTACT_EMAIL}`}
             className="text-lg font-medium text-primary underline-offset-4 hover:underline"
           >
-            {CONTACT_EMAIL}
+            {EDUGISTICS_CONTACT_EMAIL}
           </a>
         </div>
       </section>

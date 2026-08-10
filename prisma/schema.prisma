@@ -83,6 +83,7 @@ enum ConsentSource {
   TRAINING_REGISTRATION
   ADMIN_MANUAL
   MIGRATED
+  LANDING_PAGE
 }
 
 enum ConsentEventType {
@@ -96,6 +97,7 @@ enum ConsentEventSource {
   UNSUBSCRIBE_LINK
   ADMIN_MANUAL
   MIGRATED
+  LANDING_PAGE
 }
 
 // Who performed a manual status change on a Subscriber outside the normal
@@ -389,8 +391,19 @@ model PromoCodeCourse {
 // field must never be consulted in place of this one.
 model Subscriber {
   id                     String                     @id @default(cuid())
-  teacherId              String                     @unique
+  // Nullable — a landing page subscriber (Phase C) has no teacher and no
+  // course. When that person later registers for a course, this is set to
+  // link the existing row rather than creating a second subscriber; their
+  // subscribedAt and consent history are preserved. @unique still allows
+  // any number of NULL rows in Postgres, so many un-linked subscribers can
+  // coexist.
+  teacherId              String?                    @unique
   emailNormalised        String                     @unique
+  // Populated only for subscribers with no teacherId (fullName/email are
+  // otherwise read from the linked Teacher, which is always the fresher,
+  // authoritative source once a subscriber is linked).
+  fullName               String?
+  emailOriginal          String?
   status                 SubscriberStatus
   subscribedAt           DateTime                   @db.Timestamptz
   unsubscribedAt         DateTime?                  @db.Timestamptz
@@ -400,7 +413,7 @@ model Subscriber {
   // Cryptographically random (>=32 bytes), URL-safe, never derived from
   // email/teacherId/any sequential value — generated once at creation and
   // kept for the life of the record. Holding a token unsubscribes only the
-  // one matching row.
+  // one matching row. Never expose this in analytics, logs or any export.
   unsubscribeToken       String                     @unique
   lastMarketingEmailAt   DateTime?
   marketingEmailsSent    Int                        @default(0)
@@ -408,7 +421,7 @@ model Subscriber {
   createdAt              DateTime                   @default(now())
   updatedAt              DateTime                   @updatedAt
 
-  teacher       Teacher        @relation(fields: [teacherId], references: [id])
+  teacher       Teacher?       @relation(fields: [teacherId], references: [id])
   consentCourse Course?        @relation(fields: [consentCourseId], references: [id])
   consentEvents ConsentEvent[]
 
@@ -437,4 +450,20 @@ model ConsentEvent {
   @@index([subscriberId])
   @@index([courseId])
   @@index([occurredAt])
+}
+
+// Marketing email templates (Phase C) — administrator-authored starting
+// points for the composer, never auto-sent. Never hard deleted: archive via
+// archivedAt so a template referenced by anything in the future can always
+// resolve.
+model MarketingTemplate {
+  id           String    @id @default(cuid())
+  name         String
+  subject      String
+  bodyTemplate String
+  archivedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([archivedAt])
 }

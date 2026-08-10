@@ -13,6 +13,11 @@ const PUBLIC_PATHS = new Set([
   '/apple-icon.png',
   '/edugistics-logo.png',
   '/edugistics-logo-icon.png',
+  // Reached from a link inside an email, at a root-level path (not
+  // /training/*) — must stay reachable even if SITE_PASSWORD is
+  // misconfigured, same as the landing page. The token is a query
+  // parameter, not part of the pathname, so the exact path suffices.
+  '/unsubscribe',
 ])
 const PUBLIC_PREFIXES = ['/icons/', '/brand/', '/_next/']
 

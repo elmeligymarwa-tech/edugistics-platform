@@ -51,10 +51,10 @@ export function SubscriberDetailView({ detail }: { detail: SubscriberDetailData 
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-3">
           <DetailItem label="Email" value={detail.email} />
-          <DetailItem label="Phone" value={detail.phone} />
-          <DetailItem label="School" value={detail.schoolName} />
-          <DetailItem label="Subject" value={detail.subject} />
-          <DetailItem label="Grade" value={detail.grade} />
+          <DetailItem label="Phone" value={detail.phone ?? '—'} />
+          <DetailItem label="School" value={detail.schoolName ?? '—'} />
+          <DetailItem label="Subject" value={detail.subject ?? '—'} />
+          <DetailItem label="Grade" value={detail.grade ?? '—'} />
           <DetailItem label="Date subscribed" value={formatAdminTimestamp(detail.subscribedAt)} />
           {detail.unsubscribedAt && <DetailItem label="Date unsubscribed" value={formatAdminTimestamp(detail.unsubscribedAt)} />}
           <DetailItem label="Source" value={CONSENT_SOURCE_LABELS[detail.consentSource] ?? detail.consentSource} />

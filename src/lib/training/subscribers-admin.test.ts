@@ -7,12 +7,14 @@ const {
   listSubscribersForAdmin,
   listAllSubscribersForExport,
   resolveSubscriberSelection,
+  getSubscriberDetail,
 } = await import('./subscribers-admin')
 const { prisma } = await import('./prisma')
 
 // Self-contained and self-cleaning, following the pattern in register-for-course.test.ts.
 const MARKER = 'subscribers-admin-test'
 const teacherIds: string[] = []
+const landingSubscriberIds: string[] = []
 const schoolIds: string[] = []
 const courseIds: string[] = []
 
@@ -94,10 +96,32 @@ async function makeSubscriber(overrides: {
   return { teacher, subscriber }
 }
 
+async function makeLandingPageSubscriber(overrides: { status?: 'SUBSCRIBED' | 'UNSUBSCRIBED' } = {}) {
+  teacherCounter += 1
+  const email = `${MARKER}-landing-${Date.now()}-${teacherCounter}@test.local`
+  const subscriber = await prisma.subscriber.create({
+    data: {
+      teacherId: null,
+      emailNormalised: email,
+      fullName: `${MARKER} Landing Person ${teacherCounter}`,
+      emailOriginal: email,
+      status: overrides.status ?? 'SUBSCRIBED',
+      subscribedAt: new Date(),
+      consentSource: 'LANDING_PAGE',
+      consentWordingVersion: 'v2',
+      unsubscribeToken: generateUnsubscribeToken(),
+    },
+  })
+  landingSubscriberIds.push(subscriber.id)
+  return subscriber
+}
+
 afterAll(async () => {
   await prisma.consentEvent.deleteMany({ where: { subscriber: { teacherId: { in: teacherIds } } } })
   await prisma.subscriber.deleteMany({ where: { teacherId: { in: teacherIds } } })
   await prisma.teacher.deleteMany({ where: { id: { in: teacherIds } } })
+  await prisma.consentEvent.deleteMany({ where: { subscriberId: { in: landingSubscriberIds } } })
+  await prisma.subscriber.deleteMany({ where: { id: { in: landingSubscriberIds } } })
   await prisma.course.deleteMany({ where: { id: { in: courseIds } } })
   await prisma.school.deleteMany({ where: { id: { in: schoolIds } } })
   await prisma.$disconnect()
@@ -268,5 +292,53 @@ describe('listAllSubscribersForExport', () => {
 
     const everyone = await listAllSubscribersForExport({ status: 'ALL', schoolId: school.id })
     expect(everyone.map((r) => r.id)).toEqual(expect.arrayContaining([subscribed.id, unsubscribed.id]))
+  })
+})
+
+describe('landing page subscribers with no teacher', () => {
+  it('the admin table renders them without breaking — school, subject and grade come back blank rather than throwing', async () => {
+    const landing = await makeLandingPageSubscriber()
+
+    const { rows } = await listSubscribersForAdmin({ status: 'SUBSCRIBED' }, 0)
+    const row = rows.find((r) => r.id === landing.id)
+    expect(row).toBeDefined()
+    expect(row!.teacherId).toBeNull()
+    expect(row!.fullName).toBe(landing.fullName)
+    expect(row!.email).toBe(landing.emailOriginal)
+    expect(row!.schoolName).toBeNull()
+    expect(row!.subject).toBeNull()
+    expect(row!.grade).toBeNull()
+  })
+
+  it('getSubscriberDetail renders them without breaking', async () => {
+    const landing = await makeLandingPageSubscriber()
+
+    const detail = await getSubscriberDetail(landing.id)
+    expect(detail).not.toBeNull()
+    expect(detail!.teacherId).toBeNull()
+    expect(detail!.phone).toBeNull()
+    expect(detail!.schoolName).toBeNull()
+  })
+})
+
+describe('unsubscribeToken never appears in any admin-facing response', () => {
+  it('is absent from SubscriberListItem', async () => {
+    const landing = await makeLandingPageSubscriber()
+    const { rows } = await listSubscribersForAdmin({ status: 'SUBSCRIBED' }, 0)
+    const row = rows.find((r) => r.id === landing.id)!
+    expect(Object.values(row)).not.toContain(landing.unsubscribeToken)
+    expect(JSON.stringify(row)).not.toContain(landing.unsubscribeToken)
+  })
+
+  it('is absent from SubscriberDetail', async () => {
+    const landing = await makeLandingPageSubscriber()
+    const detail = await getSubscriberDetail(landing.id)
+    expect(JSON.stringify(detail)).not.toContain(landing.unsubscribeToken)
+  })
+
+  it('is absent from the export row shape', async () => {
+    const landing = await makeLandingPageSubscriber()
+    const rows = await listAllSubscribersForExport({ status: 'SUBSCRIBED', search: landing.emailOriginal! })
+    expect(JSON.stringify(rows)).not.toContain(landing.unsubscribeToken)
   })
 })

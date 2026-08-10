@@ -45,6 +45,13 @@ describe('middleware', () => {
     expect(response.headers.get('location')).toBeNull()
   })
 
+  it('leaves /unsubscribe reachable without a session, even when SITE_PASSWORD is missing — reached from a link inside an email, not a browser session', async () => {
+    vi.stubEnv('SITE_PASSWORD', '')
+    const response = await middleware(requestFor('/unsubscribe?token=abc123'))
+    expect(response.status).not.toBe(500)
+    expect(response.headers.get('location')).toBeNull()
+  })
+
   it('redirects an unauthenticated request to /login, preserving the original path', async () => {
     const response = await middleware(requestFor('/app/dashboard'))
     expect(response.status).toBe(307)

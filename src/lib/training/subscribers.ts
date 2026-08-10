@@ -22,11 +22,20 @@ export interface ApplyRegistrationConsentInput {
 /**
  * Applies the subscription rules from the mailing list spec inside the
  * caller's registration transaction, after the Teacher row has been
- * resolved. Deduplicates by teacherId (Teacher is already deduplicated by
- * emailNormalised, so this is equivalent to deduplicating by normalised
- * email). Never called outside registerForCourse's transaction in this
- * phase — Subscriber.status is the sole authority on marketing-email
- * eligibility; see the LEGACY note on Teacher.marketingConsent.
+ * resolved. Looks up any existing subscriber by normalised email — the one
+ * key that spans both a teacher-linked subscriber and a landing page
+ * subscriber (Phase C) who has no teacher yet. Never called outside
+ * registerForCourse's transaction in this phase — Subscriber.status is the
+ * sole authority on marketing-email eligibility; see the LEGACY note on
+ * Teacher.marketingConsent.
+ *
+ * Linking happens unconditionally, before the consent-ticked check: if this
+ * email already has a landing page subscriber (teacherId null), it is
+ * linked to the teacher just resolved by this registration, regardless of
+ * whether the checkbox is ticked here — an unticked box is not a withdrawal
+ * of consent, so it must not sever an already-valid landing page
+ * subscription from the teacher record it belongs to. Their subscribedAt
+ * and consent history are preserved; no second subscriber is ever created.
  *
  * - Ticked, no subscriber yet: create one, SUBSCRIBED, and log a SUBSCRIBED event.
  * - Ticked, already SUBSCRIBED: leave status and subscribedAt alone, refresh
@@ -37,9 +46,14 @@ export interface ApplyRegistrationConsentInput {
  *   unticked box on a later registration is not a withdrawal of consent.
  */
 export async function applyRegistrationConsent(db: SubscribersDbClient, input: ApplyRegistrationConsentInput): Promise<void> {
-  if (!input.marketingConsentTicked) return
+  const found = await db.subscriber.findUnique({ where: { emailNormalised: input.emailNormalised } })
 
-  const existing = await db.subscriber.findUnique({ where: { teacherId: input.teacherId } })
+  const existing =
+    found && found.teacherId === null
+      ? await db.subscriber.update({ where: { id: found.id }, data: { teacherId: input.teacherId } })
+      : found
+
+  if (!input.marketingConsentTicked) return
 
   if (!existing) {
     const subscriber = await db.subscriber.create({

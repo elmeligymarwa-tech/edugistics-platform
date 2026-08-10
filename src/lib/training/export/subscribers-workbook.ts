@@ -39,13 +39,16 @@ export async function buildSubscribersWorkbook(filters: SubscriberFilters): Prom
   ]
 
   for (const subscriber of subscribers) {
+    // A landing page subscriber has no linked teacher — school/subject/grade/phone
+    // render blank rather than breaking; name/email fall back to the subscriber's
+    // own stored values.
     const row = sheet.addRow({
-      name: subscriber.teacher.fullName,
-      email: subscriber.teacher.emailOriginal,
-      phone: subscriber.teacher.phone,
-      school: subscriber.teacher.schoolNameOriginal,
-      subject: subscriber.teacher.subjectOriginal,
-      grade: subscriber.teacher.gradeOriginal,
+      name: subscriber.teacher?.fullName ?? subscriber.fullName ?? '',
+      email: subscriber.teacher?.emailOriginal ?? subscriber.emailOriginal ?? subscriber.emailNormalised,
+      phone: subscriber.teacher?.phone ?? '',
+      school: subscriber.teacher?.schoolNameOriginal ?? '',
+      subject: subscriber.teacher?.subjectOriginal ?? '',
+      grade: subscriber.teacher?.gradeOriginal ?? '',
       status: SUBSCRIBER_STATUS_LABELS[subscriber.status],
       subscriptionDate: toCairoCalendarDate(subscriber.subscribedAt),
       source: CONSENT_SOURCE_LABELS[subscriber.consentSource] ?? subscriber.consentSource,

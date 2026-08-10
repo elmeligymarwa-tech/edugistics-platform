@@ -13,7 +13,8 @@
     "admin:hash": "node scripts/admin-hash.mts",
     "seed:analytics-fixture": "node scripts/seed-training-analytics-fixture.mts",
     "training:reset": "node scripts/training-reset.mts",
-    "migrate:legacy-consent": "node scripts/migrate-legacy-consent-to-subscribers.mts"
+    "migrate:legacy-consent": "node scripts/migrate-legacy-consent-to-subscribers.mts",
+    "seed:marketing-templates": "node scripts/seed-marketing-templates.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

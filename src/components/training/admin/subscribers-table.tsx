@@ -87,9 +87,10 @@ const columns = [
     ),
   }),
   columnHelper.accessor('email', { header: 'Email' }),
-  columnHelper.accessor('schoolName', { header: 'School' }),
-  columnHelper.accessor('subject', { header: 'Subject' }),
-  columnHelper.accessor('grade', { header: 'Grade' }),
+  // A landing page subscriber has no linked teacher — these render blank rather than breaking.
+  columnHelper.accessor('schoolName', { header: 'School', cell: (info) => info.getValue() ?? <span className="text-muted-foreground">—</span> }),
+  columnHelper.accessor('subject', { header: 'Subject', cell: (info) => info.getValue() ?? <span className="text-muted-foreground">—</span> }),
+  columnHelper.accessor('grade', { header: 'Grade', cell: (info) => info.getValue() ?? <span className="text-muted-foreground">—</span> }),
   columnHelper.accessor('subscribedAt', {
     header: 'Date subscribed',
     cell: (info) => formatAdminTimestamp(info.getValue()),

@@ -74,6 +74,68 @@ export function renderLayout(preheader: string, bodyHtml: string): string {
 </html>`
 }
 
+export interface MarketingFooterDetails {
+  unsubscribeUrl: string
+  contactEmail: string
+}
+
+/**
+ * The mandatory marketing footer (Phase C) — built into every marketing
+ * email, never left to the administrator to add or omit: the recipient's
+ * own unsubscribe link, the Edugistics name and a contact address, and a
+ * line stating why they're receiving it. Uses the same shell/branding as
+ * renderLayout but with this footer instead of the transactional one,
+ * since "you registered for a course" is never true for a marketing
+ * recipient.
+ */
+export function renderMarketingLayout(preheader: string, bodyHtml: string, footer: MarketingFooterDetails): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Edugistics Training</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#f6f7fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(preheader)}</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f6f7fa;padding:24px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background-color:#ffffff;border-radius:12px;overflow:hidden;border:1px solid ${BORDER};">
+            <tr>
+              <td style="padding:24px 24px 0 24px;">
+                <div style="font-size:20px;font-weight:700;color:${BRAND_NAVY};letter-spacing:-0.01em;">Edugistics</div>
+                <div style="font-size:13px;color:${INK_SECONDARY};margin-top:2px;">Teacher Training</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:20px 24px 24px 24px;color:${INK};font-size:15px;line-height:1.6;">
+                ${bodyHtml}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:16px 24px;border-top:1px solid ${BORDER};color:${INK_SECONDARY};font-size:12px;">
+                <p style="margin:0 0 8px 0;">You are receiving this because you subscribed to Edugistics updates.</p>
+                <p style="margin:0 0 4px 0;">Edugistics · <a href="mailto:${escapeHtml(footer.contactEmail)}" style="color:${INK_SECONDARY};">${escapeHtml(footer.contactEmail)}</a></p>
+                <p style="margin:0;"><a href="${footer.unsubscribeUrl}" style="color:${INK_SECONDARY};">Unsubscribe</a></p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`
+}
+
+/** Plain-text twin of renderMarketingLayout's footer — every marketing email's text part carries the same unsubscribe link and contact details as the HTML part. */
+export function renderMarketingFooterText(footer: MarketingFooterDetails): string {
+  return `—
+You are receiving this because you subscribed to Edugistics updates.
+Edugistics · ${footer.contactEmail}
+Unsubscribe: ${footer.unsubscribeUrl}`
+}
+
 const PAYMENT_NOTE = 'Payment is not collected through the registration system. Payment instructions will be sent separately. The final fee above is the amount that will be invoiced.'
 
 function feeHtml(feeAmount: number, currency: string, promo?: PromoEmailDetails | null): string {

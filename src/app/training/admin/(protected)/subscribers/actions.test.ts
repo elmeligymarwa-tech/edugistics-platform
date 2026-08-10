@@ -3,7 +3,8 @@ import { afterAll, describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/training/auth/require-admin', () => ({ requireAdminSession: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 
-const { manualUnsubscribeAction, manualResubscribeAction, getSubscriberSelectionSummaryAction } = await import('./actions')
+const { manualUnsubscribeAction, manualResubscribeAction, getSubscriberSelectionSummaryAction, previewMarketingEmailAction } =
+  await import('./actions')
 const { generateUnsubscribeToken } = await import('@/lib/training/unsubscribe-token')
 const { prisma } = await import('@/lib/training/prisma')
 
@@ -11,6 +12,7 @@ const { prisma } = await import('@/lib/training/prisma')
 const MARKER = 'subscribers-actions-test'
 const teacherIds: string[] = []
 const subscriberIds: string[] = []
+const landingSubscriberIds: string[] = []
 
 let counter = 0
 async function makeSubscriber(status: 'SUBSCRIBED' | 'UNSUBSCRIBED') {
@@ -56,10 +58,37 @@ async function makeSubscriber(status: 'SUBSCRIBED' | 'UNSUBSCRIBED') {
   return { teacher, subscriber }
 }
 
+async function makeLandingPageSubscriber(status: 'SUBSCRIBED' | 'UNSUBSCRIBED' = 'SUBSCRIBED') {
+  counter += 1
+  const email = `${MARKER}-landing-${Date.now()}-${counter}@test.local`
+  const now = new Date()
+  const subscriber = await prisma.subscriber.create({
+    data: {
+      teacherId: null,
+      emailNormalised: email,
+      fullName: `${MARKER} Landing Person ${counter}`,
+      emailOriginal: email,
+      status,
+      subscribedAt: now,
+      unsubscribedAt: status === 'UNSUBSCRIBED' ? now : null,
+      consentSource: 'LANDING_PAGE',
+      consentWordingVersion: 'v2',
+      unsubscribeToken: generateUnsubscribeToken(),
+    },
+  })
+  await prisma.consentEvent.create({
+    data: { subscriberId: subscriber.id, eventType: 'SUBSCRIBED', source: 'LANDING_PAGE', occurredAt: now },
+  })
+  landingSubscriberIds.push(subscriber.id)
+  return subscriber
+}
+
 afterAll(async () => {
   await prisma.consentEvent.deleteMany({ where: { subscriber: { teacherId: { in: teacherIds } } } })
   await prisma.subscriber.deleteMany({ where: { teacherId: { in: teacherIds } } })
   await prisma.teacher.deleteMany({ where: { id: { in: teacherIds } } })
+  await prisma.consentEvent.deleteMany({ where: { subscriberId: { in: landingSubscriberIds } } })
+  await prisma.subscriber.deleteMany({ where: { id: { in: landingSubscriberIds } } })
   await prisma.auditLog.deleteMany({ where: { entityType: 'Subscriber', entityId: { in: subscriberIds } } })
   await prisma.$disconnect()
 })
@@ -162,5 +191,51 @@ describe('getSubscriberSelectionSummaryAction', () => {
     const result = await getSubscriberSelectionSummaryAction({ mode: 'ids', subscriberIds: [subscribed.id, unsubscribed.id] })
     expect(result.success).toBe(true)
     if (result.success) expect(result.data.count).toBe(1)
+  })
+})
+
+describe('previewMarketingEmailAction', () => {
+  it('rejects a subject containing a newline', async () => {
+    const { subscriber } = await makeSubscriber('SUBSCRIBED')
+    const result = await previewMarketingEmailAction(
+      { mode: 'ids', subscriberIds: [subscriber.id] },
+      { subject: 'Line one\nLine two', body: 'Hi {{firstName}}' },
+    )
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.fieldErrors?.subject).toBeDefined()
+  })
+
+  it('reports an error when no subscribed contact matches the selection', async () => {
+    const { subscriber } = await makeSubscriber('UNSUBSCRIBED')
+    const result = await previewMarketingEmailAction({ mode: 'ids', subscriberIds: [subscriber.id] }, { subject: 'Subject', body: 'Body' })
+    expect(result.success).toBe(false)
+  })
+
+  it('recipientCount reflects only subscribed contacts in the selection', async () => {
+    const { subscriber: subscribed } = await makeSubscriber('SUBSCRIBED')
+    const { subscriber: unsubscribed } = await makeSubscriber('UNSUBSCRIBED')
+
+    const result = await previewMarketingEmailAction(
+      { mode: 'ids', subscriberIds: [subscribed.id, unsubscribed.id] },
+      { subject: 'Subject', body: 'Body' },
+    )
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.recipientCount).toBe(1)
+  })
+
+  it('the rendered example includes a working unsubscribe link carrying the real recipient token, and schoolName renders empty for a subscriber with no school', async () => {
+    const subscriber = await makeLandingPageSubscriber('SUBSCRIBED')
+
+    const result = await previewMarketingEmailAction(
+      { mode: 'ids', subscriberIds: [subscriber.id] },
+      { subject: 'Subject', body: 'Hi {{firstName}}, school: [{{schoolName}}]' },
+    )
+    expect(result.success).toBe(true)
+    if (!result.success) return
+
+    expect(result.data.example.html).toContain(subscriber.unsubscribeToken)
+    expect(result.data.example.html).toContain('school: []')
+    expect(result.data.example.html).not.toContain('{{')
   })
 })

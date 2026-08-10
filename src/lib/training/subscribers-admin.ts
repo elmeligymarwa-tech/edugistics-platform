@@ -2,6 +2,7 @@ import 'server-only'
 
 import type { ConsentEventSource, ConsentEventType, ConsentSource, Prisma, SubscriberStatus } from '@prisma/client'
 
+import { deriveFirstName } from '@/domain/training/personalization'
 import {
   SUBSCRIBERS_PAGE_SIZE,
   type SortDirection,
@@ -26,21 +27,29 @@ export function buildSubscriberWhere(filters: SubscriberFilters): Prisma.Subscri
     }
   }
 
+  // School/subject/grade come only from the linked Teacher — filtering on
+  // any of them naturally (and correctly) excludes landing page subscribers
+  // with no teacher, since a relation filter never matches a null relation.
   const teacherWhere: Prisma.TeacherWhereInput = {}
   if (filters.schoolId) teacherWhere.schoolId = filters.schoolId
   if (filters.subject) teacherWhere.subjectNormalised = filters.subject
   if (filters.grade) teacherWhere.gradeNormalised = filters.grade
+  if (Object.keys(teacherWhere).length > 0) where.teacher = teacherWhere
 
+  // Search spans both a linked Teacher's fields and a landing page
+  // subscriber's own stored fullName/emailOriginal — a top-level OR next to
+  // (not nested inside) the teacher filter above, so it still ANDs
+  // correctly with school/subject/grade/status/etc.
   const search = filters.search?.trim()
   if (search) {
-    teacherWhere.OR = [
+    where.OR = [
       { fullName: { contains: search, mode: 'insensitive' } },
       { emailOriginal: { contains: search, mode: 'insensitive' } },
-      { schoolNameOriginal: { contains: search, mode: 'insensitive' } },
+      { teacher: { fullName: { contains: search, mode: 'insensitive' } } },
+      { teacher: { emailOriginal: { contains: search, mode: 'insensitive' } } },
+      { teacher: { schoolNameOriginal: { contains: search, mode: 'insensitive' } } },
     ]
   }
-
-  if (Object.keys(teacherWhere).length > 0) where.teacher = teacherWhere
 
   return where
 }
@@ -53,12 +62,13 @@ function buildOrderBy(sortField: SubscriberSortField, sortDir: SortDirection): P
 
 export interface SubscriberListItem {
   id: string
-  teacherId: string
+  teacherId: string | null
   fullName: string
   email: string
-  schoolName: string
-  subject: string
-  grade: string
+  /** Null for a landing page subscriber with no linked teacher. */
+  schoolName: string | null
+  subject: string | null
+  grade: string | null
   subscribedAt: Date
   consentSource: ConsentSource
   status: SubscriberStatus
@@ -68,15 +78,24 @@ export interface SubscriberListItem {
 
 const LIST_INCLUDE = { teacher: true } satisfies Prisma.SubscriberInclude
 
+/** The linked Teacher is always the fresher, authoritative source once a subscriber is linked; the subscriber's own fullName/emailOriginal only ever matter for a landing page subscriber that has no teacher yet. */
+function resolveDisplayName(row: { fullName: string | null; teacher: { fullName: string } | null }): string {
+  return row.teacher?.fullName ?? row.fullName ?? 'Unknown'
+}
+
+function resolveDisplayEmail(row: { emailOriginal: string | null; emailNormalised: string; teacher: { emailOriginal: string } | null }): string {
+  return row.teacher?.emailOriginal ?? row.emailOriginal ?? row.emailNormalised
+}
+
 function toListItem(row: Prisma.SubscriberGetPayload<{ include: typeof LIST_INCLUDE }>): SubscriberListItem {
   return {
     id: row.id,
     teacherId: row.teacherId,
-    fullName: row.teacher.fullName,
-    email: row.teacher.emailOriginal,
-    schoolName: row.teacher.schoolNameOriginal,
-    subject: row.teacher.subjectOriginal,
-    grade: row.teacher.gradeOriginal,
+    fullName: resolveDisplayName(row),
+    email: resolveDisplayEmail(row),
+    schoolName: row.teacher?.schoolNameOriginal ?? null,
+    subject: row.teacher?.subjectOriginal ?? null,
+    grade: row.teacher?.gradeOriginal ?? null,
     subscribedAt: row.subscribedAt,
     consentSource: row.consentSource,
     status: row.status,
@@ -160,13 +179,13 @@ export interface SubscriberConsentEventItem {
 
 export interface SubscriberDetail {
   id: string
-  teacherId: string
+  teacherId: string | null
   fullName: string
   email: string
-  phone: string
-  schoolName: string
-  subject: string
-  grade: string
+  phone: string | null
+  schoolName: string | null
+  subject: string | null
+  grade: string | null
   status: SubscriberStatus
   subscribedAt: Date
   unsubscribedAt: Date | null
@@ -194,12 +213,12 @@ export async function getSubscriberDetail(id: string): Promise<SubscriberDetail 
   return {
     id: row.id,
     teacherId: row.teacherId,
-    fullName: row.teacher.fullName,
-    email: row.teacher.emailOriginal,
-    phone: row.teacher.phone,
-    schoolName: row.teacher.schoolNameOriginal,
-    subject: row.teacher.subjectOriginal,
-    grade: row.teacher.gradeOriginal,
+    fullName: resolveDisplayName(row),
+    email: resolveDisplayEmail(row),
+    phone: row.teacher?.phone ?? null,
+    schoolName: row.teacher?.schoolNameOriginal ?? null,
+    subject: row.teacher?.subjectOriginal ?? null,
+    grade: row.teacher?.gradeOriginal ?? null,
     status: row.status,
     subscribedAt: row.subscribedAt,
     unsubscribedAt: row.unsubscribedAt,
@@ -225,44 +244,98 @@ export type SubscriberSelectionCriteria =
   | { mode: 'ids'; subscriberIds: string[] }
   | { mode: 'filters'; filters: SubscriberFilters; excludeIds?: string[] }
 
+/**
+ * The single WHERE-clause builder behind every recipient resolution
+ * (selection-count summary and the composer's full recipient fetch). The
+ * client sends only ids or filter criteria — never who's actually in the
+ * audience. status = SUBSCRIBED is re-applied here unconditionally, on top
+ * of (mode 'filters') or in addition to (mode 'ids') whatever the client
+ * claims, so a stale or malicious client can never smuggle an unsubscribed
+ * contact into a send.
+ */
+function buildForcedSubscribedWhere(criteria: SubscriberSelectionCriteria): Prisma.SubscriberWhereInput | null {
+  if (criteria.mode === 'ids') {
+    if (criteria.subscriberIds.length === 0) return null
+    return { id: { in: criteria.subscriberIds }, status: 'SUBSCRIBED' }
+  }
+  const filterWhere = buildSubscriberWhere({ ...criteria.filters, status: 'SUBSCRIBED' })
+  const excludeIds = criteria.excludeIds ?? []
+  return excludeIds.length > 0 ? { AND: [filterWhere, { id: { notIn: excludeIds } }] } : filterWhere
+}
+
 export interface ResolvedSubscriberSelection {
   count: number
   subscriberIds: string[]
 }
 
-/**
- * Server-side recipient resolution. The client sends only ids or filter
- * criteria — never who's actually in the audience. status = SUBSCRIBED is
- * re-applied here unconditionally, on top of (mode 'filters') or in
- * addition to (mode 'ids') whatever the client claims, so a stale or
- * malicious client can never smuggle an unsubscribed contact into a send.
- */
 export async function resolveSubscriberSelection(criteria: SubscriberSelectionCriteria): Promise<ResolvedSubscriberSelection> {
-  let where: Prisma.SubscriberWhereInput
-
-  if (criteria.mode === 'ids') {
-    if (criteria.subscriberIds.length === 0) return { count: 0, subscriberIds: [] }
-    where = { id: { in: criteria.subscriberIds }, status: 'SUBSCRIBED' }
-  } else {
-    const filterWhere = buildSubscriberWhere({ ...criteria.filters, status: 'SUBSCRIBED' })
-    const excludeIds = criteria.excludeIds ?? []
-    where = excludeIds.length > 0 ? { AND: [filterWhere, { id: { notIn: excludeIds } }] } : filterWhere
-  }
+  const where = buildForcedSubscribedWhere(criteria)
+  if (!where) return { count: 0, subscriberIds: [] }
 
   const rows = await prisma.subscriber.findMany({ where, select: { id: true } })
   return { count: rows.length, subscriberIds: rows.map((row) => row.id) }
 }
 
-const EXPORT_INCLUDE = { teacher: true, consentCourse: { select: { name: true } } } satisfies Prisma.SubscriberInclude
+export interface MarketingRecipient {
+  subscriberId: string
+  email: string
+  firstName: string
+  fullName: string
+  /** Empty string for a landing page subscriber with no linked teacher — never null, so it can be dropped straight into a template's {{schoolName}} token. */
+  schoolName: string
+  unsubscribeToken: string
+}
 
-export type ExportSubscriberRow = Prisma.SubscriberGetPayload<{ include: typeof EXPORT_INCLUDE }>
+/**
+ * Full personalisation data for every recipient a selection resolves to —
+ * used only to render the composer's preview in this phase (Phase C ships
+ * no sending engine). Same forced-subscribed-only rule as
+ * resolveSubscriberSelection; never trust the caller's status claim.
+ */
+export async function resolveMarketingRecipients(criteria: SubscriberSelectionCriteria): Promise<MarketingRecipient[]> {
+  const where = buildForcedSubscribedWhere(criteria)
+  if (!where) return []
+
+  const rows = await prisma.subscriber.findMany({ where, include: { teacher: true } })
+  return rows.map((row) => {
+    const fullName = resolveDisplayName(row)
+    return {
+      subscriberId: row.id,
+      email: resolveDisplayEmail(row),
+      firstName: deriveFirstName(fullName),
+      fullName,
+      schoolName: row.teacher?.schoolNameOriginal ?? '',
+      unsubscribeToken: row.unsubscribeToken,
+    }
+  })
+}
+
+// An explicit select, not `include` — unsubscribeToken must never even be
+// loaded into memory for the export path, let alone reach the file. This is
+// the whole field list buildSubscribersWorkbook reads; add a field there,
+// add it here too.
+const EXPORT_SELECT = {
+  id: true,
+  emailNormalised: true,
+  fullName: true,
+  emailOriginal: true,
+  status: true,
+  subscribedAt: true,
+  consentSource: true,
+  lastMarketingEmailAt: true,
+  marketingEmailsSent: true,
+  teacher: { select: { fullName: true, emailOriginal: true, phone: true, schoolNameOriginal: true, subjectOriginal: true, gradeOriginal: true } },
+  consentCourse: { select: { name: true } },
+} satisfies Prisma.SubscriberSelect
+
+export type ExportSubscriberRow = Prisma.SubscriberGetPayload<{ select: typeof EXPORT_SELECT }>
 
 /** All rows matching the filters, for the Excel export — bypasses pagination but reuses the exact same where-clause as the table, so a filtered URL always produces the same result set in both places. */
 export async function listAllSubscribersForExport(filters: SubscriberFilters): Promise<ExportSubscriberRow[]> {
   const where = buildSubscriberWhere(filters)
   return prisma.subscriber.findMany({
     where,
-    include: EXPORT_INCLUDE,
+    select: EXPORT_SELECT,
     orderBy: { subscribedAt: 'desc' },
   })
 }

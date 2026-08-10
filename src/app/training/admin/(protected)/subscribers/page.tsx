@@ -1,9 +1,13 @@
 import { Suspense } from 'react'
+import Link from 'next/link'
 import type { Metadata } from 'next'
+import { FileText } from 'lucide-react'
 
+import { Button } from '@/components/ui/button'
 import { cairoDateTimeLocalToUtc } from '@/domain/training/timezone'
 import { parseSubscriberSearchParams, parseSubscriberSort } from '@/domain/training/subscriber-filters'
 import { getSubscriberGrowthTrend, getSubscriberKpis, type SubscriberDateRangeFilter } from '@/lib/training/subscriber-analytics'
+import { listActiveMarketingTemplatesForComposer } from '@/lib/training/marketing-templates'
 import { listSubscriberFilterOptions, listSubscribersForAdmin } from '@/lib/training/subscribers-admin'
 import { SubscriberGrowthChart } from '@/components/training/admin/subscriber-growth-chart'
 import { SubscribersFilters } from '@/components/training/admin/subscribers-filters'
@@ -50,13 +54,14 @@ export default async function TrainingAdminSubscribersPage({
     dateTo: params.analyticsTo ? cairoDateTimeLocalToUtc(`${params.analyticsTo}T23:59`) : undefined,
   }
 
-  const [{ rows, totalCount }, options, kpis, trendDay, trendWeek, trendMonth] = await Promise.all([
+  const [{ rows, totalCount }, options, kpis, trendDay, trendWeek, trendMonth, templates] = await Promise.all([
     listSubscribersForAdmin(filters, page, sortField, sortDir),
     listSubscriberFilterOptions(),
     getSubscriberKpis(analyticsRange),
     getSubscriberGrowthTrend(analyticsRange, 'DAY'),
     getSubscriberGrowthTrend(analyticsRange, 'WEEK'),
     getSubscriberGrowthTrend(analyticsRange, 'MONTH'),
+    listActiveMarketingTemplatesForComposer(),
   ])
 
   const trends: Record<TrendGranularity, Awaited<ReturnType<typeof getSubscriberGrowthTrend>>> = {
@@ -67,9 +72,14 @@ export default async function TrainingAdminSubscribersPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-medium text-heading">Subscribers</h1>
-        <p className="mt-1 text-sm text-muted-foreground">The mailing list — sourced entirely from Subscriber.status, never the legacy consent flag.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-medium text-heading">Subscribers</h1>
+          <p className="mt-1 text-sm text-muted-foreground">The mailing list — sourced entirely from Subscriber.status, never the legacy consent flag.</p>
+        </div>
+        <Button variant="outline" size="sm" render={<Link href="/training/admin/subscribers/templates" />}>
+          <FileText /> Email templates
+        </Button>
       </div>
 
       <SubscribersKpiRow kpis={kpis} />
@@ -82,7 +92,7 @@ export default async function TrainingAdminSubscribersPage({
             {totalCount} subscriber{totalCount === 1 ? '' : 's'}
           </p>
           <SubscribersTable rows={rows} totalCount={totalCount} page={page} />
-          <SubscribersSelectionBar />
+          <SubscribersSelectionBar templates={templates} />
         </SubscribersSelectionProvider>
       </Suspense>
     </div>

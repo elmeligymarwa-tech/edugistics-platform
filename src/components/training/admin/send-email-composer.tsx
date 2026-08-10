@@ -1,8 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bold, Italic, Link as LinkIcon, List } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -22,6 +21,7 @@ import {
 } from '@/app/training/admin/(protected)/registrations/email-actions'
 import { sendCampaignAction, sendTestEmailAction } from '@/app/training/admin/(protected)/registrations/send-actions'
 import type { RecipientCriteriaInput } from '@/lib/training/email/criteria'
+import { MarkdownEditorToolbar, useMarkdownBodyEditor } from './markdown-body-editor'
 
 const TEMPLATE_OPTIONS: SelectOption[] = CampaignEmailType.options.map((value) => ({
   value,
@@ -58,7 +58,7 @@ export function SendEmailComposer({ open, onOpenChange, criteria, initialSummary
   const [testAddress, setTestAddress] = useState('')
   const [testSending, setTestSending] = useState(false)
   const [testMessage, setTestMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const { textareaRef, replaceSelection, insertAtCursor, insertBulletList } = useMarkdownBodyEditor(setBody)
 
   useEffect(() => {
     if (!open) {
@@ -85,58 +85,6 @@ export function SendEmailComposer({ open, onOpenChange, criteria, initialSummary
       setBody(result.data.body)
       setOverrideApplied(result.data.overrideApplied)
     }
-  }
-
-  function replaceSelection(before: string, after: string, placeholderIfEmpty: string) {
-    const el = textareaRef.current
-    if (!el) {
-      setBody((current) => current + before + placeholderIfEmpty + after)
-      return
-    }
-    const { selectionStart, selectionEnd, value } = el
-    const selected = value.slice(selectionStart, selectionEnd) || placeholderIfEmpty
-    const next = value.slice(0, selectionStart) + before + selected + after + value.slice(selectionEnd)
-    setBody(next)
-    const cursorStart = selectionStart + before.length
-    requestAnimationFrame(() => {
-      el.focus()
-      el.selectionStart = cursorStart
-      el.selectionEnd = cursorStart + selected.length
-    })
-  }
-
-  function insertAtCursor(text: string) {
-    const el = textareaRef.current
-    if (!el) {
-      setBody((current) => current + text)
-      return
-    }
-    const { selectionStart, selectionEnd, value } = el
-    const next = value.slice(0, selectionStart) + text + value.slice(selectionEnd)
-    setBody(next)
-    const cursor = selectionStart + text.length
-    requestAnimationFrame(() => {
-      el.focus()
-      el.selectionStart = el.selectionEnd = cursor
-    })
-  }
-
-  function insertBulletList() {
-    const el = textareaRef.current
-    if (!el) {
-      setBody((current) => `${current}\n- list item`)
-      return
-    }
-    const { selectionStart, selectionEnd, value } = el
-    const lineStart = value.lastIndexOf('\n', selectionStart - 1) + 1
-    const lineEndIndex = value.indexOf('\n', selectionEnd)
-    const lineEnd = lineEndIndex === -1 ? value.length : lineEndIndex
-    const block = value.slice(lineStart, lineEnd) || 'list item'
-    const bulleted = block
-      .split('\n')
-      .map((line) => `- ${line.replace(/^-\s*/, '')}`)
-      .join('\n')
-    setBody(value.slice(0, lineStart) + bulleted + value.slice(lineEnd))
   }
 
   const multiCourse = initialSummary.courses.length > 1
@@ -274,27 +222,13 @@ export function SendEmailComposer({ open, onOpenChange, criteria, initialSummary
 
               <Field>
                 <FieldLabel htmlFor="composer-body">Message</FieldLabel>
-                <div className="flex items-center gap-1 rounded-t-lg border border-b-0 border-input bg-muted/40 p-1">
-                  <Button type="button" variant="ghost" size="icon-sm" aria-label="Bold" onClick={() => replaceSelection('**', '**', 'bold text')}>
-                    <Bold />
-                  </Button>
-                  <Button type="button" variant="ghost" size="icon-sm" aria-label="Italic" onClick={() => replaceSelection('*', '*', 'italic text')}>
-                    <Italic />
-                  </Button>
-                  <Button type="button" variant="ghost" size="icon-sm" aria-label="Bullet list" onClick={insertBulletList}>
-                    <List />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Link"
-                    onClick={() => replaceSelection('[', '](https://)', 'link text')}
-                  >
-                    <LinkIcon />
-                  </Button>
-                  <div className="ml-auto">
-                    {zoomDisabledReason ? (
+                <MarkdownEditorToolbar
+                  onBold={() => replaceSelection('**', '**', 'bold text')}
+                  onItalic={() => replaceSelection('*', '*', 'italic text')}
+                  onBulletList={insertBulletList}
+                  onLink={() => replaceSelection('[', '](https://)', 'link text')}
+                  extra={
+                    zoomDisabledReason ? (
                       <Tooltip>
                         <TooltipTrigger render={<span />}>
                           <Button type="button" variant="ghost" size="sm" disabled>
@@ -312,9 +246,9 @@ export function SendEmailComposer({ open, onOpenChange, criteria, initialSummary
                       >
                         Insert Zoom Link
                       </Button>
-                    )}
-                  </div>
-                </div>
+                    )
+                  }
+                />
                 <Textarea
                   id="composer-body"
                   ref={textareaRef}

@@ -30,3 +30,16 @@ export function getEmailReplyTo(): string {
   if (!replyTo) throw new MissingEmailConfigError('EMAIL_REPLY_TO')
   return replyTo
 }
+
+/**
+ * Marketing email (the composer, Phase D's sending engine) sends from a
+ * separate domain — news.edugistics.online — never from EMAIL_FROM's
+ * transactional domain. Keeping bulk marketing traffic off the domain that
+ * sends registration/course confirmations protects that domain's sender
+ * reputation if a marketing send is ever reported as spam.
+ */
+export function getMarketingEmailFrom(): string {
+  const from = process.env.MARKETING_EMAIL_FROM
+  if (!from) throw new MissingEmailConfigError('MARKETING_EMAIL_FROM')
+  return from
+}

@@ -3,23 +3,25 @@
 import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { isSelectionEmpty } from '@/domain/training/registration-selection'
 import { getSubscriberSelectionSummaryAction } from '@/app/training/admin/(protected)/subscribers/actions'
+import type { MarketingTemplateListItem } from '@/lib/training/marketing-templates'
 import type { SubscriberCriteriaInput } from '@/lib/training/subscriber-criteria'
+import { SubscribersEmailComposer } from './subscribers-email-composer'
 import { useSubscribersSelection } from './subscribers-selection-context'
 
 function criteriaFromFiltersKey(filtersKey: string, excludeIds: string[]): SubscriberCriteriaInput {
   return { mode: 'filters', searchParams: Object.fromEntries(new URLSearchParams(filtersKey)), excludeIds }
 }
 
-export function SubscribersSelectionBar() {
+export function SubscribersSelectionBar({ templates }: { templates: MarketingTemplateListItem[] }) {
   const selection = useSubscribersSelection()
   const { state, filtersKey } = selection
 
   const [count, setCount] = useState<number | null>(null)
   const [filterTotal, setFilterTotal] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
+  const [composerOpen, setComposerOpen] = useState(false)
 
   const criteria: SubscriberCriteriaInput | null = isSelectionEmpty(state)
     ? null
@@ -73,14 +75,9 @@ export function SubscribersSelectionBar() {
             Clear selection
           </Button>
         </div>
-        <Tooltip>
-          <TooltipTrigger render={<span className="inline-flex" />}>
-            <Button type="button" disabled>
-              Send Email
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Composer available in the next phase.</TooltipContent>
-        </Tooltip>
+        <Button type="button" onClick={() => setComposerOpen(true)} disabled={!count}>
+          Send Email
+        </Button>
       </div>
       {canUpsell && filterTotal != null && (
         <p className="text-sm text-muted-foreground">
@@ -96,6 +93,10 @@ export function SubscribersSelectionBar() {
         <p className="text-sm text-muted-foreground" role="status">
           {selection.clearedNotice}
         </p>
+      )}
+
+      {criteria && (
+        <SubscribersEmailComposer open={composerOpen} onOpenChange={setComposerOpen} criteria={criteria} templates={templates} />
       )}
     </div>
   )

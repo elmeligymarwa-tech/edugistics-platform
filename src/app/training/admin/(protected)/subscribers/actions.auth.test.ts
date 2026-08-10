@@ -7,7 +7,8 @@ vi.mock('next/headers', () => ({
   cookies: async () => ({ get: () => undefined }),
 }))
 
-const { getSubscriberSelectionSummaryAction, manualUnsubscribeAction, manualResubscribeAction } = await import('./actions')
+const { getSubscriberSelectionSummaryAction, manualUnsubscribeAction, manualResubscribeAction, previewMarketingEmailAction } =
+  await import('./actions')
 
 describe('subscribers actions — unauthenticated access', () => {
   it('rejects getSubscriberSelectionSummaryAction without a valid admin session', async () => {
@@ -20,5 +21,11 @@ describe('subscribers actions — unauthenticated access', () => {
 
   it('rejects manualResubscribeAction without a valid admin session', async () => {
     await expect(manualResubscribeAction('does-not-matter', 'RESUBSCRIBE')).rejects.toThrow()
+  })
+
+  it('rejects previewMarketingEmailAction without a valid admin session', async () => {
+    await expect(
+      previewMarketingEmailAction({ mode: 'ids', subscriberIds: ['does-not-matter'] }, { subject: 'x', body: 'y' }),
+    ).rejects.toThrow()
   })
 })

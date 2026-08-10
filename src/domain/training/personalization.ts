@@ -42,3 +42,20 @@ export function deriveFirstName(fullName: string): string {
 export function usesZoomLinkToken(template: string): boolean {
   return /\{\{\s*zoomLink\s*\}\}/.test(template)
 }
+
+/** The tokens listed visibly in the subscriber composer (Phase C) — a subset of the full registration-campaign token set, since a marketing recipient has no course, date, time, Zoom link or registration reference. */
+export const MARKETING_PERSONALIZATION_TOKENS = ['firstName', 'fullName', 'schoolName'] as const satisfies readonly PersonalizationToken[]
+
+/** Fills every PersonalizationToken renderPersonalization needs, leaving the tokens a marketing email never uses as empty strings — renderPersonalization already turns an unmatched or valueless token into '', so a stray {{courseName}} typed into a marketing template still renders safely rather than surviving literally. */
+export function toMarketingPersonalizationValues(values: { firstName: string; fullName: string; schoolName: string }): PersonalizationValues {
+  return {
+    firstName: values.firstName,
+    fullName: values.fullName,
+    schoolName: values.schoolName,
+    courseName: '',
+    courseDate: '',
+    courseTime: '',
+    zoomLink: '',
+    reference: '',
+  }
+}
