@@ -101,3 +101,54 @@ describe('SendEmailComposer — preview step', () => {
     resolveSend({ success: true, data: { campaignId: 'campaign-1' } })
   })
 })
+
+// "Send Test to Myself" lives on the compose step, so no preview round trip is needed to reach it.
+function renderComposerAtCompose() {
+  render(<SendEmailComposer open onOpenChange={() => {}} criteria={criteria} initialSummary={initialSummary} />)
+  fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'admin@example.com' } })
+}
+
+describe('SendEmailComposer — Send Test to Myself', () => {
+  it('reaches a success state after a successful test send, and the button is usable again', async () => {
+    sendTestEmailAction.mockResolvedValueOnce({ success: true, data: { messageId: 'msg-1' } })
+    renderComposerAtCompose()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send Test to Myself' }))
+
+    await waitFor(() => expect(screen.getByText('Test email sent — check the inbox.')).toBeInTheDocument())
+    const button = screen.getByRole('button', { name: 'Send Test to Myself' })
+    expect(button).toBeEnabled()
+
+    // Usable again: a second click fires a second request rather than staying inert.
+    sendTestEmailAction.mockResolvedValueOnce({ success: true, data: { messageId: 'msg-2' } })
+    fireEvent.click(button)
+    await waitFor(() => expect(sendTestEmailAction).toHaveBeenCalledTimes(2))
+  })
+
+  it('reaches an error state after a failed test send (a handled { success: false } result), and the button is usable again', async () => {
+    sendTestEmailAction.mockResolvedValueOnce({ success: false, error: 'Bounced address.' })
+    renderComposerAtCompose()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send Test to Myself' }))
+
+    await waitFor(() => expect(screen.getByText('Bounced address.')).toBeInTheDocument())
+    const button = screen.getByRole('button', { name: 'Send Test to Myself' })
+    expect(button).toBeEnabled()
+
+    sendTestEmailAction.mockResolvedValueOnce({ success: true, data: { messageId: 'msg-retry' } })
+    fireEvent.click(button)
+    await waitFor(() => expect(screen.getByText('Test email sent — check the inbox.')).toBeInTheDocument())
+  })
+
+  it('never leaves the button stuck on "Sending…" when the request itself rejects (the production bug: an unhandled promise rejection, not a handled result)', async () => {
+    sendTestEmailAction.mockRejectedValueOnce(new Error('Network connection lost.'))
+    renderComposerAtCompose()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send Test to Myself' }))
+
+    await waitFor(() => expect(screen.getByText('Network connection lost.')).toBeInTheDocument())
+    const button = screen.getByRole('button', { name: 'Send Test to Myself' })
+    expect(button).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Sending…' })).not.toBeInTheDocument()
+  })
+})

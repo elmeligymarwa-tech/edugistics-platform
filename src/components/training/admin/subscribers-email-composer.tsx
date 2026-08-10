@@ -138,13 +138,27 @@ export function SubscribersEmailComposer({
       return
     }
     setTestSending(true)
-    const result = await sendTestMarketingEmailAction({ criteria, content: { subject, body }, testAddress })
-    setTestSending(false)
-    setTestMessage(
-      result.success
-        ? { kind: 'success', text: 'Test email sent — check the inbox.' }
-        : { kind: 'error', text: result.error },
-    )
+    // try/finally is load-bearing here: without it, a rejected call (a
+    // transport-level failure, not just a handled { success: false } result
+    // — e.g. the server action throwing before it can return) skips both
+    // setTestSending(false) and setTestMessage below entirely, freezing the
+    // button on "Sending…" forever even though nothing further can be done
+    // about it client-side. finally guarantees the button always settles.
+    try {
+      const result = await sendTestMarketingEmailAction({ criteria, content: { subject, body }, testAddress })
+      setTestMessage(
+        result.success
+          ? { kind: 'success', text: 'Test email sent — check the inbox.' }
+          : { kind: 'error', text: result.error },
+      )
+    } catch (error) {
+      setTestMessage({
+        kind: 'error',
+        text: error instanceof Error ? error.message : 'Something went wrong sending the test email. Try again.',
+      })
+    } finally {
+      setTestSending(false)
+    }
   }
 
   const confirmationMatches = preview !== null && confirmationInput.trim() === String(preview.recipientCount)
