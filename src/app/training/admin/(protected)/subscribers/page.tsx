@@ -7,8 +7,11 @@ import { Button } from '@/components/ui/button'
 import { cairoDateTimeLocalToUtc } from '@/domain/training/timezone'
 import { parseSubscriberSearchParams, parseSubscriberSort } from '@/domain/training/subscriber-filters'
 import { getSubscriberGrowthTrend, getSubscriberKpis, type SubscriberDateRangeFilter } from '@/lib/training/subscriber-analytics'
+import { getMarketingCampaignSummary } from '@/lib/training/email/marketing-campaign-analytics'
 import { listActiveMarketingTemplatesForComposer } from '@/lib/training/marketing-templates'
 import { listSubscriberFilterOptions, listSubscribersForAdmin } from '@/lib/training/subscribers-admin'
+import { MarketingCampaignResumeDialog } from '@/components/training/admin/marketing-campaign-resume-dialog'
+import { MarketingCampaignSummaryPanel } from '@/components/training/admin/marketing-campaign-summary-panel'
 import { SubscriberGrowthChart } from '@/components/training/admin/subscriber-growth-chart'
 import { SubscribersFilters } from '@/components/training/admin/subscribers-filters'
 import { SubscribersKpiRow } from '@/components/training/admin/subscribers-kpi-row'
@@ -54,7 +57,7 @@ export default async function TrainingAdminSubscribersPage({
     dateTo: params.analyticsTo ? cairoDateTimeLocalToUtc(`${params.analyticsTo}T23:59`) : undefined,
   }
 
-  const [{ rows, totalCount }, options, kpis, trendDay, trendWeek, trendMonth, templates] = await Promise.all([
+  const [{ rows, totalCount }, options, kpis, trendDay, trendWeek, trendMonth, templates, marketingSummary] = await Promise.all([
     listSubscribersForAdmin(filters, page, sortField, sortDir),
     listSubscriberFilterOptions(),
     getSubscriberKpis(analyticsRange),
@@ -62,6 +65,7 @@ export default async function TrainingAdminSubscribersPage({
     getSubscriberGrowthTrend(analyticsRange, 'WEEK'),
     getSubscriberGrowthTrend(analyticsRange, 'MONTH'),
     listActiveMarketingTemplatesForComposer(),
+    getMarketingCampaignSummary(analyticsRange),
   ])
 
   const trends: Record<TrendGranularity, Awaited<ReturnType<typeof getSubscriberGrowthTrend>>> = {
@@ -77,12 +81,18 @@ export default async function TrainingAdminSubscribersPage({
           <h1 className="text-2xl font-medium text-heading">Subscribers</h1>
           <p className="mt-1 text-sm text-muted-foreground">The mailing list — sourced entirely from Subscriber.status, never the legacy consent flag.</p>
         </div>
-        <Button variant="outline" size="sm" render={<Link href="/training/admin/subscribers/templates" />}>
-          <FileText /> Email templates
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" render={<Link href="/training/admin/subscribers/campaigns" />}>
+            Campaigns
+          </Button>
+          <Button variant="outline" size="sm" render={<Link href="/training/admin/subscribers/templates" />}>
+            <FileText /> Email templates
+          </Button>
+        </div>
       </div>
 
       <SubscribersKpiRow kpis={kpis} />
+      <MarketingCampaignSummaryPanel summary={marketingSummary} />
       <SubscriberGrowthChart trends={trends} />
 
       <Suspense>
@@ -94,6 +104,10 @@ export default async function TrainingAdminSubscribersPage({
           <SubscribersTable rows={rows} totalCount={totalCount} page={page} />
           <SubscribersSelectionBar templates={templates} />
         </SubscribersSelectionProvider>
+      </Suspense>
+
+      <Suspense>
+        <MarketingCampaignResumeDialog />
       </Suspense>
     </div>
   )

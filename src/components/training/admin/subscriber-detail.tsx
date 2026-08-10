@@ -3,7 +3,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DetailItem } from '@/components/ui/detail-item'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatAdminTimestamp } from '@/domain/training/format'
+import type { SubscriberMarketingEmailHistoryItem } from '@/lib/training/email/marketing-campaign-analytics'
 import type { SubscriberDetail as SubscriberDetailData } from '@/lib/training/subscribers-admin'
+import { MarketingRecipientStatusBadge } from './marketing-recipient-status-badge'
 import { ResubscribeSubscriberDialog } from './resubscribe-subscriber-dialog'
 import { SubscriberStatusBadge } from './subscriber-status-badge'
 import { UnsubscribeSubscriberDialog } from './unsubscribe-subscriber-dialog'
@@ -32,7 +34,13 @@ function EventTypeBadge({ eventType }: { eventType: string }) {
   return <Badge variant={variant}>{EVENT_TYPE_LABELS[eventType] ?? eventType}</Badge>
 }
 
-export function SubscriberDetailView({ detail }: { detail: SubscriberDetailData }) {
+export function SubscriberDetailView({
+  detail,
+  marketingEmailHistory,
+}: {
+  detail: SubscriberDetailData
+  marketingEmailHistory: SubscriberMarketingEmailHistoryItem[]
+}) {
   return (
     <div className="flex flex-col gap-6">
       <Card>
@@ -99,6 +107,39 @@ export function SubscriberDetailView({ detail }: { detail: SubscriberDetailData 
                     <TableCell>{EVENT_SOURCE_LABELS[event.source] ?? event.source}</TableCell>
                     <TableCell>{event.courseName ?? '—'}</TableCell>
                     <TableCell>{event.wordingVersion ?? '—'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Marketing email history</CardTitle>
+          <p className="text-sm text-muted-foreground">Every campaign this contact was queued for, most recent first.</p>
+        </CardHeader>
+        <CardContent>
+          {marketingEmailHistory.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No marketing emails sent to this contact yet.</p>
+          ) : (
+            <Table className="data-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Campaign subject</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {marketingEmailHistory.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell>{formatAdminTimestamp(item.date)}</TableCell>
+                    <TableCell>{item.campaignSubject}</TableCell>
+                    <TableCell>
+                      <MarketingRecipientStatusBadge status={item.status} />
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

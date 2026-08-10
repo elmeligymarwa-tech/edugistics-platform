@@ -390,40 +390,41 @@ model PromoCodeCourse {
 // of the teacher. See the LEGACY note on Teacher.marketingConsent: that
 // field must never be consulted in place of this one.
 model Subscriber {
-  id                     String                     @id @default(cuid())
+  id                    String                     @id @default(cuid())
   // Nullable — a landing page subscriber (Phase C) has no teacher and no
   // course. When that person later registers for a course, this is set to
   // link the existing row rather than creating a second subscriber; their
   // subscribedAt and consent history are preserved. @unique still allows
   // any number of NULL rows in Postgres, so many un-linked subscribers can
   // coexist.
-  teacherId              String?                    @unique
-  emailNormalised        String                     @unique
+  teacherId             String?                    @unique
+  emailNormalised       String                     @unique
   // Populated only for subscribers with no teacherId (fullName/email are
   // otherwise read from the linked Teacher, which is always the fresher,
   // authoritative source once a subscriber is linked).
-  fullName               String?
-  emailOriginal          String?
-  status                 SubscriberStatus
-  subscribedAt           DateTime                   @db.Timestamptz
-  unsubscribedAt         DateTime?                  @db.Timestamptz
-  consentSource          ConsentSource
-  consentCourseId        String?
-  consentWordingVersion  String
+  fullName              String?
+  emailOriginal         String?
+  status                SubscriberStatus
+  subscribedAt          DateTime                   @db.Timestamptz
+  unsubscribedAt        DateTime?                  @db.Timestamptz
+  consentSource         ConsentSource
+  consentCourseId       String?
+  consentWordingVersion String
   // Cryptographically random (>=32 bytes), URL-safe, never derived from
   // email/teacherId/any sequential value — generated once at creation and
   // kept for the life of the record. Holding a token unsubscribes only the
   // one matching row. Never expose this in analytics, logs or any export.
-  unsubscribeToken       String                     @unique
-  lastMarketingEmailAt   DateTime?
-  marketingEmailsSent    Int                        @default(0)
-  statusChangedBy        SubscriberStatusChangedBy?
-  createdAt              DateTime                   @default(now())
-  updatedAt              DateTime                   @updatedAt
+  unsubscribeToken      String                     @unique
+  lastMarketingEmailAt  DateTime?
+  marketingEmailsSent   Int                        @default(0)
+  statusChangedBy       SubscriberStatusChangedBy?
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
 
-  teacher       Teacher?       @relation(fields: [teacherId], references: [id])
-  consentCourse Course?        @relation(fields: [consentCourseId], references: [id])
-  consentEvents ConsentEvent[]
+  teacher                     Teacher?                     @relation(fields: [teacherId], references: [id])
+  consentCourse               Course?                      @relation(fields: [consentCourseId], references: [id])
+  consentEvents               ConsentEvent[]
+  marketingCampaignRecipients MarketingCampaignRecipient[]
 
   @@index([status])
   @@index([subscribedAt])
@@ -465,5 +466,65 @@ model MarketingTemplate {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
+  campaigns MarketingCampaign[]
+
   @@index([archivedAt])
+}
+
+enum MarketingRecipientStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED_UNSUBSCRIBED
+}
+
+// Mailing list (Phase D): one row per real send of a marketing email to the
+// Subscriber list. templateId records which MarketingTemplate the
+// administrator started from, if any — subject/bodyTemplate below are always
+// the actual content sent, a permanent snapshot independent of any later
+// edit or archive of that template. Never hard deleted.
+model MarketingCampaign {
+  id             String   @id @default(cuid())
+  subject        String
+  bodyTemplate   String
+  templateId     String?
+  createdBy      String
+  recipientCount Int      @default(0)
+  sentCount      Int      @default(0)
+  failedCount    Int      @default(0)
+  skippedCount   Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  template   MarketingTemplate?           @relation(fields: [templateId], references: [id])
+  recipients MarketingCampaignRecipient[]
+
+  @@index([templateId])
+  @@index([createdAt])
+}
+
+// Delivery audit trail for marketing sends — append-only, never hard
+// deleted, mirroring EmailCampaignRecipient's role for the transactional
+// bulk-email feature. Keyed by subscriberId (not teacherId/registrationId)
+// since a landing page subscriber has neither. A row is written PENDING for
+// every resolved recipient before any send is attempted, so the manifest
+// survives a crash and shows who was queued.
+model MarketingCampaignRecipient {
+  id                String                   @id @default(cuid())
+  campaignId        String
+  subscriberId      String
+  emailAddress      String
+  status            MarketingRecipientStatus @default(PENDING)
+  sentAt            DateTime?
+  errorMessage      String?
+  providerMessageId String?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+
+  campaign   MarketingCampaign @relation(fields: [campaignId], references: [id])
+  subscriber Subscriber        @relation(fields: [subscriberId], references: [id])
+
+  @@index([campaignId])
+  @@index([subscriberId])
+  @@index([status])
 }

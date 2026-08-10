@@ -78,12 +78,12 @@ export interface SubscriberListItem {
 
 const LIST_INCLUDE = { teacher: true } satisfies Prisma.SubscriberInclude
 
-/** The linked Teacher is always the fresher, authoritative source once a subscriber is linked; the subscriber's own fullName/emailOriginal only ever matter for a landing page subscriber that has no teacher yet. */
-function resolveDisplayName(row: { fullName: string | null; teacher: { fullName: string } | null }): string {
+/** The linked Teacher is always the fresher, authoritative source once a subscriber is linked; the subscriber's own fullName/emailOriginal only ever matter for a landing page subscriber that has no teacher yet. Exported so the marketing sending engine (Phase D) resolves a recipient's name/email identically to every other admin view — never a second implementation. */
+export function resolveDisplayName(row: { fullName: string | null; teacher: { fullName: string } | null }): string {
   return row.teacher?.fullName ?? row.fullName ?? 'Unknown'
 }
 
-function resolveDisplayEmail(row: { emailOriginal: string | null; emailNormalised: string; teacher: { emailOriginal: string } | null }): string {
+export function resolveDisplayEmail(row: { emailOriginal: string | null; emailNormalised: string; teacher: { emailOriginal: string } | null }): string {
   return row.teacher?.emailOriginal ?? row.emailOriginal ?? row.emailNormalised
 }
 

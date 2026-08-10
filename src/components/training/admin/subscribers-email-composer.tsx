@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -8,12 +9,12 @@ import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Select, type SelectOption } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { MARKETING_PERSONALIZATION_TOKENS } from '@/domain/training/personalization'
 import {
   previewMarketingEmailAction,
   type MarketingEmailPreview,
 } from '@/app/training/admin/(protected)/subscribers/actions'
+import { sendMarketingCampaignAction, sendTestMarketingEmailAction } from '@/app/training/admin/(protected)/subscribers/send-actions'
 import type { SubscriberCriteriaInput } from '@/lib/training/subscriber-criteria'
 import type { MarketingTemplateListItem } from '@/lib/training/marketing-templates'
 import { MarkdownEditorToolbar, useMarkdownBodyEditor } from './markdown-body-editor'
@@ -33,6 +34,8 @@ export function SubscribersEmailComposer({
   criteria: SubscriberCriteriaInput
   templates: MarketingTemplateListItem[]
 }) {
+  const router = useRouter()
+
   const [step, setStep] = useState<Step>('compose')
   const [templateId, setTemplateId] = useState(BLANK_TEMPLATE_VALUE)
   const [subject, setSubject] = useState('')
@@ -43,20 +46,25 @@ export function SubscribersEmailComposer({
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [confirmationInput, setConfirmationInput] = useState('')
+  const [idempotencyKey, setIdempotencyKey] = useState('')
+  const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
+  const [testAddress, setTestAddress] = useState('')
+  const [testSending, setTestSending] = useState(false)
+  const [testMessage, setTestMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
 
   const { textareaRef, replaceSelection, insertAtCursor, insertBulletList } = useMarkdownBodyEditor(setBody)
 
-  function reset() {
-    setStep('compose')
-    setPreview(null)
-    setPreviewError(null)
-    setConfirmationInput('')
-  }
-
-  function handleOpenChange(next: boolean) {
-    if (!next) reset()
-    onOpenChange(next)
-  }
+  useEffect(() => {
+    if (!open) {
+      setStep('compose')
+      setPreview(null)
+      setPreviewError(null)
+      setConfirmationInput('')
+      setSendError(null)
+      setTestMessage(null)
+    }
+  }, [open])
 
   const templateOptions: SelectOption[] = [
     { value: BLANK_TEMPLATE_VALUE, label: 'Blank' },
@@ -91,14 +99,58 @@ export function SubscribersEmailComposer({
       return
     }
     setPreview(result.data)
+    setSendError(null)
     setConfirmationInput('')
+    // A fresh preview is a fresh logical send intent — its own idempotency key.
+    setIdempotencyKey(crypto.randomUUID())
     setStep('preview')
+  }
+
+  async function handleSend() {
+    if (!preview) return
+    setSending(true)
+    setSendError(null)
+
+    const result = await sendMarketingCampaignAction({
+      criteria,
+      content: { subject, body },
+      templateId: templateId === BLANK_TEMPLATE_VALUE ? undefined : templateId,
+      confirmedCount: preview.recipientCount,
+      idempotencyKey,
+    })
+
+    if (result.success) {
+      const url = new URL(window.location.href)
+      url.searchParams.set('campaignId', result.data.campaignId)
+      router.replace(`${url.pathname}?${url.searchParams.toString()}`)
+      onOpenChange(false)
+      return
+    }
+
+    setSending(false)
+    setSendError(result.error)
+  }
+
+  async function handleSendTest() {
+    setTestMessage(null)
+    if (!testAddress.trim()) {
+      setTestMessage({ kind: 'error', text: 'Enter an address to send the test to.' })
+      return
+    }
+    setTestSending(true)
+    const result = await sendTestMarketingEmailAction({ criteria, content: { subject, body }, testAddress })
+    setTestSending(false)
+    setTestMessage(
+      result.success
+        ? { kind: 'success', text: 'Test email sent — check the inbox.' }
+        : { kind: 'error', text: result.error },
+    )
   }
 
   const confirmationMatches = preview !== null && confirmationInput.trim() === String(preview.recipientCount)
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto" showClose>
         {step === 'compose' ? (
           <>
@@ -168,11 +220,35 @@ export function SubscribersEmailComposer({
                 </div>
               </div>
 
+              <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-muted/30 p-3">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Send Test to Myself — one message, rendered with a real subscriber&apos;s values, to an address you
+                  type. Creates no campaign and does not count as a send.
+                </p>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={testAddress}
+                    onChange={(event) => setTestAddress(event.target.value)}
+                    placeholder="you@example.com"
+                    inputMode="email"
+                    className="max-w-xs"
+                  />
+                  <Button type="button" variant="outline" size="sm" onClick={handleSendTest} disabled={testSending}>
+                    {testSending ? 'Sending…' : 'Send Test to Myself'}
+                  </Button>
+                </div>
+                {testMessage && (
+                  <p className={`text-xs ${testMessage.kind === 'success' ? 'text-success' : 'text-destructive'}`}>
+                    {testMessage.text}
+                  </p>
+                )}
+              </div>
+
               {previewError && <FieldError>{previewError}</FieldError>}
             </div>
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
               <Button type="button" onClick={handleContinueToPreview} disabled={loadingPreview}>
@@ -234,20 +310,17 @@ export function SubscribersEmailComposer({
                   </p>
                 )}
               </Field>
+
+              {sendError && <FieldError>{sendError}</FieldError>}
             </div>
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setStep('compose')}>
+              <Button type="button" variant="outline" onClick={() => setStep('compose')} disabled={sending}>
                 Back
               </Button>
-              <Tooltip>
-                <TooltipTrigger render={<span />}>
-                  <Button type="button" disabled>
-                    Send
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Sending available in the next phase.</TooltipContent>
-              </Tooltip>
+              <Button type="button" onClick={() => void handleSend()} disabled={!confirmationMatches || sending}>
+                {sending ? 'Sending…' : `Send to ${preview.recipientCount} subscriber${preview.recipientCount === 1 ? '' : 's'}`}
+              </Button>
             </DialogFooter>
           </>
         ) : null}
