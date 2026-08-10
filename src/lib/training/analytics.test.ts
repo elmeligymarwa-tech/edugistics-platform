@@ -6,6 +6,7 @@ import {
   FIXTURE_SCHOOLS,
   FIXTURE_TEACHERS,
   buildFixtureRegistrations,
+  deleteTrainingAnalyticsFixture,
   seedTrainingAnalyticsFixture,
   type FixtureRegistration,
 } from '../../../scripts/training-analytics-fixture-plan'
@@ -61,7 +62,10 @@ beforeAll(async () => {
   schoolIdByCanonicalName = new Map(schools.map((s) => [s.canonicalName, s.id]))
 }, 60_000)
 
+// This fixture's courses are isActive:true — publicly visible on /training
+// the moment they exist. They must not outlive this test file's run.
 afterAll(async () => {
+  await deleteTrainingAnalyticsFixture(prisma)
   await prisma.$disconnect()
 })
 

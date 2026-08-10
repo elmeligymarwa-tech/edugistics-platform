@@ -271,14 +271,16 @@ export function buildFixtureRegistrations(): FixtureRegistration[] {
 }
 
 /**
- * Writes the fixture to the database: deletes any prior run of this fixture
- * (matched purely by its markers, so it's safe against a shared dev
- * database), then recreates schools, courses, teachers and registrations.
- * Returns the registration count written. Callers look the created rows up
- * afterwards via their deterministic slugs/emails/names — no id handoff
- * needed.
+ * Deletes every row this fixture owns, matched purely by its own markers
+ * (course slug prefix, teacher email domain, school name prefix) so it's
+ * safe to run against a shared database without touching real data. Shared
+ * by seedTrainingAnalyticsFixture (which runs this first, so a re-seed is
+ * idempotent) and by the analytics test suite's own afterAll (which runs
+ * this last, so the fixture never outlives the test run that created it —
+ * these six "Fixture ..." courses are isActive:true and therefore publicly
+ * visible on /training the moment they exist).
  */
-export async function seedTrainingAnalyticsFixture(prisma: PrismaClient): Promise<number> {
+export async function deleteTrainingAnalyticsFixture(prisma: PrismaClient): Promise<void> {
   const existingCourses = await prisma.course.findMany({
     where: { slug: { startsWith: FIXTURE_MARKER } },
     select: { id: true },
@@ -294,6 +296,18 @@ export async function seedTrainingAnalyticsFixture(prisma: PrismaClient): Promis
   await prisma.teacher.deleteMany({ where: { emailNormalised: { endsWith: `@${FIXTURE_TEACHER_EMAIL_DOMAIN}` } } })
   await prisma.course.deleteMany({ where: { slug: { startsWith: FIXTURE_MARKER } } })
   await prisma.school.deleteMany({ where: { canonicalName: { startsWith: 'Phase4 Fixture' } } })
+}
+
+/**
+ * Writes the fixture to the database: deletes any prior run of this fixture
+ * (matched purely by its markers, so it's safe against a shared dev
+ * database), then recreates schools, courses, teachers and registrations.
+ * Returns the registration count written. Callers look the created rows up
+ * afterwards via their deterministic slugs/emails/names — no id handoff
+ * needed.
+ */
+export async function seedTrainingAnalyticsFixture(prisma: PrismaClient): Promise<number> {
+  await deleteTrainingAnalyticsFixture(prisma)
 
   // Batched inserts throughout — this fixture writes ~150 rows, and one
   // create() per row over a pooled remote connection is what previously
