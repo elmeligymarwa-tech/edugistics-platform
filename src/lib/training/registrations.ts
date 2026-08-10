@@ -250,7 +250,8 @@ export interface RegistrationDetail {
   schoolName: string
   subject: string
   grade: string
-  marketingConsent: boolean
+  /** Read-only — sourced from Subscriber.status, the sole authority on mailing-list membership. Null means the teacher has never subscribed. Never editable from this screen; see the subscriber page. */
+  subscriptionStatus: 'SUBSCRIBED' | 'UNSUBSCRIBED' | null
   currency: string
   /** A permanent record of what was applied at submission (or promotion) — never recalculated, so this stays accurate even after the promo code itself is later edited or archived. */
   promoCodeSnapshot: string | null
@@ -262,7 +263,10 @@ export interface RegistrationDetail {
 export async function getRegistrationDetail(id: string): Promise<RegistrationDetail | null> {
   const row = await prisma.registration.findUnique({
     where: { id },
-    include: { teacher: true, course: { select: { id: true, name: true, courseDate: true, currency: true } } },
+    include: {
+      teacher: { include: { subscriber: { select: { status: true } } } },
+      course: { select: { id: true, name: true, courseDate: true, currency: true } },
+    },
   })
   if (!row) return null
 
@@ -288,7 +292,7 @@ export async function getRegistrationDetail(id: string): Promise<RegistrationDet
     schoolName: row.teacher.schoolNameOriginal,
     subject: row.teacher.subjectOriginal,
     grade: row.teacher.gradeOriginal,
-    marketingConsent: row.teacher.marketingConsent,
+    subscriptionStatus: row.teacher.subscriber?.status ?? null,
     currency: row.course.currency,
     promoCodeSnapshot: row.promoCodeSnapshot,
     discountLabel:

@@ -186,7 +186,6 @@ export async function updateRegistrationAction(id: string, input: unknown): Prom
       schoolName: teacher.schoolNameOriginal,
       subject: teacher.subjectOriginal,
       grade: teacher.gradeOriginal,
-      marketingConsent: teacher.marketingConsent,
     }
 
     await prisma.$transaction(async (tx) => {
@@ -206,8 +205,6 @@ export async function updateRegistrationAction(id: string, input: unknown): Prom
           subjectNormalised: normaliseSubject(values.subject),
           gradeOriginal: values.grade,
           gradeNormalised: normaliseGrade(values.grade),
-          marketingConsent: values.marketingConsent,
-          marketingConsentAt: values.marketingConsent ? (teacher.marketingConsentAt ?? new Date()) : teacher.marketingConsentAt,
         },
       })
     })

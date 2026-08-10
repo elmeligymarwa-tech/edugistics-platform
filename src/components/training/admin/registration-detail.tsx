@@ -2,12 +2,11 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Controller, useForm } from 'react-hook-form'
+import { useForm } from 'react-hook-form'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Checkbox } from '@/components/ui/checkbox'
 import { DetailItem } from '@/components/ui/detail-item'
 import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
@@ -18,6 +17,7 @@ import type { RegistrationDetail as RegistrationDetailData } from '@/lib/trainin
 import type { CommunicationHistoryItem } from '@/lib/training/email/campaign-analytics'
 import { updateRegistrationAction } from '@/app/training/admin/(protected)/registrations/actions'
 import { EmailStatusBadge, RegistrationStatusBadge } from './registration-badges'
+import { SubscriberStatusBadge } from './subscriber-status-badge'
 
 function SourceBadge({ source }: { source: CommunicationHistoryItem['source'] }) {
   return source === 'CAMPAIGN' ? (
@@ -36,7 +36,6 @@ function toDefaultValues(detail: RegistrationDetailData): AdminEditRegistrationV
     subject: detail.subject,
     grade: detail.grade,
     address: detail.address ?? '',
-    marketingConsent: detail.marketingConsent,
   }
 }
 
@@ -56,7 +55,6 @@ export function RegistrationDetailView({
 
   const {
     register,
-    control,
     handleSubmit,
     setError,
     reset,
@@ -180,21 +178,6 @@ export function RegistrationDetailView({
                   <Input id="grade" {...register('grade')} aria-invalid={Boolean(errors.grade)} />
                   <FieldError>{errors.grade?.message}</FieldError>
                 </Field>
-
-                <Field className="col-span-2">
-                  <div className="flex items-center gap-2">
-                    <Controller
-                      name="marketingConsent"
-                      control={control}
-                      render={({ field }) => (
-                        <Checkbox id="marketingConsent" checked={field.value} onCheckedChange={field.onChange} />
-                      )}
-                    />
-                    <FieldLabel htmlFor="marketingConsent" className="text-foreground">
-                      Marketing consent given
-                    </FieldLabel>
-                  </div>
-                </Field>
               </div>
 
               <FieldError>{formError}</FieldError>
@@ -217,7 +200,16 @@ export function RegistrationDetailView({
               <DetailItem label="School" value={detail.schoolName} />
               <DetailItem label="Subject" value={detail.subject} />
               <DetailItem label="Grade" value={detail.grade} />
-              <DetailItem label="Marketing consent" value={detail.marketingConsent ? 'Yes' : 'No'} />
+              <DetailItem
+                label="Subscription status"
+                value={
+                  detail.subscriptionStatus ? (
+                    <SubscriberStatusBadge status={detail.subscriptionStatus} />
+                  ) : (
+                    <span className="text-muted-foreground">Never subscribed</span>
+                  )
+                }
+              />
             </div>
           )}
         </CardContent>

@@ -34,7 +34,13 @@ export const publicRegistrationSchema = z.object({
 
 export type PublicRegistrationValues = z.infer<typeof publicRegistrationSchema>
 
-/** Admin edit of a registration's teacher-supplied details — same field rules as the public form, minus the course choice and the honeypot. */
+/**
+ * Admin edit of a registration's teacher-supplied details — same field
+ * rules as the public form, minus the course choice and the honeypot.
+ * Deliberately has no marketing consent field: consent belongs to the
+ * teacher, not the administrator, and Subscriber.status (changed only via
+ * the deliberate actions on the subscriber page) is the sole authority.
+ */
 export const adminEditRegistrationSchema = z.object({
   fullName: z.string().trim().min(1, 'Full name is required.'),
   email: z.string().trim().min(1, 'Email is required.').email('Enter a valid email address.'),
@@ -43,7 +49,6 @@ export const adminEditRegistrationSchema = z.object({
   subject: z.string().trim().min(1, 'Subject taught is required.'),
   grade: z.string().trim().min(1, 'Grade or year group taught is required.'),
   address: z.string().trim().min(1, 'Address is required.'),
-  marketingConsent: z.boolean().default(false),
 })
 
 export type AdminEditRegistrationValues = z.infer<typeof adminEditRegistrationSchema>
