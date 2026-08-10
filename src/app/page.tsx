@@ -37,7 +37,7 @@ const SERVICES = [
 ]
 
 // PLACEHOLDER — contact address. Replace with the real inbox before launch.
-const CONTACT_EMAIL = 'hello@edugistics.example'
+const CONTACT_EMAIL = 'info@edugistics.online'
 
 export default function LandingPage() {
   return (
