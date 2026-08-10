@@ -12,6 +12,7 @@ import { runAfterResponse } from '@/lib/training/background'
 import { contentSchema, fieldErrorsFromZod } from '@/lib/training/email/criteria'
 import { buildListUnsubscribeHeaders } from '@/lib/training/email/marketing-headers'
 import { renderMarketingEmail } from '@/lib/training/email/marketing-render'
+import { validateMarketingEmailConfig } from '@/lib/training/email/resend-client'
 import {
   dispatchTestMarketingEmail,
   getMaxMarketingRecipientsPerCampaign,
@@ -51,6 +52,7 @@ export type SendMarketingCampaignResult =
   | { success: false; kind: 'count-mismatch'; error: string; resolvedCount: number }
   | { success: false; kind: 'over-limit'; error: string; max: number; resolvedCount: number }
   | { success: false; kind: 'rate-limited'; error: string }
+  | { success: false; kind: 'config'; error: string; missing: string }
 
 /**
  * Guards only the actual campaign-creation step, not the read-only checks
@@ -119,6 +121,20 @@ async function createMarketingCampaignAndSchedule(
  * returns.
  */
 async function executeMarketingSend(input: z.infer<typeof sendMarketingCampaignInputSchema>): Promise<SendMarketingCampaignResult> {
+  // Checked first and cheaply, before any database work: a misconfigured
+  // server must refuse to send at all, not create a campaign it can never
+  // deliver. This is the exact check that would have caught the
+  // MARKETING_EMAIL_FROM misspelling before it ever wrote a row.
+  const missing = validateMarketingEmailConfig()
+  if (missing) {
+    return {
+      success: false,
+      kind: 'config',
+      error: `Marketing email sending is not configured — ${missing} is missing on the server. Contact an administrator before sending.`,
+      missing,
+    }
+  }
+
   const recipients = await resolveMarketingRecipients(toSubscriberCriteria(input.criteria))
 
   if (recipients.length === 0) {
@@ -237,8 +253,24 @@ export async function getMarketingCampaignStatusAction(campaignId: string): Prom
 export type MarketingRetryResult = { success: true; data: { retriedCount: number } } | { success: false; error: string }
 
 /**
- * Re-sends only recipients currently FAILED on this campaign, resetting them
- * to PENDING and re-running the queue — never touches a row already SENT or
+ * Same heartbeat heuristic as the bulk-email retry action (see
+ * registrations/send-actions.ts) — recordSent/recordFailed/recordSkipped
+ * all update the campaign row's own sentCount/failedCount/skippedCount in
+ * the same transaction, which bumps updatedAt as a side effect, so it
+ * tracks queue liveness with no schema change. Ten minutes is an order of
+ * magnitude beyond the worst legitimate gap (a single recipient's
+ * rate-limit backoff, ~63s), so only a queue that actually stopped crosses
+ * it — a PENDING row merely waiting its turn in an active send never does,
+ * because the campaign keeps getting touched by the rows ahead of it.
+ */
+const ORPHAN_STALE_THRESHOLD_MS = 10 * 60 * 1000
+
+/**
+ * Re-sends recipients currently FAILED on this campaign, resetting them to
+ * PENDING — and, when the campaign itself looks dead (see
+ * ORPHAN_STALE_THRESHOLD_MS above), also recovers any recipient rows still
+ * stuck at PENDING from a queue that aborted without ever reaching its own
+ * FAILED-marking logic. Never touches a row already SENT or
  * SKIPPED_UNSUBSCRIBED, and updates this same campaign's rows rather than
  * creating a new one.
  */
@@ -256,11 +288,18 @@ export async function retryFailedMarketingRecipientsAction(campaignId: string): 
     where: { campaignId, status: 'FAILED' },
     select: { id: true },
   })
-  if (failed.length === 0) return { success: true, data: { retriedCount: 0 } }
+
+  const isOrphaned = Date.now() - campaign.updatedAt.getTime() > ORPHAN_STALE_THRESHOLD_MS
+  const orphanedPending = isOrphaned
+    ? await prisma.marketingCampaignRecipient.findMany({ where: { campaignId, status: 'PENDING' }, select: { id: true } })
+    : []
+
+  const toRetry = [...failed, ...orphanedPending]
+  if (toRetry.length === 0) return { success: true, data: { retriedCount: 0 } }
 
   await prisma.$transaction([
     prisma.marketingCampaignRecipient.updateMany({
-      where: { id: { in: failed.map((row) => row.id) } },
+      where: { id: { in: toRetry.map((row) => row.id) } },
       data: { status: 'PENDING', errorMessage: null },
     }),
     prisma.marketingCampaign.update({
@@ -273,12 +312,12 @@ export async function retryFailedMarketingRecipientsAction(campaignId: string): 
     action: 'MARKETING_CAMPAIGN_RETRY',
     entityType: 'MarketingCampaign',
     entityId: campaignId,
-    afterJson: { retriedCount: failed.length },
+    afterJson: { retriedCount: toRetry.length, recoveredOrphanedPendingCount: orphanedPending.length },
   })
 
   runAfterResponse(() => processMarketingCampaignSend(campaignId))
 
-  return { success: true, data: { retriedCount: failed.length } }
+  return { success: true, data: { retriedCount: toRetry.length } }
 }
 
 const testMarketingEmailInputSchema = z.object({

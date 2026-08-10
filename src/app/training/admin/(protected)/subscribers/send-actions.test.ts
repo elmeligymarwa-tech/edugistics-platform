@@ -24,11 +24,13 @@ vi.mock('@/lib/training/background', () => ({
 const sendMock = vi.fn()
 const MARKETING_FROM = 'Edugistics <updates@news.edugistics.online>'
 const TRANSACTIONAL_FROM = 'Edugistics Training <training@send.edugistics.online>'
+const validateMarketingEmailConfigMock = vi.fn<() => string | null>(() => null)
 vi.mock('@/lib/training/email/resend-client', () => ({
   getResendClient: () => ({ emails: { send: (...args: unknown[]) => sendMock(...args) } }),
   getMarketingEmailFrom: () => MARKETING_FROM,
   getEmailFrom: () => TRANSACTIONAL_FROM,
   getEmailReplyTo: () => 'info@edugistics.online',
+  validateMarketingEmailConfig: () => validateMarketingEmailConfigMock(),
 }))
 
 const {
@@ -103,6 +105,8 @@ function freshKey() {
 beforeEach(() => {
   sendMock.mockReset()
   capturedWork = null
+  validateMarketingEmailConfigMock.mockReset()
+  validateMarketingEmailConfigMock.mockReturnValue(null)
 })
 
 afterEach(() => {
@@ -503,6 +507,142 @@ describe('retryFailedMarketingRecipientsAction', () => {
 
     const stillSkipped = await prisma.marketingCampaignRecipient.findUniqueOrThrow({ where: { id: skippedRow.id } })
     expect(stillSkipped.status).toBe('SKIPPED_UNSUBSCRIBED')
+  })
+
+  it('recovers rows stuck at PENDING from an aborted campaign once it looks orphaned, but leaves a still-fresh campaign alone', async () => {
+    const a = await makeSubscriber()
+
+    const result = await sendMarketingCampaignAction({
+      criteria: { mode: 'ids', subscriberIds: [a.subscriber.id] },
+      content: { subject: 'Subject', body: 'Body' },
+      confirmedCount: 1,
+      idempotencyKey: freshKey(),
+    })
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    campaignIds.push(result.data.campaignId)
+    // Deliberately never invoke capturedWork() — this is the exact shape of
+    // the production incident: the queue never gets to run at all.
+
+    const freshRetry = await retryFailedMarketingRecipientsAction(result.data.campaignId)
+    expect(freshRetry.success).toBe(true)
+    if (!freshRetry.success) return
+    expect(freshRetry.data.retriedCount).toBe(0)
+    const stillPending = await prisma.marketingCampaignRecipient.findFirstOrThrow({ where: { campaignId: result.data.campaignId } })
+    expect(stillPending.status).toBe('PENDING')
+
+    // Simulate staleness: nothing about this campaign has changed in well over the orphan threshold.
+    await prisma.marketingCampaign.update({
+      where: { id: result.data.campaignId },
+      data: { updatedAt: new Date(Date.now() - 11 * 60 * 1000) },
+    })
+
+    sendMock.mockResolvedValueOnce(successResponse('msg-recovered'))
+    const staleRetry = await retryFailedMarketingRecipientsAction(result.data.campaignId)
+    expect(staleRetry.success).toBe(true)
+    if (!staleRetry.success) return
+    expect(staleRetry.data.retriedCount).toBe(1)
+
+    await capturedWork?.()
+
+    const recovered = await prisma.marketingCampaignRecipient.findFirstOrThrow({ where: { campaignId: result.data.campaignId } })
+    expect(recovered.status).toBe('SENT')
+    expect(recovered.providerMessageId).toBe('msg-recovered')
+  })
+})
+
+describe('processMarketingCampaignSend hardening', () => {
+  it('a throw on every recipient dispatch (a misconfigured MARKETING_EMAIL_FROM) marks each one FAILED individually, leaving none stuck at PENDING', async () => {
+    const a = await makeSubscriber()
+    const b = await makeSubscriber()
+    const c = await makeSubscriber()
+
+    // Reproduces the actual production incident: MARKETING_EMAIL_FROM
+    // resolution throws before any Resend call, every time.
+    sendMock.mockRejectedValue(new Error('MARKETING_EMAIL_FROM is not set on the server.'))
+
+    const result = await sendMarketingCampaignAction({
+      criteria: { mode: 'ids', subscriberIds: [a.subscriber.id, b.subscriber.id, c.subscriber.id] },
+      content: { subject: 'Subject', body: 'Body' },
+      confirmedCount: 3,
+      idempotencyKey: freshKey(),
+    })
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    campaignIds.push(result.data.campaignId)
+
+    await capturedWork?.()
+
+    expect(sendMock).toHaveBeenCalledTimes(3)
+    const rows = await prisma.marketingCampaignRecipient.findMany({ where: { campaignId: result.data.campaignId } })
+    expect(rows).toHaveLength(3)
+    expect(rows.every((row) => row.status === 'FAILED')).toBe(true)
+    expect(rows.every((row) => row.errorMessage === 'MARKETING_EMAIL_FROM is not set on the server.')).toBe(true)
+    expect(rows.some((row) => row.status === 'PENDING')).toBe(false)
+
+    const campaign = await prisma.marketingCampaign.findUniqueOrThrow({ where: { id: result.data.campaignId } })
+    expect(campaign.sentCount).toBe(0)
+    expect(campaign.failedCount).toBe(3)
+  })
+
+  it('a throw on the third of five recipients still leaves every recipient attempted, not abandoned', async () => {
+    const subscribers = await Promise.all([1, 2, 3, 4, 5].map(() => makeSubscriber()))
+
+    sendMock
+      .mockResolvedValueOnce(successResponse('msg-1'))
+      .mockResolvedValueOnce(successResponse('msg-2'))
+      .mockRejectedValueOnce(new Error('Simulated crash on the third recipient.'))
+      .mockResolvedValueOnce(successResponse('msg-4'))
+      .mockResolvedValueOnce(successResponse('msg-5'))
+
+    const result = await sendMarketingCampaignAction({
+      criteria: { mode: 'ids', subscriberIds: subscribers.map((s) => s.subscriber.id) },
+      content: { subject: 'Subject', body: 'Body' },
+      confirmedCount: 5,
+      idempotencyKey: freshKey(),
+    })
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    campaignIds.push(result.data.campaignId)
+
+    await capturedWork?.()
+
+    // All five were attempted — the throw on the third never abandoned the rest.
+    expect(sendMock).toHaveBeenCalledTimes(5)
+    const rows = await prisma.marketingCampaignRecipient.findMany({ where: { campaignId: result.data.campaignId } })
+    expect(rows.some((row) => row.status === 'PENDING')).toBe(false)
+    expect(rows.filter((row) => row.status === 'SENT')).toHaveLength(4)
+    const failedRows = rows.filter((row) => row.status === 'FAILED')
+    expect(failedRows).toHaveLength(1)
+    expect(failedRows[0]!.errorMessage).toBe('Simulated crash on the third recipient.')
+
+    const campaign = await prisma.marketingCampaign.findUniqueOrThrow({ where: { id: result.data.campaignId } })
+    expect(campaign.sentCount).toBe(4)
+    expect(campaign.failedCount).toBe(1)
+  })
+})
+
+describe('config validation gates campaign creation', () => {
+  it('a missing MARKETING_EMAIL_FROM prevents campaign creation entirely, writing no rows, and names the variable', async () => {
+    const a = await makeSubscriber()
+
+    validateMarketingEmailConfigMock.mockReturnValue('MARKETING_EMAIL_FROM')
+
+    const result = await sendMarketingCampaignAction({
+      criteria: { mode: 'ids', subscriberIds: [a.subscriber.id] },
+      content: { subject: 'Subject', body: 'Body' },
+      confirmedCount: 1,
+      idempotencyKey: freshKey(),
+    })
+
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.kind).toBe('config')
+    if (result.kind !== 'config') return
+    expect(result.missing).toBe('MARKETING_EMAIL_FROM')
+    expect(result.error).toContain('MARKETING_EMAIL_FROM')
+    expect(sendMock).not.toHaveBeenCalled()
+    expect(await prisma.marketingCampaignRecipient.count({ where: { subscriberId: a.subscriber.id } })).toBe(0)
   })
 })
 

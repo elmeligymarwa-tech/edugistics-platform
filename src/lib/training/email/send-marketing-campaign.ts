@@ -116,6 +116,40 @@ async function recordSkipped(campaignId: string, recipientId: string): Promise<v
   ])
 }
 
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+const QUEUE_ABORTED_PREFIX = 'Sending queue aborted before this recipient could be attempted'
+
+/**
+ * The queue's last line of defence: whatever is still PENDING when
+ * `processMarketingCampaignSend` itself throws (not an individual recipient
+ * — see the per-recipient try/catch below) is marked FAILED with a reason.
+ * This is the exact gap that let a misspelled MARKETING_EMAIL_FROM orphan
+ * two production campaigns silently: the sender-resolution throw happened
+ * before any Resend call and before any row was ever touched, so nothing
+ * downstream ever recorded what went wrong.
+ */
+async function failAllRemainingPending(campaignId: string, reason: string): Promise<void> {
+  const remaining = await prisma.marketingCampaignRecipient.findMany({
+    where: { campaignId, status: 'PENDING' },
+    select: { id: true },
+  })
+  if (remaining.length === 0) return
+
+  await prisma.$transaction([
+    prisma.marketingCampaignRecipient.updateMany({
+      where: { id: { in: remaining.map((row) => row.id) } },
+      data: { status: 'FAILED', errorMessage: reason },
+    }),
+    prisma.marketingCampaign.update({
+      where: { id: campaignId },
+      data: { failedCount: { increment: remaining.length } },
+    }),
+  ])
+}
+
 /**
  * Sends every PENDING recipient of a campaign, one at a time, spaced to
  * respect the provider's rate limit. For each row, the subscriber is
@@ -130,53 +164,78 @@ async function recordSkipped(campaignId: string, recipientId: string): Promise<v
  * A failed send never stops the queue — every remaining recipient is still
  * attempted. Meant to run inside runAfterResponse so it continues even after
  * the administrator's browser tab is closed.
+ *
+ * Two layers of failure isolation, both required: an exception specific to
+ * one recipient (a bad row, a rendering bug, dispatchWithBackoff throwing
+ * instead of returning an outcome — including a misconfigured
+ * MARKETING_EMAIL_FROM, which throws synchronously before any Resend call)
+ * must not stop the recipients behind it — the inner try/catch marks that
+ * one row FAILED and moves on. An exception that has nothing to do with any
+ * single recipient (the initial queries above, or a database write itself
+ * failing inside the inner catch) would otherwise escape the loop entirely
+ * and leave every row it never reached silently PENDING forever — the outer
+ * try/catch sweeps every row still PENDING into FAILED with a clear reason
+ * the moment that happens.
  */
 export async function processMarketingCampaignSend(campaignId: string): Promise<void> {
-  const campaign = await prisma.marketingCampaign.findUnique({ where: { id: campaignId } })
-  if (!campaign) return
+  try {
+    const campaign = await prisma.marketingCampaign.findUnique({ where: { id: campaignId } })
+    if (!campaign) return
 
-  const pending = await prisma.marketingCampaignRecipient.findMany({
-    where: { campaignId, status: 'PENDING' },
-    select: { id: true, subscriberId: true },
-  })
-  if (pending.length === 0) return
-
-  const intervalMs = getSendIntervalMs()
-  const siteUrl = getSiteUrl()
-
-  for (const row of pending) {
-    const subscriber = await prisma.subscriber.findUnique({
-      where: { id: row.subscriberId },
-      include: { teacher: true },
+    const pending = await prisma.marketingCampaignRecipient.findMany({
+      where: { campaignId, status: 'PENDING' },
+      select: { id: true, subscriberId: true },
     })
+    if (pending.length === 0) return
 
-    if (!subscriber || subscriber.status !== 'SUBSCRIBED') {
-      await recordSkipped(campaignId, row.id)
+    const intervalMs = getSendIntervalMs()
+    const siteUrl = getSiteUrl()
+
+    for (const row of pending) {
+      try {
+        const subscriber = await prisma.subscriber.findUnique({
+          where: { id: row.subscriberId },
+          include: { teacher: true },
+        })
+
+        if (!subscriber || subscriber.status !== 'SUBSCRIBED') {
+          await recordSkipped(campaignId, row.id)
+        } else {
+          const fullName = resolveDisplayName(subscriber)
+          const email = resolveDisplayEmail(subscriber)
+          const values = toMarketingPersonalizationValues({
+            firstName: deriveFirstName(fullName),
+            fullName,
+            schoolName: subscriber.teacher?.schoolNameOriginal ?? '',
+          })
+          const unsubscribeUrl = buildUnsubscribeUrl(siteUrl, subscriber.unsubscribeToken)
+          const footer = { unsubscribeUrl, contactEmail: EDUGISTICS_CONTACT_EMAIL }
+          const content = renderMarketingEmail(campaign.subject, campaign.bodyTemplate, values, footer)
+          const headers = buildListUnsubscribeHeaders(unsubscribeUrl, EDUGISTICS_CONTACT_EMAIL)
+
+          const outcome = await dispatchWithBackoff(row.id, email, content, headers)
+
+          if (outcome.ok && outcome.messageId) {
+            await recordSent(campaignId, row.id, subscriber.id, outcome.messageId)
+          } else {
+            await recordFailed(campaignId, row.id, outcome.error ?? 'Unknown error from the email provider.')
+          }
+        }
+      } catch (error) {
+        // Deliberately not caught-and-swallowed: if recordFailed itself is
+        // what threw, this rethrows out to the outer catch below, which
+        // sweeps this row up too rather than silently leaving it PENDING.
+        await recordFailed(campaignId, row.id, describeError(error))
+      }
+
       await delay(intervalMs)
-      continue
     }
-
-    const fullName = resolveDisplayName(subscriber)
-    const email = resolveDisplayEmail(subscriber)
-    const values = toMarketingPersonalizationValues({
-      firstName: deriveFirstName(fullName),
-      fullName,
-      schoolName: subscriber.teacher?.schoolNameOriginal ?? '',
+  } catch (error) {
+    const reason = `${QUEUE_ABORTED_PREFIX}: ${describeError(error)}`
+    await failAllRemainingPending(campaignId, reason).catch((sweepError) => {
+      console.error(`[marketing-campaign] failed to mark remaining recipients FAILED after queue abort for campaign ${campaignId}`, sweepError)
     })
-    const unsubscribeUrl = buildUnsubscribeUrl(siteUrl, subscriber.unsubscribeToken)
-    const footer = { unsubscribeUrl, contactEmail: EDUGISTICS_CONTACT_EMAIL }
-    const content = renderMarketingEmail(campaign.subject, campaign.bodyTemplate, values, footer)
-    const headers = buildListUnsubscribeHeaders(unsubscribeUrl, EDUGISTICS_CONTACT_EMAIL)
-
-    const outcome = await dispatchWithBackoff(row.id, email, content, headers)
-
-    if (outcome.ok && outcome.messageId) {
-      await recordSent(campaignId, row.id, subscriber.id, outcome.messageId)
-    } else {
-      await recordFailed(campaignId, row.id, outcome.error ?? 'Unknown error from the email provider.')
-    }
-
-    await delay(intervalMs)
+    console.error(`[marketing-campaign] sending queue aborted for campaign ${campaignId}`, error)
   }
 }
 

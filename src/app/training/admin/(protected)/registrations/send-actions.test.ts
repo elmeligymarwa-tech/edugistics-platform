@@ -22,14 +22,29 @@ vi.mock('@/lib/training/background', () => ({
 }))
 
 const sendMock = vi.fn()
+const validateBulkEmailConfigMock = vi.fn<() => string | null>(() => null)
 vi.mock('@/lib/training/email/resend-client', () => ({
   getResendClient: () => ({ emails: { send: (...args: unknown[]) => sendMock(...args) } }),
   getEmailFrom: () => 'Edugistics Training <training@send.edugistics.online>',
   getEmailReplyTo: () => 'info@edugistics.online',
+  validateBulkEmailConfig: () => validateBulkEmailConfigMock(),
 }))
+
+// Wraps the real resolveRecipients so every existing test keeps hitting the
+// actual database-backed resolution logic unchanged — only a test that
+// explicitly calls .mockRejectedValueOnce()/.mockImplementationOnce() on it
+// diverges, and only for its one call, falling straight back to the real
+// implementation afterwards. Used to exercise processCampaignSend's outer
+// try/catch (the queue-abort sweep), which nothing else in this file can
+// reach without a throw from somewhere before the per-recipient loop.
+vi.mock('@/lib/training/email/recipients', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/training/email/recipients')>()
+  return { ...actual, resolveRecipients: vi.fn(actual.resolveRecipients) }
+})
 
 const { sendCampaignAction, getCampaignStatusAction, retryFailedRecipientsAction, sendTestEmailAction } = await import('./send-actions')
 const { prisma } = await import('@/lib/training/prisma')
+const { resolveRecipients } = await import('@/lib/training/email/recipients')
 
 // Self-contained and self-cleaning, following the pattern in email-actions.test.ts.
 // Hits the real database; only the Resend network boundary is mocked.
@@ -120,6 +135,9 @@ function freshKey() {
 beforeEach(() => {
   sendMock.mockReset()
   capturedWork = null
+  validateBulkEmailConfigMock.mockReset()
+  validateBulkEmailConfigMock.mockReturnValue(null)
+  vi.mocked(resolveRecipients).mockClear()
 })
 
 afterEach(() => {
@@ -535,6 +553,195 @@ describe('retryFailedRecipientsAction', () => {
     const campaign = await prisma.emailCampaign.findUniqueOrThrow({ where: { id: result.data.campaignId } })
     expect(campaign.sentCount).toBe(2)
     expect(campaign.failedCount).toBe(0)
+  })
+
+  it('recovers rows stuck at PENDING from an aborted campaign once it looks orphaned, but leaves a still-fresh campaign alone', async () => {
+    const course = await makeCourse()
+    const teacher = await makeTeacher()
+    const reg = await makeRegistration(teacher.id, course.id)
+
+    const result = await sendCampaignAction({
+      criteria: { mode: 'ids', registrationIds: [reg.id] },
+      emailType: 'CUSTOM',
+      content: { subject: 'Subject', body: 'Body' },
+      confirmedCount: 1,
+      idempotencyKey: freshKey(),
+    })
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    campaignIds.push(result.data.campaignId)
+    // Deliberately never invoke capturedWork() — simulates the queue never
+    // having run at all (e.g. the function was killed before after() fired).
+
+    const freshRetry = await retryFailedRecipientsAction(result.data.campaignId)
+    expect(freshRetry.success).toBe(true)
+    if (!freshRetry.success) return
+    expect(freshRetry.data.retriedCount).toBe(0)
+    const stillPending = await prisma.emailCampaignRecipient.findFirstOrThrow({ where: { campaignId: result.data.campaignId } })
+    expect(stillPending.status).toBe('PENDING')
+
+    // Simulate staleness: nothing about this campaign has changed in well over the orphan threshold.
+    await prisma.emailCampaign.update({
+      where: { id: result.data.campaignId },
+      data: { updatedAt: new Date(Date.now() - 11 * 60 * 1000) },
+    })
+
+    sendMock.mockResolvedValueOnce(successResponse('msg-recovered'))
+    const staleRetry = await retryFailedRecipientsAction(result.data.campaignId)
+    expect(staleRetry.success).toBe(true)
+    if (!staleRetry.success) return
+    expect(staleRetry.data.retriedCount).toBe(1)
+
+    await capturedWork?.()
+
+    const recovered = await prisma.emailCampaignRecipient.findFirstOrThrow({ where: { campaignId: result.data.campaignId } })
+    expect(recovered.status).toBe('SENT')
+    expect(recovered.providerMessageId).toBe('msg-recovered')
+  })
+})
+
+describe('processCampaignSend hardening', () => {
+  it('a throw on every recipient dispatch marks each one FAILED individually, leaving none stuck at PENDING', async () => {
+    const course = await makeCourse()
+    const teacherA = await makeTeacher()
+    const teacherB = await makeTeacher()
+    const teacherC = await makeTeacher()
+    const regA = await makeRegistration(teacherA.id, course.id)
+    const regB = await makeRegistration(teacherB.id, course.id)
+    const regC = await makeRegistration(teacherC.id, course.id)
+
+    // Reproduces the production incident: the sender-resolution throws
+    // before any Resend call, every time — the exact behaviour of a
+    // misconfigured EMAIL_FROM.
+    sendMock.mockRejectedValue(new Error('EMAIL_FROM is not set on the server.'))
+
+    const result = await sendCampaignAction({
+      criteria: { mode: 'ids', registrationIds: [regA.id, regB.id, regC.id] },
+      emailType: 'CUSTOM',
+      content: { subject: 'Subject', body: 'Body' },
+      confirmedCount: 3,
+      idempotencyKey: freshKey(),
+    })
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    campaignIds.push(result.data.campaignId)
+
+    await capturedWork?.()
+
+    expect(sendMock).toHaveBeenCalledTimes(3)
+    const rows = await prisma.emailCampaignRecipient.findMany({ where: { campaignId: result.data.campaignId } })
+    expect(rows).toHaveLength(3)
+    expect(rows.every((row) => row.status === 'FAILED')).toBe(true)
+    expect(rows.every((row) => row.errorMessage === 'EMAIL_FROM is not set on the server.')).toBe(true)
+    expect(rows.some((row) => row.status === 'PENDING')).toBe(false)
+
+    const campaign = await prisma.emailCampaign.findUniqueOrThrow({ where: { id: result.data.campaignId } })
+    expect(campaign.sentCount).toBe(0)
+    expect(campaign.failedCount).toBe(3)
+  })
+
+  it('a throw on the third of five recipients still leaves every recipient attempted, not abandoned', async () => {
+    const course = await makeCourse()
+    const teachers = await Promise.all([1, 2, 3, 4, 5].map(() => makeTeacher()))
+    const regs = await Promise.all(teachers.map((t) => makeRegistration(t.id, course.id)))
+
+    sendMock
+      .mockResolvedValueOnce(successResponse('msg-1'))
+      .mockResolvedValueOnce(successResponse('msg-2'))
+      .mockRejectedValueOnce(new Error('Simulated crash on the third recipient.'))
+      .mockResolvedValueOnce(successResponse('msg-4'))
+      .mockResolvedValueOnce(successResponse('msg-5'))
+
+    const result = await sendCampaignAction({
+      criteria: { mode: 'ids', registrationIds: regs.map((r) => r.id) },
+      emailType: 'CUSTOM',
+      content: { subject: 'Subject', body: 'Body' },
+      confirmedCount: 5,
+      idempotencyKey: freshKey(),
+    })
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    campaignIds.push(result.data.campaignId)
+
+    await capturedWork?.()
+
+    // All five were attempted — the throw on the third never abandoned the rest.
+    expect(sendMock).toHaveBeenCalledTimes(5)
+    const rows = await prisma.emailCampaignRecipient.findMany({ where: { campaignId: result.data.campaignId } })
+    expect(rows.some((row) => row.status === 'PENDING')).toBe(false)
+    expect(rows.filter((row) => row.status === 'SENT')).toHaveLength(4)
+    const failedRows = rows.filter((row) => row.status === 'FAILED')
+    expect(failedRows).toHaveLength(1)
+    expect(failedRows[0]!.errorMessage).toBe('Simulated crash on the third recipient.')
+
+    const campaign = await prisma.emailCampaign.findUniqueOrThrow({ where: { id: result.data.campaignId } })
+    expect(campaign.sentCount).toBe(4)
+    expect(campaign.failedCount).toBe(1)
+  })
+
+  it('a throw before any recipient is reached (recipient resolution itself failing) marks every queued recipient FAILED with an abort reason', async () => {
+    const course = await makeCourse()
+    const teacherA = await makeTeacher()
+    const teacherB = await makeTeacher()
+    const regA = await makeRegistration(teacherA.id, course.id)
+    const regB = await makeRegistration(teacherB.id, course.id)
+
+    const result = await sendCampaignAction({
+      criteria: { mode: 'ids', registrationIds: [regA.id, regB.id] },
+      emailType: 'CUSTOM',
+      content: { subject: 'Subject', body: 'Body' },
+      confirmedCount: 2,
+      idempotencyKey: freshKey(),
+    })
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    campaignIds.push(result.data.campaignId)
+
+    // Simulates a failure that has nothing to do with any single recipient —
+    // e.g. a lost database connection — happening before the per-recipient
+    // loop even starts. This is what the outer try/catch in
+    // processCampaignSend exists to catch; nothing about this reaches the
+    // per-recipient try/catch at all.
+    vi.mocked(resolveRecipients).mockRejectedValueOnce(new Error('Connection to the database was lost.'))
+
+    await capturedWork?.()
+
+    expect(sendMock).not.toHaveBeenCalled()
+    const rows = await prisma.emailCampaignRecipient.findMany({ where: { campaignId: result.data.campaignId } })
+    expect(rows.every((row) => row.status === 'FAILED')).toBe(true)
+    expect(rows.every((row) => row.errorMessage?.includes('Sending queue aborted'))).toBe(true)
+    expect(rows.every((row) => row.errorMessage?.includes('Connection to the database was lost.'))).toBe(true)
+
+    const campaign = await prisma.emailCampaign.findUniqueOrThrow({ where: { id: result.data.campaignId } })
+    expect(campaign.failedCount).toBe(2)
+  })
+})
+
+describe('config validation gates campaign creation', () => {
+  it('a missing EMAIL_FROM prevents campaign creation entirely, writing no rows, and names the variable', async () => {
+    const course = await makeCourse()
+    const teacher = await makeTeacher()
+    const reg = await makeRegistration(teacher.id, course.id)
+
+    validateBulkEmailConfigMock.mockReturnValue('EMAIL_FROM')
+
+    const result = await sendCampaignAction({
+      criteria: { mode: 'ids', registrationIds: [reg.id] },
+      emailType: 'CUSTOM',
+      content: { subject: 'Subject', body: 'Body' },
+      confirmedCount: 1,
+      idempotencyKey: freshKey(),
+    })
+
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.kind).toBe('config')
+    if (result.kind !== 'config') return
+    expect(result.missing).toBe('EMAIL_FROM')
+    expect(result.error).toContain('EMAIL_FROM')
+    expect(sendMock).not.toHaveBeenCalled()
+    expect(await prisma.emailCampaign.count({ where: { courseId: course.id } })).toBe(0)
+    expect(await prisma.emailCampaignRecipient.count({ where: { registrationId: reg.id } })).toBe(0)
   })
 })
 

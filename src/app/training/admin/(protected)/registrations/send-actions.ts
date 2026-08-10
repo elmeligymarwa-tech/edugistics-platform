@@ -11,6 +11,7 @@ import { runAfterResponse } from '@/lib/training/background'
 import { renderCampaignEmail } from '@/lib/training/email/campaign-render'
 import { contentSchema, criteriaInputSchema, fieldErrorsFromZod, toCriteria, type RecipientCriteriaInput } from '@/lib/training/email/criteria'
 import { resolveRecipients, toPersonalizationValues } from '@/lib/training/email/recipients'
+import { validateBulkEmailConfig } from '@/lib/training/email/resend-client'
 import {
   dispatchTestEmail,
   findRecentDuplicateTeacherIds,
@@ -49,6 +50,7 @@ export type SendCampaignResult =
   | { success: false; kind: 'over-limit'; error: string; max: number; resolvedCount: number }
   | { success: false; kind: 'duplicates'; duplicateCount: number; totalCount: number }
   | { success: false; kind: 'rate-limited'; error: string }
+  | { success: false; kind: 'config'; error: string; missing: string }
 
 /**
  * Guards only the actual campaign-creation step, not the read-only checks
@@ -128,6 +130,21 @@ async function createCampaignAndSchedule(
  * sending off to run after this request returns.
  */
 async function executeSend(input: z.infer<typeof sendCampaignInputSchema>): Promise<SendCampaignResult> {
+  // Checked first and cheaply, before any database work: a misconfigured
+  // server must refuse to send at all, not create a campaign it can never
+  // deliver. This is what would have caught the MARKETING_EMAIL_FROM
+  // misspelling before it ever wrote a row, on the marketing path's
+  // equivalent of this check.
+  const missing = validateBulkEmailConfig()
+  if (missing) {
+    return {
+      success: false,
+      kind: 'config',
+      error: `Email sending is not configured — ${missing} is missing on the server. Contact an administrator before sending.`,
+      missing,
+    }
+  }
+
   const resolution = await resolveRecipients(toCriteria(input.criteria))
 
   if (resolution.uniqueTeacherCount === 0) {
@@ -259,9 +276,31 @@ export async function getCampaignStatusAction(campaignId: string): Promise<Statu
 export type RetryResult = { success: true; data: { retriedCount: number } } | { success: false; error: string }
 
 /**
- * Re-sends only recipients currently FAILED on this campaign, resetting them
- * to PENDING and re-running the queue — never touches a row already SENT,
- * and updates this same campaign's rows rather than creating a new one.
+ * A campaign is treated as orphaned — its PENDING rows recoverable — only
+ * once nothing about it has changed in a very long time. Every recipient
+ * outcome (SENT/FAILED/SKIPPED) writes through recordSent/recordFailed in
+ * the same transaction that increments the campaign's own sentCount/
+ * failedCount, which bumps the campaign row's updatedAt as a side effect —
+ * so updatedAt is a heartbeat for the whole queue, not just one row, with no
+ * schema change needed to track it separately. A genuinely running queue
+ * updates this at least every intervalMs (default ~500ms), and even a
+ * single recipient stuck in the provider's rate-limit backoff only delays
+ * it by up to ~63s (5 retries, doubling from 1s). Ten minutes is a full
+ * order of magnitude beyond either case, so only a queue that has actually
+ * stopped — crashed, killed by a platform timeout, or otherwise never
+ * reached its own outer catch — will ever cross it. A PENDING row that is
+ * merely queued behind other recipients in an active send is never touched,
+ * because the campaign's updatedAt stays fresh the whole time.
+ */
+const ORPHAN_STALE_THRESHOLD_MS = 10 * 60 * 1000
+
+/**
+ * Re-sends recipients currently FAILED on this campaign, resetting them to
+ * PENDING — and, when the campaign itself looks dead (see
+ * ORPHAN_STALE_THRESHOLD_MS above), also recovers any recipient rows still
+ * stuck at PENDING from a queue that aborted without ever reaching its own
+ * FAILED-marking logic. Never touches a row already SENT, and updates this
+ * same campaign's rows rather than creating a new one.
  */
 export async function retryFailedRecipientsAction(campaignId: string): Promise<RetryResult> {
   await requireAdminSession()
@@ -277,11 +316,18 @@ export async function retryFailedRecipientsAction(campaignId: string): Promise<R
     where: { campaignId, status: 'FAILED' },
     select: { id: true },
   })
-  if (failed.length === 0) return { success: true, data: { retriedCount: 0 } }
+
+  const isOrphaned = Date.now() - campaign.updatedAt.getTime() > ORPHAN_STALE_THRESHOLD_MS
+  const orphanedPending = isOrphaned
+    ? await prisma.emailCampaignRecipient.findMany({ where: { campaignId, status: 'PENDING' }, select: { id: true } })
+    : []
+
+  const toRetry = [...failed, ...orphanedPending]
+  if (toRetry.length === 0) return { success: true, data: { retriedCount: 0 } }
 
   await prisma.$transaction([
     prisma.emailCampaignRecipient.updateMany({
-      where: { id: { in: failed.map((row) => row.id) } },
+      where: { id: { in: toRetry.map((row) => row.id) } },
       data: { status: 'PENDING', errorMessage: null },
     }),
     prisma.emailCampaign.update({
@@ -294,12 +340,12 @@ export async function retryFailedRecipientsAction(campaignId: string): Promise<R
     action: 'EMAIL_CAMPAIGN_RETRY',
     entityType: 'EmailCampaign',
     entityId: campaignId,
-    afterJson: { retriedCount: failed.length },
+    afterJson: { retriedCount: toRetry.length, recoveredOrphanedPendingCount: orphanedPending.length },
   })
 
   runAfterResponse(() => processCampaignSend(campaignId))
 
-  return { success: true, data: { retriedCount: failed.length } }
+  return { success: true, data: { retriedCount: toRetry.length } }
 }
 
 const testEmailInputSchema = z.object({
