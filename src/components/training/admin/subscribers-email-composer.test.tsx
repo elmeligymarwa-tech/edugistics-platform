@@ -33,6 +33,23 @@ function renderComposer() {
   fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'admin@example.com' } })
 }
 
+function makePreview(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    recipientCount: 2,
+    renderedBodyHtml: '<p>Body</p>',
+    example: { recipientName: 'Jane Teacher', subject: 'Hello Jane', html: '<p>Hi</p>', text: 'Hi' },
+    ...overrides,
+  }
+}
+
+async function goToPreview() {
+  render(<SubscribersEmailComposer open onOpenChange={() => {}} criteria={criteria} templates={[]} />)
+  fireEvent.change(screen.getByLabelText('Subject'), { target: { value: 'Subject line' } })
+  fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Message body' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Continue to preview' }))
+  await waitFor(() => expect(screen.getByText('Preview')).toBeInTheDocument())
+}
+
 describe('SubscribersEmailComposer — Send Test to Myself', () => {
   it('reaches a success state after a successful test send, and the button is usable again', async () => {
     sendTestMarketingEmailAction.mockResolvedValueOnce({ success: true, data: { messageId: 'msg-1' } })
@@ -74,6 +91,49 @@ describe('SubscribersEmailComposer — Send Test to Myself', () => {
     await waitFor(() => expect(screen.getByText('Network connection lost.')).toBeInTheDocument())
     const button = screen.getByRole('button', { name: 'Send Test to Myself' })
     expect(button).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Sending…' })).not.toBeInTheDocument()
+  })
+})
+
+describe('SubscribersEmailComposer — Send (main campaign send)', () => {
+  it('reaches a settled, re-enabled state and navigates to the campaign after a successful send', async () => {
+    previewMarketingEmailAction.mockResolvedValue({ success: true, data: makePreview() })
+    sendMarketingCampaignAction.mockResolvedValueOnce({ success: true, data: { campaignId: 'campaign-success' } })
+    await goToPreview()
+
+    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: '2' } })
+    fireEvent.click(screen.getByRole('button', { name: /Send to 2 subscribers/ }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Send to 2 subscribers/ })).toBeEnabled())
+  })
+
+  it('reaches an error state after a failed send (a handled result), showing a clear error, and is usable again afterwards', async () => {
+    previewMarketingEmailAction.mockResolvedValue({ success: true, data: makePreview() })
+    sendMarketingCampaignAction.mockResolvedValueOnce({ success: false, kind: 'validation', error: 'Something failed server-side.' })
+    await goToPreview()
+
+    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: '2' } })
+    fireEvent.click(screen.getByRole('button', { name: /Send to 2 subscribers/ }))
+
+    await waitFor(() => expect(screen.getByText('Something failed server-side.')).toBeInTheDocument())
+    const sendButton = screen.getByRole('button', { name: /Send to 2 subscribers/ })
+    expect(sendButton).toBeEnabled()
+
+    sendMarketingCampaignAction.mockResolvedValueOnce({ success: true, data: { campaignId: 'campaign-retry' } })
+    fireEvent.click(sendButton)
+    await waitFor(() => expect(sendMarketingCampaignAction).toHaveBeenCalledTimes(2))
+  })
+
+  it('never leaves Send stuck on "Sending…" when the request itself rejects', async () => {
+    previewMarketingEmailAction.mockResolvedValue({ success: true, data: makePreview() })
+    sendMarketingCampaignAction.mockRejectedValueOnce(new Error('Network connection lost.'))
+    await goToPreview()
+
+    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: '2' } })
+    fireEvent.click(screen.getByRole('button', { name: /Send to 2 subscribers/ }))
+
+    await waitFor(() => expect(screen.getByText('Network connection lost.')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /Send to 2 subscribers/ })).toBeEnabled()
     expect(screen.queryByRole('button', { name: 'Sending…' })).not.toBeInTheDocument()
   })
 })

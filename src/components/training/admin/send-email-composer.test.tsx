@@ -102,6 +102,49 @@ describe('SendEmailComposer — preview step', () => {
   })
 })
 
+describe('SendEmailComposer — Send (main campaign send)', () => {
+  it('reaches a settled, re-enabled state and navigates to the campaign after a successful send', async () => {
+    previewCampaignAction.mockResolvedValue({ success: true, data: makePreview() })
+    sendCampaignAction.mockResolvedValueOnce({ success: true, data: { campaignId: 'campaign-success' } })
+    await goToPreview()
+
+    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: /Send to 3 teachers/ }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Send to 3 teachers/ })).toBeEnabled())
+  })
+
+  it('reaches an error state after a failed send (a handled result), showing a clear error, and is usable again afterwards', async () => {
+    previewCampaignAction.mockResolvedValue({ success: true, data: makePreview() })
+    sendCampaignAction.mockResolvedValueOnce({ success: false, kind: 'validation', error: 'Something failed server-side.' })
+    await goToPreview()
+
+    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: /Send to 3 teachers/ }))
+
+    await waitFor(() => expect(screen.getByText('Something failed server-side.')).toBeInTheDocument())
+    const sendButton = screen.getByRole('button', { name: /Send to 3 teachers/ })
+    expect(sendButton).toBeEnabled()
+
+    sendCampaignAction.mockResolvedValueOnce({ success: true, data: { campaignId: 'campaign-retry' } })
+    fireEvent.click(sendButton)
+    await waitFor(() => expect(sendCampaignAction).toHaveBeenCalledTimes(2))
+  })
+
+  it('never leaves Send stuck on "Sending…" when the request itself rejects', async () => {
+    previewCampaignAction.mockResolvedValue({ success: true, data: makePreview() })
+    sendCampaignAction.mockRejectedValueOnce(new Error('Network connection lost.'))
+    await goToPreview()
+
+    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: /Send to 3 teachers/ }))
+
+    await waitFor(() => expect(screen.getByText('Network connection lost.')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /Send to 3 teachers/ })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Sending…' })).not.toBeInTheDocument()
+  })
+})
+
 // "Send Test to Myself" lives on the compose step, so no preview round trip is needed to reach it.
 function renderComposerAtCompose() {
   render(<SendEmailComposer open onOpenChange={() => {}} criteria={criteria} initialSummary={initialSummary} />)

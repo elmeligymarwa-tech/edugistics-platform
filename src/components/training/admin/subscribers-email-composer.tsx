@@ -111,24 +111,33 @@ export function SubscribersEmailComposer({
     setSending(true)
     setSendError(null)
 
-    const result = await sendMarketingCampaignAction({
-      criteria,
-      content: { subject, body },
-      templateId: templateId === BLANK_TEMPLATE_VALUE ? undefined : templateId,
-      confirmedCount: preview.recipientCount,
-      idempotencyKey,
-    })
+    // try/finally is load-bearing here — see handleSendTest below. Without
+    // it, a rejected call leaves the administrator staring at a disabled
+    // "Sending…" button with no way to tell whether the campaign is
+    // running, failed, or partially sent.
+    try {
+      const result = await sendMarketingCampaignAction({
+        criteria,
+        content: { subject, body },
+        templateId: templateId === BLANK_TEMPLATE_VALUE ? undefined : templateId,
+        confirmedCount: preview.recipientCount,
+        idempotencyKey,
+      })
 
-    if (result.success) {
-      const url = new URL(window.location.href)
-      url.searchParams.set('campaignId', result.data.campaignId)
-      router.replace(`${url.pathname}?${url.searchParams.toString()}`)
-      onOpenChange(false)
-      return
+      if (result.success) {
+        const url = new URL(window.location.href)
+        url.searchParams.set('campaignId', result.data.campaignId)
+        router.replace(`${url.pathname}?${url.searchParams.toString()}`)
+        onOpenChange(false)
+        return
+      }
+
+      setSendError(result.error)
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : 'Something went wrong sending the campaign. Try again.')
+    } finally {
+      setSending(false)
     }
-
-    setSending(false)
-    setSendError(result.error)
   }
 
   async function handleSendTest() {

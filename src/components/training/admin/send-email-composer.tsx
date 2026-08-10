@@ -122,31 +122,41 @@ export function SendEmailComposer({ open, onOpenChange, criteria, initialSummary
     setSending(true)
     setSendError(null)
 
-    const result = await sendCampaignAction({
-      criteria,
-      emailType,
-      content: { subject, body },
-      confirmedCount: preview.uniqueTeacherCount,
-      overrideDuplicates,
-      idempotencyKey,
-    })
+    // try/finally is load-bearing here — see handleSendTest below. Without
+    // it, a rejected call leaves the administrator staring at a disabled
+    // "Sending…" button with no way to tell whether the campaign is
+    // running, failed, or partially sent.
+    try {
+      const result = await sendCampaignAction({
+        criteria,
+        emailType,
+        content: { subject, body },
+        confirmedCount: preview.uniqueTeacherCount,
+        overrideDuplicates,
+        idempotencyKey,
+      })
 
-    if (result.success) {
-      const url = new URL(window.location.href)
-      url.searchParams.set('campaignId', result.data.campaignId)
-      router.replace(`${url.pathname}?${url.searchParams.toString()}`)
-      onOpenChange(false)
-      return
-    }
+      if (result.success) {
+        const url = new URL(window.location.href)
+        url.searchParams.set('campaignId', result.data.campaignId)
+        router.replace(`${url.pathname}?${url.searchParams.toString()}`)
+        onOpenChange(false)
+        return
+      }
 
-    setSending(false)
-    if (result.kind === 'duplicates') {
-      setDuplicateInfo({ duplicateCount: result.duplicateCount, totalCount: result.totalCount })
-      setStep('duplicate-warning')
-      return
+      if (result.kind === 'duplicates') {
+        setDuplicateInfo({ duplicateCount: result.duplicateCount, totalCount: result.totalCount })
+        setStep('duplicate-warning')
+        return
+      }
+      setSendError(result.error)
+      setStep('preview')
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : 'Something went wrong sending the campaign. Try again.')
+      setStep('preview')
+    } finally {
+      setSending(false)
     }
-    setSendError(result.error)
-    setStep('preview')
   }
 
   async function handleSendTest() {

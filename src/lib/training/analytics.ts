@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { cache } from 'react'
 import { Prisma, type CourseCategory as PrismaCourseCategory, type RegistrationStatus } from '@prisma/client'
 
 import { COURSE_CATEGORY_LABELS, type CourseCategory } from '@/domain/training/schema'
@@ -31,12 +32,26 @@ function classifyEngagement(confirmedCount: number): TeacherEngagementType | nul
   return null
 }
 
-/** One row per distinct teacherId — a GROUP BY COUNT(*), not raw registration rows — so this stays cheap at several thousand registrations. The single source every engagement metric (unique/repeat teacher counts, the engagement breakdown, and the teacherType filter) reads from. */
-async function confirmedCountsByTeacher(filters: AnalyticsFilters): Promise<Map<string, number>> {
+/**
+ * One row per distinct teacherId — a GROUP BY COUNT(*), not raw registration
+ * rows — so this stays cheap at several thousand registrations. The single
+ * source every engagement metric (unique/repeat teacher counts, the
+ * engagement breakdown, and the teacherType filter) reads from.
+ *
+ * Wrapped in React's per-request `cache()`: countUniqueTeachers,
+ * countRepeatTeachers and getTeacherEngagementBreakdown each call this
+ * independently with the same `filters` reference (the one page.tsx
+ * computes once and threads through every panel), so without this they ran
+ * the identical groupBy three times per page render. cache() dedupes calls
+ * by argument identity for the lifetime of one render only — it never
+ * persists across requests, so a filter change (a new render) always gets a
+ * fresh query and there is nothing here to invalidate.
+ */
+const confirmedCountsByTeacher = cache(async (filters: AnalyticsFilters): Promise<Map<string, number>> => {
   const where = await buildWhere({ ...filters, teacherType: undefined }, ['CONFIRMED'])
   const rows = await prisma.registration.groupBy({ by: ['teacherId'], where, _count: { _all: true } })
   return new Map(rows.map((row) => [row.teacherId, row._count._all]))
-}
+})
 
 async function resolveTeacherIdsForEngagement(filters: AnalyticsFilters, buckets: TeacherEngagementType[]): Promise<string[]> {
   const counts = await confirmedCountsByTeacher(filters)
@@ -193,8 +208,19 @@ export interface CoursePerformanceRow {
   utilisation: number | null
 }
 
-/** Course performance table — one row per course with at least one confirmed or waitlisted registration in the filtered scope. Course Utilisation = confirmed / maxCapacity * 100, null when maxCapacity is null. */
-export async function getCoursePerformance(filters: AnalyticsFilters): Promise<CoursePerformanceRow[]> {
+/**
+ * Course performance table — one row per course with at least one confirmed
+ * or waitlisted registration in the filtered scope. Course Utilisation =
+ * confirmed / maxCapacity * 100, null when maxCapacity is null.
+ *
+ * Wrapped in React's per-request `cache()`: getAverageRegistrationsPerCourse
+ * below calls this again with the same `filters` reference the page's own
+ * top-level call uses, so without this every render computed the identical
+ * groupBy + course lookup twice. See confirmedCountsByTeacher above for why
+ * this is safe — the cache never outlives one render, so a filter change
+ * always recomputes fresh and there's nothing to invalidate.
+ */
+export const getCoursePerformance = cache(async (filters: AnalyticsFilters): Promise<CoursePerformanceRow[]> => {
   const where = await buildWhere(filters, ['CONFIRMED', 'WAITLISTED'])
   const grouped = await prisma.registration.groupBy({ by: ['courseId', 'status'], where, _count: { _all: true } })
   if (grouped.length === 0) return []
@@ -233,9 +259,9 @@ export async function getCoursePerformance(filters: AnalyticsFilters): Promise<C
       }
     })
     .sort((a, b) => b.confirmed - a.confirmed)
-}
+})
 
-/** Average Registrations per Course = confirmed registrations divided by courses with at least one confirmed registration. Derived from {@link getCoursePerformance} — never recomputed independently. */
+/** Average Registrations per Course = confirmed registrations divided by courses with at least one confirmed registration. Derived from {@link getCoursePerformance} — never recomputed independently (and, since getCoursePerformance is itself request-cached, never re-queried independently either). */
 export async function getAverageRegistrationsPerCourse(filters: AnalyticsFilters): Promise<number | null> {
   const rows = await getCoursePerformance(filters)
   const withConfirmed = rows.filter((row) => row.confirmed > 0)
