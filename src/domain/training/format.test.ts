@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatCourseDateLong, formatCourseDateOrSessions, formatCourseSessionList } from './format'
+import {
+  formatCourseDateLong,
+  formatCourseDateOrSessions,
+  formatCourseSessionList,
+  parseDateInputValue,
+  toDateInputValue,
+} from './format'
 
 describe('formatCourseSessionList', () => {
   it('lists dates within the same month exactly as specified', () => {
@@ -38,6 +44,45 @@ describe('formatCourseSessionList', () => {
       new Date('2026-10-10T00:00:00.000Z'),
     ]
     expect(formatCourseSessionList(dates)).toBe('5 September to 10 October 2026, 6 sessions')
+  })
+})
+
+describe('parseDateInputValue', () => {
+  it('parses a complete, valid date input value', () => {
+    const result = parseDateInputValue('2026-03-15')
+    expect(result).toBeInstanceOf(Date)
+    expect(result?.toISOString().slice(0, 10)).toBe('2026-03-15')
+  })
+
+  it('returns undefined, never throws, for an empty string (a native date input mid-typing)', () => {
+    expect(parseDateInputValue('')).toBeUndefined()
+  })
+
+  it('returns undefined, never throws, for a value that does not parse to a real date', () => {
+    expect(parseDateInputValue('not-a-date')).toBeUndefined()
+  })
+})
+
+describe('toDateInputValue', () => {
+  it('formats a valid Date back into the yyyy-mm-dd input value', () => {
+    expect(toDateInputValue(new Date('2026-03-15T00:00:00.000Z'))).toBe('2026-03-15')
+  })
+
+  it('returns an empty string, never throws, for undefined', () => {
+    expect(toDateInputValue(undefined)).toBe('')
+  })
+
+  it('returns an empty string, never throws, for null', () => {
+    expect(toDateInputValue(null)).toBe('')
+  })
+
+  it('returns an empty string, never throws, for an Invalid Date', () => {
+    expect(toDateInputValue(new Date('not-a-date'))).toBe('')
+  })
+
+  it('round-trips through parseDateInputValue back to the same input value', () => {
+    const value = '2026-12-01'
+    expect(toDateInputValue(parseDateInputValue(value))).toBe(value)
   })
 })
 

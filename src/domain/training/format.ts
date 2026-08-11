@@ -76,6 +76,33 @@ export function formatCourseTimeRange(startTime: Date, endTime: Date): string {
   return `${dateToTimeString(startTime)}–${dateToTimeString(endTime)} (Cairo time)`
 }
 
+/**
+ * Parses a `type="date"` input's raw value into a Date, or undefined if the
+ * value is empty or not a real calendar date — never throws. A native date
+ * input reports "" while a digit-by-digit entry is still incomplete (e.g.
+ * the year not yet fully typed), and `new Date('')` is an Invalid Date that
+ * would otherwise silently poison any state it's stored in. This is the one
+ * guarded entry point every Date-typed date field must parse through rather
+ * than calling `new Date(value)` directly.
+ */
+export function parseDateInputValue(value: string): Date | undefined {
+  if (!value) return undefined
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed
+}
+
+/**
+ * The inverse of parseDateInputValue — formats a Date back into a
+ * `type="date"` input's value. Safe against a missing or invalid Date,
+ * always returning '' rather than throwing, so a field that currently holds
+ * no valid value (mid-typing, or simply unset) renders as empty instead of
+ * crashing the form.
+ */
+export function toDateInputValue(date: Date | undefined | null): string {
+  if (!date || Number.isNaN(date.getTime())) return ''
+  return date.toISOString().slice(0, 10)
+}
+
 /** registeredAt/cancelledAt/promotedAt are stored as UTC instants — shown to admins in Africa/Cairo wall-clock time, per the module's timezone rule. */
 export function formatAdminTimestamp(date: Date): string {
   return new Intl.DateTimeFormat('en-GB', {

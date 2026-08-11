@@ -18,6 +18,7 @@ import {
   type CourseCategory as CourseCategoryType,
   type DeliveryMethod as DeliveryMethodType,
 } from '@/domain/training/schema'
+import { parseDateInputValue, toDateInputValue } from '@/domain/training/format'
 import { dateToTimeString } from '@/domain/training/time'
 import { utcToCairoDateTimeLocal } from '@/domain/training/timezone'
 import type { CourseDetail } from '@/lib/training/courses'
@@ -44,7 +45,14 @@ interface CourseFormInputs {
   shortDescription: string
   fullDescription: string
   category: CourseCategoryType
-  courseDate: Date
+  /**
+   * The raw `type="date"` input value, same shape as registrationOpensAt
+   * below — never eagerly converted to a Date here. courseFormSchema's
+   * z.coerce.date does that server-side, where an empty or malformed string
+   * cleanly fails validation instead of ever becoming an unguarded
+   * client-side Invalid Date.
+   */
+  courseDate: string
   startTime: string
   endTime: string
   durationMinutes: string
@@ -77,7 +85,7 @@ function toDefaultValues(course?: CourseDetail): CourseFormInputs {
       shortDescription: '',
       fullDescription: '',
       category: 'PROFESSIONAL_DEVELOPMENT',
-      courseDate: new Date(),
+      courseDate: toDateInputValue(new Date()),
       startTime: '09:00',
       endTime: '10:00',
       durationMinutes: '60',
@@ -108,7 +116,7 @@ function toDefaultValues(course?: CourseDetail): CourseFormInputs {
     shortDescription: course.shortDescription,
     fullDescription: course.fullDescription,
     category: course.category,
-    courseDate: course.courseDate,
+    courseDate: toDateInputValue(course.courseDate),
     startTime: dateToTimeString(course.startTime),
     endTime: dateToTimeString(course.endTime),
     durationMinutes: course.durationMinutes != null ? String(course.durationMinutes) : '',
@@ -132,10 +140,6 @@ function toDefaultValues(course?: CourseDetail): CourseFormInputs {
     reminderSubject: course.reminderSubject ?? '',
     reminderMessage: course.reminderMessage ?? '',
   }
-}
-
-function toDateInputValue(date: Date): string {
-  return date.toISOString().slice(0, 10)
 }
 
 function formatSessionChipLabel(date: Date): string {
@@ -302,13 +306,14 @@ export function CourseForm({ course, onSuccess }: { course?: CourseDetail; onSuc
                 const existing = new Set(dates.map(toDateInputValue))
 
                 function addDate() {
-                  if (!newSessionDate) return
+                  const parsed = parseDateInputValue(newSessionDate)
+                  if (!parsed) return
                   if (existing.has(newSessionDate)) {
                     setSessionDateError('This date has already been added.')
                     return
                   }
                   setSessionDateError(null)
-                  const next = [...dates, new Date(newSessionDate)].sort((a, b) => a.getTime() - b.getTime())
+                  const next = [...dates, parsed].sort((a, b) => a.getTime() - b.getTime())
                   field.onChange(next)
                   setNewSessionDate('')
                 }
@@ -370,19 +375,7 @@ export function CourseForm({ course, onSuccess }: { course?: CourseDetail; onSuc
           <>
             <Field>
               <FieldLabel htmlFor="courseDate">Date</FieldLabel>
-              <Controller
-                name="courseDate"
-                control={control}
-                render={({ field }) => (
-                  <Input
-                    id="courseDate"
-                    type="date"
-                    value={toDateInputValue(field.value)}
-                    onChange={(event) => field.onChange(new Date(event.target.value))}
-                    aria-invalid={Boolean(errors.courseDate)}
-                  />
-                )}
-              />
+              <Input id="courseDate" type="date" {...register('courseDate')} aria-invalid={Boolean(errors.courseDate)} />
               <FieldError>{errors.courseDate?.message}</FieldError>
             </Field>
 

@@ -42,6 +42,32 @@ describe('courseFormSchema — single-day (unaffected by multi-day support)', ()
     if (result.success) return
     expect(result.error.issues.some((issue) => issue.path.join('.') === 'sessionDates')).toBe(true)
   })
+
+  it('rejects an empty courseDate with a clear message, rather than throwing — this is exactly what the form sends while its date field holds no valid value yet', () => {
+    const result = courseFormSchema.safeParse({ ...baseCourse, courseDate: '', durationMinutes: 60 })
+    expect(result.success).toBe(false)
+    if (result.success) return
+    const issue = result.error.issues.find((issue) => issue.path.join('.') === 'courseDate')
+    expect(issue?.message).toBe('Date is required.')
+  })
+
+  it('rejects a missing courseDate with the same clear message', () => {
+    const withoutCourseDate: Record<string, unknown> = { ...baseCourse, durationMinutes: 60 }
+    delete withoutCourseDate.courseDate
+    const result = courseFormSchema.safeParse(withoutCourseDate)
+    expect(result.success).toBe(false)
+    if (result.success) return
+    const issue = result.error.issues.find((issue) => issue.path.join('.') === 'courseDate')
+    expect(issue?.message).toBe('Date is required.')
+  })
+
+  it('rejects a genuinely invalid courseDate with the same clear message, rather than throwing', () => {
+    const result = courseFormSchema.safeParse({ ...baseCourse, courseDate: new Date('not-a-date'), durationMinutes: 60 })
+    expect(result.success).toBe(false)
+    if (result.success) return
+    const issue = result.error.issues.find((issue) => issue.path.join('.') === 'courseDate')
+    expect(issue?.message).toBe('Date is required.')
+  })
 })
 
 describe('courseFormSchema — multi-day', () => {
