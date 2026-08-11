@@ -1,7 +1,12 @@
 import { afterAll, describe, expect, it } from 'vitest'
 
 import { prisma } from './prisma'
-import { CourseNotFoundError, listRegistrationsForAttendanceSheet } from './attendance-sheet'
+import {
+  CourseNotFoundError,
+  SessionNotFoundError,
+  SessionRequiredError,
+  listRegistrationsForAttendanceSheet,
+} from './attendance-sheet'
 
 // Self-contained and self-cleaning, hitting the real database like the
 // other export/registrations integration suites.
@@ -96,11 +101,15 @@ describe('listRegistrationsForAttendanceSheet', () => {
     await makeRegistration(course.id, waitlisted.id, 'WAITLISTED', course.name)
     await makeRegistration(course.id, cancelled.id, 'CANCELLED', course.name)
 
-    const data = await listRegistrationsForAttendanceSheet(course.id, false)
+    const data = await listRegistrationsForAttendanceSheet(course.id, false, null)
 
     expect(data.rows).toHaveLength(1)
     expect(data.rows[0]!.teacherFullName).toBe('Confirmed Teacher')
     expect(data.rows[0]!.status).toBe('CONFIRMED')
+    // Single-day course — no session selection needed, sheet has no session scope.
+    expect(data.session).toBeNull()
+    // Mobile number comes straight from the registration's teacher.
+    expect(data.rows[0]!.mobileNumber).toBe(confirmed.phone)
   })
 
   it('adds waitlisted rows when included, distinctly marked by status, and still excludes cancelled', async () => {
@@ -112,7 +121,7 @@ describe('listRegistrationsForAttendanceSheet', () => {
     await makeRegistration(course.id, waitlisted.id, 'WAITLISTED', course.name)
     await makeRegistration(course.id, cancelled.id, 'CANCELLED', course.name)
 
-    const data = await listRegistrationsForAttendanceSheet(course.id, true)
+    const data = await listRegistrationsForAttendanceSheet(course.id, true, null)
 
     expect(data.rows).toHaveLength(2)
     expect(data.rows.some((row) => row.status === 'CANCELLED')).toBe(false)
@@ -130,7 +139,7 @@ describe('listRegistrationsForAttendanceSheet', () => {
     await makeRegistration(courseA.id, teacherA.id, 'CONFIRMED', courseA.name)
     await makeRegistration(courseB.id, teacherB.id, 'CONFIRMED', courseB.name)
 
-    const data = await listRegistrationsForAttendanceSheet(courseA.id, false)
+    const data = await listRegistrationsForAttendanceSheet(courseA.id, false, null)
 
     expect(data.rows).toHaveLength(1)
     expect(data.rows[0]!.teacherFullName).toBe('Course A Teacher')
@@ -138,7 +147,7 @@ describe('listRegistrationsForAttendanceSheet', () => {
   })
 
   it('throws for an unknown course id rather than silently returning an empty sheet', async () => {
-    await expect(listRegistrationsForAttendanceSheet('does-not-exist', false)).rejects.toThrow(CourseNotFoundError)
+    await expect(listRegistrationsForAttendanceSheet('does-not-exist', false, null)).rejects.toThrow(CourseNotFoundError)
   })
 
   it('sorts alphabetically by surname, handling single-word names sensibly', async () => {
@@ -152,8 +161,55 @@ describe('listRegistrationsForAttendanceSheet', () => {
     await makeRegistration(course.id, amyBaker.id, 'CONFIRMED', course.name)
     await makeRegistration(course.id, amyAdams.id, 'CONFIRMED', course.name)
 
-    const data = await listRegistrationsForAttendanceSheet(course.id, false)
+    const data = await listRegistrationsForAttendanceSheet(course.id, false, null)
 
     expect(data.rows.map((row) => row.teacherFullName)).toEqual(['Amy Adams', 'Amy Baker', 'Zed'])
+  })
+})
+
+describe('listRegistrationsForAttendanceSheet — multi-day session scoping', () => {
+  async function makeMultiDayCourse() {
+    const sessionDates = [
+      new Date('2026-09-05T00:00:00.000Z'),
+      new Date('2026-09-12T00:00:00.000Z'),
+      new Date('2026-09-19T00:00:00.000Z'),
+    ]
+    return makeCourse({
+      isMultiDay: true,
+      durationMinutes: null,
+      courseDate: sessionDates[0]!,
+      sessions: { create: sessionDates.map((sessionDate) => ({ sessionDate })) },
+    })
+  }
+
+  it('requires a sessionId for a multi-day course rather than generating an ambiguous sheet', async () => {
+    const course = await makeMultiDayCourse()
+    await expect(listRegistrationsForAttendanceSheet(course.id, false, null)).rejects.toThrow(SessionRequiredError)
+  })
+
+  it('rejects a sessionId that does not belong to the course', async () => {
+    const course = await makeMultiDayCourse()
+    await expect(listRegistrationsForAttendanceSheet(course.id, false, 'not-a-real-session-id')).rejects.toThrow(
+      SessionNotFoundError,
+    )
+  })
+
+  it('scopes the sheet to one session date and reports the correct session number out of the total', async () => {
+    const created = await makeMultiDayCourse()
+    const course = await prisma.course.findUniqueOrThrow({
+      where: { id: created.id },
+      include: { sessions: { orderBy: { sessionDate: 'asc' } } },
+    })
+    const teacher = await makeTeacher('Multi Day Teacher')
+    await makeRegistration(course.id, teacher.id, 'CONFIRMED', course.name)
+
+    const middleSession = course.sessions[1]!
+    const data = await listRegistrationsForAttendanceSheet(course.id, false, middleSession.id)
+
+    expect(data.session).toEqual({ sessionDate: middleSession.sessionDate, sessionNumber: 2, totalSessions: 3 })
+    // The roster isn't filtered by session — a registration is for the
+    // whole course, so the same rows print on every session's sheet.
+    expect(data.rows).toHaveLength(1)
+    expect(data.rows[0]!.mobileNumber).toBe(teacher.phone)
   })
 })

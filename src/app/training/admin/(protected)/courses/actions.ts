@@ -24,44 +24,37 @@ function fieldErrorsFromZod(error: z.ZodError): Record<string, string> {
   return out
 }
 
-/**
- * A multi-day course's durationMinutes column can't be left null (the
- * database column stays NOT NULL, unchanged) even though the admin never
- * enters one — so it's derived from the same per-day startTime/endTime the
- * admin already set, representing each day's session length rather than an
- * independent admin-entered figure. Guards against an overnight-looking
- * range (endTime earlier than startTime) collapsing to zero or negative.
- */
-function derivedDailyDurationMinutes(startTime: Date, endTime: Date): number {
-  const minutes = Math.round((endTime.getTime() - startTime.getTime()) / 60_000)
-  return minutes > 0 ? minutes : 1
+/** The earliest of a non-empty list of dates — used to derive a multi-day course's stored courseDate from its session dates. */
+function earliestDate(dates: Date[]): Date {
+  return dates.reduce((earliest, date) => (date < earliest ? date : earliest))
 }
 
 /**
- * The stored isMultiDay/endDate/durationMinutes are derived here from
- * whether endDate is present, never copied verbatim from the form's own
- * isMultiDay flag — courseFormSchema's superRefine already rejects a
+ * The stored isMultiDay/courseDate/durationMinutes are derived here from
+ * whether sessionDates is non-empty, never copied verbatim from the form's
+ * own isMultiDay flag — courseFormSchema's superRefine already rejects a
  * genuinely inconsistent submission (e.g. isMultiDay: true with no
- * endDate), but this is what makes the server authoritative rather than
- * merely validating: even a technically-consistent payload is re-derived,
- * not trusted.
+ * sessionDates), but this is what makes the server authoritative rather
+ * than merely validating: even a technically-consistent payload is
+ * re-derived, not trusted. Does not touch CourseSession rows themselves —
+ * those are handled separately by the caller, since they live in a related
+ * table rather than a scalar column.
  */
 function toCourseData(values: CourseFormValues) {
   const startTime = timeStringToDate(values.startTime)
   const endTime = timeStringToDate(values.endTime)
-  const isMultiDay = values.endDate != null
+  const isMultiDay = values.sessionDates.length > 0
 
   return {
     name: values.name,
     shortDescription: values.shortDescription,
     fullDescription: values.fullDescription,
     category: values.category,
-    courseDate: values.courseDate,
+    courseDate: isMultiDay ? earliestDate(values.sessionDates) : values.courseDate,
     startTime,
     endTime,
-    endDate: isMultiDay ? values.endDate : null,
     isMultiDay,
-    durationMinutes: isMultiDay ? derivedDailyDurationMinutes(startTime, endTime) : values.durationMinutes!,
+    durationMinutes: isMultiDay ? null : values.durationMinutes!,
     deliveryMethod: values.deliveryMethod,
     location: values.location ?? null,
     joiningInstructions: values.joiningInstructions ?? null,
@@ -97,7 +90,16 @@ export async function createCourseAction(input: unknown): Promise<ActionResult<{
   const slug = await generateUniqueCourseSlug(parsed.data.name)
 
   try {
-    const course = await prisma.course.create({ data: { ...toCourseData(parsed.data), slug } })
+    const course = await prisma.course.create({
+      data: {
+        ...toCourseData(parsed.data),
+        slug,
+        sessions:
+          parsed.data.sessionDates.length > 0
+            ? { create: parsed.data.sessionDates.map((sessionDate) => ({ sessionDate })) }
+            : undefined,
+      },
+    })
     revalidatePath('/training/admin/courses')
     return { success: true, data: { id: course.id } }
   } catch (error) {
@@ -119,7 +121,19 @@ export async function updateCourseAction(id: string, input: unknown): Promise<Ac
     return { success: false, error: 'Please fix the highlighted fields.', fieldErrors: fieldErrorsFromZod(parsed.error) }
   }
 
-  const course = await prisma.course.update({ where: { id }, data: toCourseData(parsed.data) })
+  // Full replace-the-set semantics for sessions: every existing session row
+  // is deleted and the submitted list re-created, rather than diffed —
+  // simplest correct way to support "the administrator ... can remove any
+  // of them" without tracking which rows are new vs pre-existing.
+  const course = await prisma.$transaction(async (tx) => {
+    await tx.courseSession.deleteMany({ where: { courseId: id } })
+    if (parsed.data.sessionDates.length > 0) {
+      await tx.courseSession.createMany({
+        data: parsed.data.sessionDates.map((sessionDate) => ({ courseId: id, sessionDate })),
+      })
+    }
+    return tx.course.update({ where: { id }, data: toCourseData(parsed.data) })
+  })
   revalidatePath('/training/admin/courses')
   return { success: true, data: { id: course.id } }
 }

@@ -1,4 +1,4 @@
-import type { Course, CourseCategory, DeliveryMethod } from '@prisma/client'
+import type { Course, CourseCategory, CourseSession, DeliveryMethod } from '@prisma/client'
 
 import { prisma } from './prisma'
 
@@ -13,8 +13,9 @@ export interface CourseDetail {
   courseDate: Date
   startTime: Date
   endTime: Date
-  durationMinutes: number
-  endDate: Date | null
+  durationMinutes: number | null
+  /** The specific dates a multi-day course runs on, sorted ascending — empty for a single-day course. */
+  sessions: Date[]
   isMultiDay: boolean
   deliveryMethod: DeliveryMethod
   location: string | null
@@ -41,7 +42,7 @@ export interface AdminCourseListItem extends CourseDetail {
   waitlistedCount: number
 }
 
-function toCourseDetail(course: Course): CourseDetail {
+function toCourseDetail(course: Course & { sessions: CourseSession[] }): CourseDetail {
   return {
     id: course.id,
     name: course.name,
@@ -53,7 +54,7 @@ function toCourseDetail(course: Course): CourseDetail {
     startTime: course.startTime,
     endTime: course.endTime,
     durationMinutes: course.durationMinutes,
-    endDate: course.endDate,
+    sessions: course.sessions.map((session) => session.sessionDate),
     isMultiDay: course.isMultiDay,
     deliveryMethod: course.deliveryMethod,
     location: course.location,
@@ -79,7 +80,10 @@ function toCourseDetail(course: Course): CourseDetail {
 /** Course list for the admin screen — registration and waitlist counts are aggregated in SQL via groupBy, never by loading registration rows into memory. */
 export async function listCoursesForAdmin(): Promise<AdminCourseListItem[]> {
   const [courses, statusCounts] = await Promise.all([
-    prisma.course.findMany({ orderBy: { courseDate: 'desc' } }),
+    prisma.course.findMany({
+      orderBy: { courseDate: 'desc' },
+      include: { sessions: { orderBy: { sessionDate: 'asc' } } },
+    }),
     prisma.registration.groupBy({
       by: ['courseId', 'status'],
       _count: { _all: true },

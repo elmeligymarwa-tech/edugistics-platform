@@ -16,12 +16,12 @@ const baseCourse = {
 }
 
 describe('courseFormSchema — single-day (unaffected by multi-day support)', () => {
-  it('accepts a single-day course exactly as before: courseDate, duration, no endDate', () => {
+  it('accepts a single-day course exactly as before: courseDate, duration, no session dates', () => {
     const result = courseFormSchema.safeParse({ ...baseCourse, durationMinutes: 60 })
     expect(result.success).toBe(true)
     if (!result.success) return
     expect(result.data.isMultiDay).toBe(false)
-    expect(result.data.endDate).toBeNull()
+    expect(result.data.sessionDates).toEqual([])
     expect(result.data.durationMinutes).toBe(60)
   })
 
@@ -32,60 +32,74 @@ describe('courseFormSchema — single-day (unaffected by multi-day support)', ()
     expect(result.error.issues.some((issue) => issue.path.join('.') === 'durationMinutes')).toBe(true)
   })
 
-  it('rejects a single-day course that also carries an endDate', () => {
+  it('rejects a single-day course that also carries session dates', () => {
     const result = courseFormSchema.safeParse({
       ...baseCourse,
       durationMinutes: 60,
-      endDate: new Date('2026-09-15T00:00:00.000Z'),
+      sessionDates: [new Date('2026-09-15T00:00:00.000Z')],
     })
     expect(result.success).toBe(false)
     if (result.success) return
-    expect(result.error.issues.some((issue) => issue.path.join('.') === 'endDate')).toBe(true)
+    expect(result.error.issues.some((issue) => issue.path.join('.') === 'sessionDates')).toBe(true)
   })
 })
 
 describe('courseFormSchema — multi-day', () => {
-  it('accepts a multi-day course: courseDate as start, endDate on or after it, no durationMinutes', () => {
-    const result = courseFormSchema.safeParse({
-      ...baseCourse,
-      isMultiDay: true,
-      durationMinutes: null,
-      endDate: new Date('2026-09-15T00:00:00.000Z'),
-    })
+  it('accepts four non-consecutive dates spanning more than one month, no durationMinutes', () => {
+    const sessionDates = [
+      new Date('2026-09-05T00:00:00.000Z'),
+      new Date('2026-09-19T00:00:00.000Z'),
+      new Date('2026-10-03T00:00:00.000Z'),
+      new Date('2026-10-17T00:00:00.000Z'),
+    ]
+    const result = courseFormSchema.safeParse({ ...baseCourse, isMultiDay: true, durationMinutes: null, sessionDates })
     expect(result.success).toBe(true)
     if (!result.success) return
     expect(result.data.isMultiDay).toBe(true)
-    expect(result.data.endDate).toEqual(new Date('2026-09-15T00:00:00.000Z'))
+    expect(result.data.sessionDates).toHaveLength(4)
     expect(result.data.durationMinutes).toBeNull()
   })
 
-  it('accepts endDate equal to courseDate (a 1-day "range")', () => {
+  it('accepts exactly two session dates (the minimum)', () => {
     const result = courseFormSchema.safeParse({
       ...baseCourse,
       isMultiDay: true,
       durationMinutes: null,
-      endDate: baseCourse.courseDate,
+      sessionDates: [new Date('2026-09-05T00:00:00.000Z'), new Date('2026-09-12T00:00:00.000Z')],
     })
     expect(result.success).toBe(true)
   })
 
-  it('rejects an end date before the start date', () => {
+  it('rejects a duplicate session date', () => {
+    const date = new Date('2026-09-05T00:00:00.000Z')
     const result = courseFormSchema.safeParse({
       ...baseCourse,
       isMultiDay: true,
       durationMinutes: null,
-      endDate: new Date('2026-09-01T00:00:00.000Z'),
+      sessionDates: [date, new Date('2026-09-12T00:00:00.000Z'), new Date(date)],
     })
     expect(result.success).toBe(false)
     if (result.success) return
-    expect(result.error.issues.some((issue) => issue.path.join('.') === 'endDate')).toBe(true)
+    expect(result.error.issues.some((issue) => issue.path.join('.') === 'sessionDates')).toBe(true)
   })
 
-  it('rejects a multi-day course missing an endDate', () => {
+  it('rejects a multi-day course with fewer than two session dates', () => {
+    const result = courseFormSchema.safeParse({
+      ...baseCourse,
+      isMultiDay: true,
+      durationMinutes: null,
+      sessionDates: [new Date('2026-09-05T00:00:00.000Z')],
+    })
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.error.issues.some((issue) => issue.path.join('.') === 'sessionDates')).toBe(true)
+  })
+
+  it('rejects a multi-day course with no session dates at all', () => {
     const result = courseFormSchema.safeParse({ ...baseCourse, isMultiDay: true, durationMinutes: null })
     expect(result.success).toBe(false)
     if (result.success) return
-    expect(result.error.issues.some((issue) => issue.path.join('.') === 'endDate')).toBe(true)
+    expect(result.error.issues.some((issue) => issue.path.join('.') === 'sessionDates')).toBe(true)
   })
 
   it('rejects a multi-day course that also carries a durationMinutes value', () => {
@@ -93,7 +107,7 @@ describe('courseFormSchema — multi-day', () => {
       ...baseCourse,
       isMultiDay: true,
       durationMinutes: 60,
-      endDate: new Date('2026-09-15T00:00:00.000Z'),
+      sessionDates: [new Date('2026-09-05T00:00:00.000Z'), new Date('2026-09-12T00:00:00.000Z')],
     })
     expect(result.success).toBe(false)
     if (result.success) return

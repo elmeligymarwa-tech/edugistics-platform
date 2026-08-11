@@ -118,22 +118,24 @@ describe('registerForCourse', () => {
     expect(sendConfirmedEmail).toHaveBeenCalledOnce()
   })
 
-  it('shows the date range and day count for a multi-day course, on both the confirmation screen and the confirmation email', async () => {
+  it('shows the session dates for a multi-day course, on both the confirmation screen and the confirmation email', async () => {
+    const sessionDates = [new Date('2026-09-05T00:00:00.000Z'), new Date('2026-09-12T00:00:00.000Z')]
     const course = await makeCourse({
       maxCapacity: null,
       isMultiDay: true,
-      courseDate: new Date('2026-09-12T00:00:00.000Z'),
-      endDate: new Date('2026-09-15T00:00:00.000Z'),
+      durationMinutes: null,
+      courseDate: sessionDates[0]!,
+      sessions: { create: sessionDates.map((sessionDate) => ({ sessionDate })) },
     })
     const outcome = await registerForCourse(makeInput(course.id))
 
     expect(outcome.status).toBe('CONFIRMED')
     if (outcome.status !== 'CONFIRMED') return
-    expect(outcome.courseDateLong).toBe('12 to 15 September 2026, 4 days')
+    expect(outcome.courseDateLong).toBe('5 and 12 September 2026, 2 sessions')
 
     expect(sendConfirmedEmail).toHaveBeenCalledOnce()
     const emailParams = sendConfirmedEmail.mock.calls[0]![1] as { courseDateLong: string }
-    expect(emailParams.courseDateLong).toBe('12 to 15 September 2026, 4 days')
+    expect(emailParams.courseDateLong).toBe('5 and 12 September 2026, 2 sessions')
   })
 
   it('blocks a duplicate registration for the same course and email', async () => {

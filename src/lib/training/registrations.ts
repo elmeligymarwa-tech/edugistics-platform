@@ -45,6 +45,9 @@ export interface RegistrationListItem {
 export interface CourseFilterOption {
   id: string
   name: string
+  isMultiDay: boolean
+  /** Session choices for the attendance-sheet print dialog — empty for a single-day course. */
+  sessions: { id: string; sessionDate: Date }[]
 }
 
 /** Shared between the registrations table and the Excel export so both always see the same rows for a given filter set. */
@@ -222,7 +225,12 @@ export function parseRegistrationSearchParams(params: Record<string, string | un
 
 export async function listCourseFilterOptions(): Promise<CourseFilterOption[]> {
   const courses = await prisma.course.findMany({
-    select: { id: true, name: true },
+    select: {
+      id: true,
+      name: true,
+      isMultiDay: true,
+      sessions: { orderBy: { sessionDate: 'asc' }, select: { id: true, sessionDate: true } },
+    },
     orderBy: { courseDate: 'desc' },
   })
   return courses

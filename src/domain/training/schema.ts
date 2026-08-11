@@ -85,13 +85,7 @@ function optionalPositiveInt(message: string) {
   )
 }
 
-/** Blank strings, undefined and null all normalise to null — used for endDate, which only a multi-day course carries. */
-const optionalDate = z.preprocess(
-  (value) => (typeof value === 'string' && value.trim() === '' ? null : value),
-  z.coerce.date().nullable().optional().transform((value) => value ?? null),
-)
-
-/** Blank strings, undefined and null all normalise to null — used for durationMinutes, which a multi-day course must NOT carry (see courseFormSchema's superRefine; the stored value for a multi-day course is server-computed, never admin-entered). */
+/** Blank strings, undefined and null all normalise to null — used for durationMinutes, which a multi-day course must NOT carry (see courseFormSchema's superRefine — durationMinutes is simply absent for a multi-day course, not server-computed). */
 const optionalPositiveIntStrict = z.preprocess(
   (value) => (typeof value === 'string' && value.trim() === '' ? null : value),
   z.coerce.number().int().positive('Duration must be a positive number of minutes.').nullable().optional().transform((value) => value ?? null),
@@ -110,8 +104,10 @@ const courseBaseSchema = z.object({
   shortDescription: z.string().trim().min(1, 'Short description is required.'),
   fullDescription: z.string().trim().min(1, 'Full description is required.'),
   category: CourseCategory,
-  // The start date for a multi-day course; the sole date for a single-day
-  // one — see the Course.courseDate schema comment.
+  // The sole date for a single-day course. For a multi-day course this is
+  // ignored server-side and re-derived as the earliest sessionDates entry —
+  // see toCourseData — but the field stays required here since a single-day
+  // submission always needs it.
   courseDate: z.coerce.date({ message: 'Date is required.' }),
   startTime: z.string().regex(TIME_PATTERN, 'Start time must be in HH:MM format.'),
   endTime: z.string().regex(TIME_PATTERN, 'End time must be in HH:MM format.'),
@@ -119,14 +115,15 @@ const courseBaseSchema = z.object({
   // the superRefine below. Optional at this base-shape level so both modes
   // can share one schema.
   durationMinutes: optionalPositiveIntStrict,
-  // Forbidden for a single-day course, required (and >= courseDate) for a
-  // multi-day one — see the superRefine below.
-  endDate: optionalDate,
+  // The specific dates a multi-day course runs on, added one at a time by
+  // the admin — empty for a single-day course. At least two unique dates
+  // are required for a multi-day course; see the superRefine below.
+  sessionDates: z.array(z.coerce.date()).default([]),
   // The form's own claim about its mode — validated for consistency against
-  // endDate/durationMinutes below, but never trusted as the stored value:
-  // toCourseData (courses/actions.ts) derives the persisted isMultiDay from
-  // whether endDate is present, not from this field. The server is the
-  // authority, not the form.
+  // sessionDates/durationMinutes below, but never trusted as the stored
+  // value: toCourseData (courses/actions.ts) derives the persisted
+  // isMultiDay from whether sessionDates is non-empty, not from this field.
+  // The server is the authority, not the form.
   isMultiDay: z.boolean().default(false),
   deliveryMethod: DeliveryMethod,
   location: optionalTrimmedString(),
@@ -174,12 +171,19 @@ export const courseFormSchema = courseBaseSchema.superRefine((data, ctx) => {
   // flag on its own. isMultiDay is checked too (rather than silently
   // overridden here) so a form/server mismatch surfaces as a validation
   // error instead of being quietly reinterpreted; toCourseData is what
-  // ultimately derives the authoritative stored value from endDate.
+  // ultimately derives the authoritative stored value from sessionDates.
   if (data.isMultiDay) {
-    if (data.endDate == null) {
-      ctx.addIssue({ code: 'custom', path: ['endDate'], message: 'A multi-day course needs an end date.' })
-    } else if (data.endDate < data.courseDate) {
-      ctx.addIssue({ code: 'custom', path: ['endDate'], message: 'End date must be on or after the start date.' })
+    const seen = new Set<string>()
+    let hasDuplicate = false
+    for (const date of data.sessionDates) {
+      const key = date.toISOString().slice(0, 10)
+      if (seen.has(key)) hasDuplicate = true
+      seen.add(key)
+    }
+    if (hasDuplicate) {
+      ctx.addIssue({ code: 'custom', path: ['sessionDates'], message: 'The same date was added more than once.' })
+    } else if (seen.size < 2) {
+      ctx.addIssue({ code: 'custom', path: ['sessionDates'], message: 'A multi-day course needs at least two session dates.' })
     }
     if (data.durationMinutes != null) {
       ctx.addIssue({
@@ -196,8 +200,8 @@ export const courseFormSchema = courseBaseSchema.superRefine((data, ctx) => {
         message: 'Duration must be a positive number of minutes.',
       })
     }
-    if (data.endDate != null) {
-      ctx.addIssue({ code: 'custom', path: ['endDate'], message: 'A single-day course cannot have an end date.' })
+    if (data.sessionDates.length > 0) {
+      ctx.addIssue({ code: 'custom', path: ['sessionDates'], message: 'A single-day course cannot have session dates.' })
     }
   }
 

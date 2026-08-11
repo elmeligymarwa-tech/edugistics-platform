@@ -5,7 +5,7 @@ import { ListOrdered } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { formatCourseDateRange, formatCourseFee } from '@/domain/training/format'
+import { formatCourseDateOrSessions, formatCourseFee } from '@/domain/training/format'
 import { COURSE_CATEGORY_LABELS } from '@/domain/training/schema'
 import type { AdminCourseListItem } from '@/lib/training/courses'
 import { ArchiveCourseDialog } from './archive-course-dialog'
@@ -18,9 +18,9 @@ function formatCourseDate(date: Date): string {
   return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(date)
 }
 
-/** Single-day courses keep the existing compact "10 Aug 2026" style, unaffected; a multi-day course shows the full range and day count instead — there's no compact form of that without losing the day count the admin needs to see. */
-function formatCourseDateCell(course: { courseDate: Date; endDate: Date | null; isMultiDay: boolean }): string {
-  if (course.isMultiDay && course.endDate) return formatCourseDateRange(course.courseDate, course.endDate)
+/** Single-day courses keep the existing compact "10 Aug 2026" style, unaffected; a multi-day course shows its session list and count instead — there's no compact form of that without losing the session count the admin needs to see. */
+function formatCourseDateCell(course: { courseDate: Date; sessions: Date[]; isMultiDay: boolean }): string {
+  if (course.isMultiDay && course.sessions.length > 0) return formatCourseDateOrSessions(course)
   return formatCourseDate(course.courseDate)
 }
 

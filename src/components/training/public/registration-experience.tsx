@@ -10,7 +10,7 @@ import { Field, FieldDescription, FieldError, FieldLabel } from '@/components/ui
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { CURRENT_CONSENT_WORDING } from '@/domain/training/consent-wording'
-import { formatCourseDateOrRange, formatCourseFee, formatCourseTimeRange } from '@/domain/training/format'
+import { formatCourseDateOrSessions, formatCourseFee, formatCourseTimeRange } from '@/domain/training/format'
 import { formatPromoDiscountLabel, type PromoBreakdown } from '@/domain/training/promo-code'
 import type { PublicCourse } from '@/lib/training/public-courses'
 import { cn } from '@/lib/utils'
@@ -230,7 +230,7 @@ export function RegistrationExperience({ courses }: { courses: PublicCourse[] })
         {selectedCourse ? (
           <div className="flex flex-col gap-2 rounded-xl border border-primary bg-accent p-4">
             <p className="text-base font-semibold text-heading">{selectedCourse.name}</p>
-            <p className="text-sm text-muted-foreground">{formatCourseDateOrRange(selectedCourse)}</p>
+            <p className="text-sm text-muted-foreground">{formatCourseDateOrSessions(selectedCourse)}</p>
             <p className="text-sm text-muted-foreground">
               {formatCourseTimeRange(selectedCourse.startTime, selectedCourse.endTime)}
             </p>

@@ -10,7 +10,8 @@ export interface PublicCourse {
   shortDescription: string
   category: CourseCategory
   courseDate: Date
-  endDate: Date | null
+  /** The specific dates a multi-day course runs on, sorted ascending — empty for a single-day course. */
+  sessions: Date[]
   isMultiDay: boolean
   startTime: Date
   endTime: Date
@@ -28,6 +29,7 @@ export async function listPublicCourses(): Promise<PublicCourse[]> {
   const courses = await prisma.course.findMany({
     where: { isActive: true, archivedAt: null },
     orderBy: { courseDate: 'asc' },
+    include: { sessions: { orderBy: { sessionDate: 'asc' } } },
   })
 
   const openCourses = courses.filter((course) => isCourseOpenForRegistration(course, now))
@@ -49,7 +51,7 @@ export async function listPublicCourses(): Promise<PublicCourse[]> {
       shortDescription: course.shortDescription,
       category: course.category,
       courseDate: course.courseDate,
-      endDate: course.endDate,
+      sessions: course.sessions.map((session) => session.sessionDate),
       isMultiDay: course.isMultiDay,
       startTime: course.startTime,
       endTime: course.endTime,

@@ -16,7 +16,7 @@ function makeCourse(overrides: Partial<PublicCourse> = {}): PublicCourse {
     shortDescription: 'x',
     category: 'LEADERSHIP',
     courseDate: new Date('2026-08-10T00:00:00.000Z'),
-    endDate: null,
+    sessions: [],
     isMultiDay: false,
     startTime: new Date('1970-01-01T09:00:00.000Z'),
     endTime: new Date('1970-01-01T10:00:00.000Z'),
@@ -38,13 +38,14 @@ describe('CourseOptionCard', () => {
     expect(screen.queryByText(/to.*2026/)).not.toBeInTheDocument()
   })
 
-  it('shows the date range and day count for a multi-day course', () => {
+  it('shows the session dates and count for a multi-day course', () => {
+    const sessionDates = [new Date('2026-09-05T00:00:00.000Z'), new Date('2026-09-19T00:00:00.000Z')]
     const course = makeCourse({
       isMultiDay: true,
-      courseDate: new Date('2026-09-12T00:00:00.000Z'),
-      endDate: new Date('2026-09-15T00:00:00.000Z'),
+      courseDate: sessionDates[0]!,
+      sessions: sessionDates,
     })
     render(<CourseOptionCard course={course} selected={false} onSelect={() => {}} />)
-    expect(screen.getByText('12 to 15 September 2026, 4 days')).toBeInTheDocument()
+    expect(screen.getByText('5 and 19 September 2026, 2 sessions')).toBeInTheDocument()
   })
 })

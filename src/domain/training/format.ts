@@ -16,45 +16,58 @@ export function formatCourseDateLong(date: Date): string {
   }).format(date)
 }
 
-/**
- * Inclusive day count between a multi-day course's start and end date — both
- * plain calendar dates (Postgres DATE, UTC-midnight JS Date, no time-of-day),
- * so a straight millisecond difference is exact with no DST/timezone
- * correction needed. 12–15 September is 4 days (12, 13, 14, 15), hence +1.
- */
-export function courseDayCount(courseDate: Date, endDate: Date): number {
-  const MS_PER_DAY = 24 * 60 * 60 * 1000
-  return Math.round((endDate.getTime() - courseDate.getTime()) / MS_PER_DAY) + 1
+/** Above this many session dates, formatCourseSessionList switches from listing every date to a "first to last, N sessions" summary — a judgement call since the spec gives no exact number, chosen so the common case (a handful of Saturdays) still lists in full. */
+const SESSION_LIST_THRESHOLD = 5
+
+/** "26 September 2026" — a plain calendar date with no weekday, used as the always-fully-shown final entry of a session list or range. */
+function formatSessionDateFull(date: Date): string {
+  return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(date)
 }
 
-/**
- * "12 to 15 September 2026, 4 days" — same UTC-formatting rationale as
- * formatCourseDateLong (a plain calendar date, not a zoned instant, so
- * there's no Cairo conversion to do; the value chosen by the admin already
- * *is* the Cairo calendar date). The start date drops the month/year when
- * they match the end date, and drops just the year when only that matches,
- * so a range never repeats information the end date already states.
- */
-export function formatCourseDateRange(courseDate: Date, endDate: Date): string {
-  const days = courseDayCount(courseDate, endDate)
-  const sameYear = courseDate.getUTCFullYear() === endDate.getUTCFullYear()
-  const sameMonth = sameYear && courseDate.getUTCMonth() === endDate.getUTCMonth()
-
-  const startFormat: Intl.DateTimeFormatOptions = sameMonth
+/** A date formatted relative to a reference date — day-only when month and year both match, day+month when only the year matches, and the full day+month+year otherwise. Drops information the reference date already states, so a list or range never repeats itself. */
+function formatDateRelativeTo(date: Date, reference: Date): string {
+  const sameYear = date.getUTCFullYear() === reference.getUTCFullYear()
+  const sameMonth = sameYear && date.getUTCMonth() === reference.getUTCMonth()
+  const options: Intl.DateTimeFormatOptions = sameMonth
     ? { day: 'numeric', timeZone: 'UTC' }
     : sameYear
       ? { day: 'numeric', month: 'long', timeZone: 'UTC' }
       : { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }
-
-  const startLabel = new Intl.DateTimeFormat('en-GB', startFormat).format(courseDate)
-  const endLabel = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(endDate)
-
-  return `${startLabel} to ${endLabel}, ${days} day${days === 1 ? '' : 's'}`
+  return new Intl.DateTimeFormat('en-GB', options).format(date)
 }
 
-/** The one place that decides whether a course shows a single date or a range — every display site (public card, confirmation screen, confirmation email, admin list) calls this rather than branching on isMultiDay itself. */
-export function formatCourseDateOrRange(course: { courseDate: Date; endDate: Date | null; isMultiDay: boolean }): string {
-  if (course.isMultiDay && course.endDate) return formatCourseDateRange(course.courseDate, course.endDate)
+/**
+ * A multi-day course's specific session dates, formatted readably — same
+ * UTC-formatting rationale as formatCourseDateLong (these are plain
+ * calendar dates, not zoned instants, so there's no Cairo conversion to do;
+ * the value chosen by the admin already *is* the Cairo calendar date).
+ * Dates need not be consecutive or share a month/year (see
+ * formatDateRelativeTo for how repeated month/year is dropped).
+ *
+ * "5, 12, 19 and 26 September 2026, 4 sessions" for SESSION_LIST_THRESHOLD
+ * or fewer dates; "5 September to 20 December 2026, 8 sessions" beyond that.
+ */
+export function formatCourseSessionList(dates: Date[]): string {
+  const sorted = [...dates].sort((a, b) => a.getTime() - b.getTime())
+  const count = sorted.length
+  const suffix = `${count} session${count === 1 ? '' : 's'}`
+  const last = sorted[sorted.length - 1]!
+
+  if (count > SESSION_LIST_THRESHOLD) {
+    const firstLabel = formatDateRelativeTo(sorted[0]!, last)
+    return `${firstLabel} to ${formatSessionDateFull(last)}, ${suffix}`
+  }
+
+  const labels = sorted.map((date, index) =>
+    index === sorted.length - 1 ? formatSessionDateFull(date) : formatDateRelativeTo(date, last),
+  )
+  const listLabel = labels.length === 1 ? labels[0]! : `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`
+  return `${listLabel}, ${suffix}`
+}
+
+/** The one place that decides whether a course shows a single date or its session list — every display site (public card, confirmation screen, confirmation email, admin list) calls this rather than branching on isMultiDay itself. */
+export function formatCourseDateOrSessions(course: { courseDate: Date; isMultiDay: boolean; sessions: Date[] }): string {
+  if (course.isMultiDay && course.sessions.length > 0) return formatCourseSessionList(course.sessions)
   return formatCourseDateLong(course.courseDate)
 }
 

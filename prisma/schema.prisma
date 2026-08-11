@@ -115,18 +115,21 @@ model Course {
   fullDescription      String
   category             CourseCategory
   // The start date for a multi-day course — no existing meaning changes for
-  // a single-day course, which this remains the sole date for.
+  // a single-day course, which this remains the sole date for. For a
+  // multi-day course this is derived (earliest CourseSession.sessionDate),
+  // never entered directly — see toCourseData.
   courseDate           DateTime       @db.Date
   startTime            DateTime       @db.Time
   endTime              DateTime       @db.Time
-  durationMinutes      Int
-  // Multi-day course support (additive). endDate is null for every
-  // single-day course; isMultiDay is the server-derived, authoritative flag
-  // (see courseFormSchema/toCourseData) — never trusted verbatim from the
-  // form. A multi-day course still stores a durationMinutes value (the
-  // column stays NOT NULL, unchanged) but it is server-computed from
-  // startTime/endTime rather than admin-entered — see toCourseData.
-  endDate              DateTime?      @db.Date
+  // Required for a single-day course; a multi-day course must not carry one
+  // at all (each session's length comes from startTime/endTime instead) —
+  // see courseFormSchema's superRefine and toCourseData.
+  durationMinutes      Int?
+  // isMultiDay is the server-derived, authoritative flag (see
+  // courseFormSchema/toCourseData) — never trusted verbatim from the form.
+  // The specific dates a multi-day course runs on live in CourseSession, not
+  // here — a course held on four non-consecutive Saturdays is four session
+  // rows, not a start/end range.
   isMultiDay           Boolean        @default(false)
   deliveryMethod       DeliveryMethod
   location             String?
@@ -157,9 +160,30 @@ model Course {
   emailCampaigns   EmailCampaign[]
   subscribers      Subscriber[]
   consentEvents    ConsentEvent[]
+  sessions         CourseSession[]
 
   @@index([isActive])
   @@index([category])
+}
+
+// One row per specific date a multi-day course runs on, chosen individually
+// by the admin — never a start/end range, since real multi-day courses
+// (e.g. four Saturdays across a month) aren't consecutive-day spans. Empty
+// for every single-day course. startTime/endTime on Course apply to each
+// session. onDelete: Cascade so removing a Course (test cleanup, the global
+// test-data sweep) never leaves orphaned session rows behind.
+model CourseSession {
+  id          String   @id @default(cuid())
+  courseId    String
+  sessionDate DateTime @db.Date
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  // Prevents the same date being added to the same course twice.
+  @@unique([courseId, sessionDate])
+  @@index([courseId])
 }
 
 model EmailCampaign {

@@ -20,7 +20,7 @@ function makeCourse(overrides: Partial<PublicCourse> = {}): PublicCourse {
     shortDescription: 'x',
     category: 'LEADERSHIP',
     courseDate: new Date('2026-09-01T00:00:00.000Z'),
-    endDate: null,
+    sessions: [],
     isMultiDay: false,
     startTime: new Date('1970-01-01T09:00:00.000Z'),
     endTime: new Date('1970-01-01T10:00:00.000Z'),

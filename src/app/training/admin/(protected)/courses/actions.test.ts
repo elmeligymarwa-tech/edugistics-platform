@@ -3,7 +3,7 @@ import { afterAll, describe, expect, it, vi } from 'vitest'
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/training/auth/require-admin', () => ({ requireAdminSession: vi.fn().mockResolvedValue(undefined) }))
 
-const { createCourseAction } = await import('./actions')
+const { createCourseAction, updateCourseAction } = await import('./actions')
 const { prisma } = await import('@/lib/training/prisma')
 
 // Self-contained and self-cleaning, hitting the real database like the
@@ -12,6 +12,8 @@ const MARKER = 'course-actions-test'
 const courseIds: string[] = []
 
 afterAll(async () => {
+  // CourseSession rows cascade-delete with their Course (onDelete: Cascade
+  // in schema.prisma), so no separate cleanup is needed for them.
   await prisma.course.deleteMany({ where: { id: { in: courseIds } } })
   await prisma.$disconnect()
 })
@@ -29,8 +31,12 @@ const baseInput = {
   currency: 'EGP',
 }
 
+function getSessions(courseId: string) {
+  return prisma.courseSession.findMany({ where: { courseId }, orderBy: { sessionDate: 'asc' } })
+}
+
 describe('createCourseAction — single-day (unaffected by multi-day support)', () => {
-  it('saves and reads back exactly as before: courseDate, duration, no endDate, isMultiDay false', async () => {
+  it('saves and reads back exactly as before: courseDate, duration, no sessions, isMultiDay false', async () => {
     const result = await createCourseAction({ ...baseInput, durationMinutes: 60 })
     expect(result.success).toBe(true)
     if (!result.success) return
@@ -38,22 +44,27 @@ describe('createCourseAction — single-day (unaffected by multi-day support)', 
 
     const saved = await prisma.course.findUniqueOrThrow({ where: { id: result.data.id } })
     expect(saved.isMultiDay).toBe(false)
-    expect(saved.endDate).toBeNull()
     expect(saved.durationMinutes).toBe(60)
     expect(saved.courseDate.toISOString()).toBe(baseInput.courseDate.toISOString())
+    expect(await getSessions(result.data.id)).toHaveLength(0)
   })
 })
 
 describe('createCourseAction — multi-day', () => {
-  it('saves with the correct day count and a server-derived durationMinutes, ignoring a mismatched isMultiDay claim', async () => {
+  it('saves four non-consecutive dates, ignoring a mismatched isMultiDay claim', async () => {
+    const sessionDates = [
+      new Date('2026-09-05T00:00:00.000Z'),
+      new Date('2026-09-19T00:00:00.000Z'),
+      new Date('2026-10-03T00:00:00.000Z'),
+      new Date('2026-10-17T00:00:00.000Z'),
+    ]
     const result = await createCourseAction({
       ...baseInput,
-      // Deliberately wrong — the server derives isMultiDay from endDate,
-      // not from this field, so this must not end up stored as multi-day
-      // once endDate is also omitted... (see the next test for that case).
+      // Deliberately wrong — the server derives isMultiDay from
+      // sessionDates, not from this field.
       isMultiDay: true,
       durationMinutes: null,
-      endDate: new Date('2026-09-15T00:00:00.000Z'),
+      sessionDates,
     })
     expect(result.success).toBe(true)
     if (!result.success) return
@@ -61,42 +72,50 @@ describe('createCourseAction — multi-day', () => {
 
     const saved = await prisma.course.findUniqueOrThrow({ where: { id: result.data.id } })
     expect(saved.isMultiDay).toBe(true)
-    expect(saved.endDate?.toISOString()).toBe(new Date('2026-09-15T00:00:00.000Z').toISOString())
-    // Server-computed from startTime (09:00) / endTime (10:00) — never the
-    // rejected client-side durationMinutes, which this payload never sent.
-    expect(saved.durationMinutes).toBe(60)
+    expect(saved.durationMinutes).toBeNull()
+    // courseDate resolves to the earliest session date, not the (unused) courseDate field on the payload.
+    expect(saved.courseDate.toISOString()).toBe(sessionDates[0]!.toISOString())
+
+    const sessions = await getSessions(result.data.id)
+    expect(sessions).toHaveLength(4)
+    expect(sessions.map((s) => s.sessionDate.toISOString())).toEqual(sessionDates.map((d) => d.toISOString()))
   })
 
-  it('computes the correct day count across a month boundary', async () => {
-    const result = await createCourseAction({
-      ...baseInput,
-      isMultiDay: true,
-      durationMinutes: null,
-      courseDate: new Date('2026-08-30T00:00:00.000Z'),
-      endDate: new Date('2026-09-02T00:00:00.000Z'),
-    })
+  it('handles dates spanning more than one month', async () => {
+    const sessionDates = [new Date('2026-08-30T00:00:00.000Z'), new Date('2026-09-02T00:00:00.000Z')]
+    const result = await createCourseAction({ ...baseInput, isMultiDay: true, durationMinutes: null, sessionDates })
     expect(result.success).toBe(true)
     if (!result.success) return
     courseIds.push(result.data.id)
 
     const saved = await prisma.course.findUniqueOrThrow({ where: { id: result.data.id } })
-    // 30, 31 August, 1, 2 September — 4 days. The route stores the raw dates;
-    // courseDayCount (domain/training/format.ts) is what turns this into "4
-    // days" for display — covered directly in format.test.ts.
-    expect(saved.courseDate.toISOString()).toBe(new Date('2026-08-30T00:00:00.000Z').toISOString())
-    expect(saved.endDate?.toISOString()).toBe(new Date('2026-09-02T00:00:00.000Z').toISOString())
+    expect(saved.courseDate.toISOString()).toBe(sessionDates[0]!.toISOString())
+    expect(await getSessions(result.data.id)).toHaveLength(2)
   })
 
-  it('rejects an end date before the start date, saving nothing', async () => {
+  it('rejects a duplicate session date, saving nothing', async () => {
+    const date = new Date('2026-09-05T00:00:00.000Z')
     const result = await createCourseAction({
       ...baseInput,
       isMultiDay: true,
       durationMinutes: null,
-      endDate: new Date('2026-09-01T00:00:00.000Z'),
+      sessionDates: [date, new Date('2026-09-12T00:00:00.000Z'), new Date(date)],
     })
     expect(result.success).toBe(false)
     if (result.success) return
-    expect(result.fieldErrors?.endDate).toBeDefined()
+    expect(result.fieldErrors?.sessionDates).toBeDefined()
+  })
+
+  it('rejects a multi-day course with fewer than two session dates, saving nothing', async () => {
+    const result = await createCourseAction({
+      ...baseInput,
+      isMultiDay: true,
+      durationMinutes: null,
+      sessionDates: [new Date('2026-09-05T00:00:00.000Z')],
+    })
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.fieldErrors?.sessionDates).toBeDefined()
   })
 
   it('rejects a multi-day course that also carries a duration in minutes, saving nothing', async () => {
@@ -104,10 +123,48 @@ describe('createCourseAction — multi-day', () => {
       ...baseInput,
       isMultiDay: true,
       durationMinutes: 60,
-      endDate: new Date('2026-09-15T00:00:00.000Z'),
+      sessionDates: [new Date('2026-09-05T00:00:00.000Z'), new Date('2026-09-12T00:00:00.000Z')],
     })
     expect(result.success).toBe(false)
     if (result.success) return
     expect(result.fieldErrors?.durationMinutes).toBeDefined()
+  })
+})
+
+describe('updateCourseAction — multi-day session removal', () => {
+  it('removing a session date updates the count and the derived courseDate', async () => {
+    const created = await createCourseAction({
+      ...baseInput,
+      isMultiDay: true,
+      durationMinutes: null,
+      sessionDates: [
+        new Date('2026-09-05T00:00:00.000Z'),
+        new Date('2026-09-12T00:00:00.000Z'),
+        new Date('2026-09-19T00:00:00.000Z'),
+      ],
+    })
+    expect(created.success).toBe(true)
+    if (!created.success) return
+    courseIds.push(created.data.id)
+
+    // Remove the earliest date — the two remaining dates stay, and the
+    // derived courseDate must move to the new earliest.
+    const updated = await updateCourseAction(created.data.id, {
+      ...baseInput,
+      isMultiDay: true,
+      durationMinutes: null,
+      sessionDates: [new Date('2026-09-12T00:00:00.000Z'), new Date('2026-09-19T00:00:00.000Z')],
+    })
+    expect(updated.success).toBe(true)
+    if (!updated.success) return
+
+    const saved = await prisma.course.findUniqueOrThrow({ where: { id: updated.data.id } })
+    expect(saved.courseDate.toISOString()).toBe(new Date('2026-09-12T00:00:00.000Z').toISOString())
+
+    const sessions = await getSessions(updated.data.id)
+    expect(sessions).toHaveLength(2)
+    expect(sessions.map((s) => s.sessionDate.toISOString())).toEqual(
+      [new Date('2026-09-12T00:00:00.000Z'), new Date('2026-09-19T00:00:00.000Z')].map((d) => d.toISOString()),
+    )
   })
 })

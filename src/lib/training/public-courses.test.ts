@@ -55,7 +55,8 @@ describe('listPublicCourses', () => {
     }
   })
 
-  it('carries endDate and isMultiDay through for a multi-day course, and leaves a single-day course unaffected', async () => {
+  it('carries session dates and isMultiDay through for a multi-day course, and leaves a single-day course unaffected', async () => {
+    const sessionDates = [new Date('2026-09-12T00:00:00.000Z'), new Date('2026-09-15T00:00:00.000Z')]
     const multiDay = await prisma.course.create({
       data: {
         name: `${MARKER} multi-day course`,
@@ -63,14 +64,14 @@ describe('listPublicCourses', () => {
         shortDescription: 'x',
         fullDescription: 'x',
         category: 'LEADERSHIP',
-        courseDate: new Date('2026-09-12T00:00:00.000Z'),
-        endDate: new Date('2026-09-15T00:00:00.000Z'),
+        courseDate: sessionDates[0]!,
         isMultiDay: true,
         startTime: new Date('1970-01-01T09:00:00.000Z'),
         endTime: new Date('1970-01-01T10:00:00.000Z'),
-        durationMinutes: 60,
+        durationMinutes: null,
         deliveryMethod: 'ONLINE',
         isActive: true,
+        sessions: { create: sessionDates.map((sessionDate) => ({ sessionDate })) },
       },
     })
     courseIds.push(multiDay.id)
@@ -96,10 +97,10 @@ describe('listPublicCourses', () => {
 
     const foundMultiDay = courses.find((c) => c.id === multiDay.id)
     expect(foundMultiDay?.isMultiDay).toBe(true)
-    expect(foundMultiDay?.endDate?.toISOString()).toBe(new Date('2026-09-15T00:00:00.000Z').toISOString())
+    expect(foundMultiDay?.sessions.map((d) => d.toISOString())).toEqual(sessionDates.map((d) => d.toISOString()))
 
     const foundSingleDay = courses.find((c) => c.id === singleDay.id)
     expect(foundSingleDay?.isMultiDay).toBe(false)
-    expect(foundSingleDay?.endDate).toBeNull()
+    expect(foundSingleDay?.sessions).toEqual([])
   })
 })

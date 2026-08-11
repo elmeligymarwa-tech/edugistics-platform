@@ -1,62 +1,55 @@
 import { describe, expect, it } from 'vitest'
 
-import { courseDayCount, formatCourseDateLong, formatCourseDateOrRange, formatCourseDateRange } from './format'
+import { formatCourseDateLong, formatCourseDateOrSessions, formatCourseSessionList } from './format'
 
-describe('courseDayCount', () => {
-  it('counts a same-day range as 1 day', () => {
-    const date = new Date('2026-09-12T00:00:00.000Z')
-    expect(courseDayCount(date, date)).toBe(1)
+describe('formatCourseSessionList', () => {
+  it('lists dates within the same month exactly as specified', () => {
+    const dates = [
+      new Date('2026-09-05T00:00:00.000Z'),
+      new Date('2026-09-12T00:00:00.000Z'),
+      new Date('2026-09-19T00:00:00.000Z'),
+      new Date('2026-09-26T00:00:00.000Z'),
+    ]
+    expect(formatCourseSessionList(dates)).toBe('5, 12, 19 and 26 September 2026, 4 sessions')
   })
 
-  it('counts inclusively within a month', () => {
-    expect(courseDayCount(new Date('2026-09-12T00:00:00.000Z'), new Date('2026-09-15T00:00:00.000Z'))).toBe(4)
+  it('names the month on any date that crosses a month boundary within the same year', () => {
+    const dates = [new Date('2026-08-30T00:00:00.000Z'), new Date('2026-09-02T00:00:00.000Z')]
+    expect(formatCourseSessionList(dates)).toBe('30 August and 2 September 2026, 2 sessions')
   })
 
-  it('counts correctly across a month boundary', () => {
-    // 30, 31 August, 1, 2 September — 4 days.
-    expect(courseDayCount(new Date('2026-08-30T00:00:00.000Z'), new Date('2026-09-02T00:00:00.000Z'))).toBe(4)
+  it('names the year on any date that crosses a year boundary', () => {
+    const dates = [new Date('2026-12-30T00:00:00.000Z'), new Date('2027-01-02T00:00:00.000Z')]
+    expect(formatCourseSessionList(dates)).toBe('30 December 2026 and 2 January 2027, 2 sessions')
   })
 
-  it('counts correctly across a year boundary', () => {
-    // 30, 31 December, 1, 2 January — 4 days.
-    expect(courseDayCount(new Date('2026-12-30T00:00:00.000Z'), new Date('2027-01-02T00:00:00.000Z'))).toBe(4)
-  })
-})
-
-describe('formatCourseDateRange', () => {
-  it('formats a range within the same month exactly as specified', () => {
-    expect(formatCourseDateRange(new Date('2026-09-12T00:00:00.000Z'), new Date('2026-09-15T00:00:00.000Z'))).toBe(
-      '12 to 15 September 2026, 4 days',
-    )
+  it('sorts unsorted input before formatting', () => {
+    const dates = [new Date('2026-09-19T00:00:00.000Z'), new Date('2026-09-05T00:00:00.000Z')]
+    expect(formatCourseSessionList(dates)).toBe('5 and 19 September 2026, 2 sessions')
   })
 
-  it('names the start month when the range crosses a month boundary within the same year', () => {
-    expect(formatCourseDateRange(new Date('2026-08-30T00:00:00.000Z'), new Date('2026-09-02T00:00:00.000Z'))).toBe(
-      '30 August to 2 September 2026, 4 days',
-    )
-  })
-
-  it('names the start year when the range crosses a year boundary', () => {
-    expect(formatCourseDateRange(new Date('2026-12-30T00:00:00.000Z'), new Date('2027-01-02T00:00:00.000Z'))).toBe(
-      '30 December 2026 to 2 January 2027, 4 days',
-    )
-  })
-
-  it('uses singular "day" for a same-day range', () => {
-    const date = new Date('2026-09-12T00:00:00.000Z')
-    expect(formatCourseDateRange(date, date)).toBe('12 to 12 September 2026, 1 day')
+  it('switches to a first-to-last summary beyond the listing threshold', () => {
+    const dates = [
+      new Date('2026-09-05T00:00:00.000Z'),
+      new Date('2026-09-12T00:00:00.000Z'),
+      new Date('2026-09-19T00:00:00.000Z'),
+      new Date('2026-09-26T00:00:00.000Z'),
+      new Date('2026-10-03T00:00:00.000Z'),
+      new Date('2026-10-10T00:00:00.000Z'),
+    ]
+    expect(formatCourseSessionList(dates)).toBe('5 September to 10 October 2026, 6 sessions')
   })
 })
 
-describe('formatCourseDateOrRange', () => {
-  it('falls back to the plain single-day format when isMultiDay is false, regardless of endDate', () => {
+describe('formatCourseDateOrSessions', () => {
+  it('falls back to the plain single-day format when isMultiDay is false, regardless of sessions', () => {
     const courseDate = new Date('2026-08-10T00:00:00.000Z')
-    expect(formatCourseDateOrRange({ courseDate, endDate: null, isMultiDay: false })).toBe(formatCourseDateLong(courseDate))
+    expect(formatCourseDateOrSessions({ courseDate, isMultiDay: false, sessions: [] })).toBe(formatCourseDateLong(courseDate))
   })
 
-  it('uses the range format when isMultiDay is true and endDate is present', () => {
-    const courseDate = new Date('2026-09-12T00:00:00.000Z')
-    const endDate = new Date('2026-09-15T00:00:00.000Z')
-    expect(formatCourseDateOrRange({ courseDate, endDate, isMultiDay: true })).toBe('12 to 15 September 2026, 4 days')
+  it('uses the session list format when isMultiDay is true and sessions are present', () => {
+    const courseDate = new Date('2026-09-05T00:00:00.000Z')
+    const sessions = [courseDate, new Date('2026-09-12T00:00:00.000Z')]
+    expect(formatCourseDateOrSessions({ courseDate, isMultiDay: true, sessions })).toBe('5 and 12 September 2026, 2 sessions')
   })
 })

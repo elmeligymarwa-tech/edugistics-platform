@@ -2,7 +2,7 @@ import 'server-only'
 
 import { Prisma } from '@prisma/client'
 
-import { formatCourseDateOrRange, formatCourseTimeRange } from '@/domain/training/format'
+import { formatCourseDateOrSessions, formatCourseTimeRange } from '@/domain/training/format'
 import { formatPromoDiscountLabel, type PromoBreakdown } from '@/domain/training/promo-code'
 import { DELIVERY_METHOD_LABELS } from '@/domain/training/schema'
 import { sendConfirmedEmail, sendWaitlistedEmail } from './email/send-registration-email'
@@ -98,7 +98,10 @@ export async function registerForCourse(input: RegisterInput): Promise<Registrat
     if (lockedRows.length === 0) {
       throw new RegistrationRejectedError('This course is no longer available.')
     }
-    const course = await tx.course.findUniqueOrThrow({ where: { id: input.courseId } })
+    const course = await tx.course.findUniqueOrThrow({
+      where: { id: input.courseId },
+      include: { sessions: { orderBy: { sessionDate: 'asc' } } },
+    })
 
     if (!isCourseOpenForRegistration(course, now)) {
       throw new RegistrationRejectedError('This course is no longer accepting registrations.')
@@ -257,7 +260,11 @@ export async function registerForCourse(input: RegisterInput): Promise<Registrat
     return { teacher, course, registration, waitlistPosition }
   })
 
-  const courseDateLong = formatCourseDateOrRange(course)
+  const courseDateLong = formatCourseDateOrSessions({
+    courseDate: course.courseDate,
+    isMultiDay: course.isMultiDay,
+    sessions: course.sessions.map((session) => session.sessionDate),
+  })
   const courseTimeRange = formatCourseTimeRange(course.startTime, course.endTime)
 
   // Built from the registration's own stored snapshot, never recalculated —

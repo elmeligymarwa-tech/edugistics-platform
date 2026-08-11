@@ -10,6 +10,7 @@ import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { formatCourseDateLong } from '@/domain/training/format'
 import type { CourseFilterOption } from '@/lib/training/registrations'
 
 const STATUS_OPTIONS = [
@@ -40,6 +41,7 @@ export function RegistrationsFilters({ courseOptions }: { courseOptions: CourseF
   const [attendanceDialogOpen, setAttendanceDialogOpen] = useState(false)
   const [attendancePromptError, setAttendancePromptError] = useState<string | null>(null)
   const [includeWaitlisted, setIncludeWaitlisted] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(null)
 
   function updateParam(key: string, value: string | null) {
     const params = new URLSearchParams(searchParams.toString())
@@ -79,12 +81,16 @@ export function RegistrationsFilters({ courseOptions }: { courseOptions: CourseF
     }
     setAttendancePromptError(null)
     setIncludeWaitlisted(false)
+    setSessionId(null)
     setAttendanceDialogOpen(true)
   }
+
+  const sessionRequiredButMissing = Boolean(selectedCourse?.isMultiDay) && !sessionId
 
   const attendanceSheetParams = new URLSearchParams()
   if (selectedCourseId) attendanceSheetParams.set('courseId', selectedCourseId)
   if (includeWaitlisted) attendanceSheetParams.set('includeWaitlisted', 'true')
+  if (sessionId) attendanceSheetParams.set('sessionId', sessionId)
 
   return (
     <div className="flex flex-wrap items-end gap-3">
@@ -182,6 +188,24 @@ export function RegistrationsFilters({ courseOptions }: { courseOptions: CourseF
             </DialogDescription>
           </DialogHeader>
 
+          {selectedCourse?.isMultiDay && (
+            <Field>
+              <FieldLabel htmlFor="attendance-session">Session date</FieldLabel>
+              <Select
+                id="attendance-session"
+                items={selectedCourse.sessions.map((session) => ({
+                  value: session.id,
+                  label: formatCourseDateLong(session.sessionDate),
+                }))}
+                value={sessionId ?? ''}
+                onValueChange={setSessionId}
+              />
+              <FieldDescription>
+                This is a multi-day course — the sheet covers one session at a time.
+              </FieldDescription>
+            </Field>
+          )}
+
           <Field>
             <div className="flex items-center justify-between">
               <FieldLabel htmlFor="attendance-include-waitlisted">Include waitlisted registrations</FieldLabel>
@@ -200,19 +224,28 @@ export function RegistrationsFilters({ courseOptions }: { courseOptions: CourseF
             <Button type="button" variant="outline" onClick={() => setAttendanceDialogOpen(false)}>
               Cancel
             </Button>
-            <Button
-              type="button"
-              render={
-                <a
-                  href={`/api/training/admin/registrations/attendance-sheet?${attendanceSheetParams.toString()}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => setAttendanceDialogOpen(false)}
-                />
-              }
-            >
-              <Printer /> Open sheet
-            </Button>
+            {sessionRequiredButMissing ? (
+              <div className="flex flex-col items-end gap-1">
+                <Button type="button" disabled>
+                  <Printer /> Open sheet
+                </Button>
+                <p className="text-xs text-destructive">Select a session date first.</p>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                render={
+                  <a
+                    href={`/api/training/admin/registrations/attendance-sheet?${attendanceSheetParams.toString()}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setAttendanceDialogOpen(false)}
+                  />
+                }
+              >
+                <Printer /> Open sheet
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
