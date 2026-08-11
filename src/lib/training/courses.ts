@@ -14,6 +14,8 @@ export interface CourseDetail {
   startTime: Date
   endTime: Date
   durationMinutes: number
+  endDate: Date | null
+  isMultiDay: boolean
   deliveryMethod: DeliveryMethod
   location: string | null
   joiningInstructions: string | null
@@ -51,6 +53,8 @@ function toCourseDetail(course: Course): CourseDetail {
     startTime: course.startTime,
     endTime: course.endTime,
     durationMinutes: course.durationMinutes,
+    endDate: course.endDate,
+    isMultiDay: course.isMultiDay,
     deliveryMethod: course.deliveryMethod,
     location: course.location,
     joiningInstructions: course.joiningInstructions,

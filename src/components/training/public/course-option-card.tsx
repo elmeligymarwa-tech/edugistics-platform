@@ -1,5 +1,5 @@
 import { DELIVERY_METHOD_LABELS } from '@/domain/training/schema'
-import { formatCourseDateLong, formatCourseFee, formatCourseTimeRange } from '@/domain/training/format'
+import { formatCourseDateOrRange, formatCourseFee, formatCourseTimeRange } from '@/domain/training/format'
 import type { PublicCourse } from '@/lib/training/public-courses'
 import { cn } from '@/lib/utils'
 
@@ -40,7 +40,7 @@ export function CourseOptionCard({
           </span>
         )}
       </div>
-      <p className="text-sm text-muted-foreground">{formatCourseDateLong(course.courseDate)}</p>
+      <p className="text-sm text-muted-foreground">{formatCourseDateOrRange(course)}</p>
       <p className="text-sm text-muted-foreground">{formatCourseTimeRange(course.startTime, course.endTime)}</p>
       <p className="text-sm text-muted-foreground">
         {DELIVERY_METHOD_LABELS[course.deliveryMethod]}

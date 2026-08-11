@@ -38,6 +38,20 @@ export function deriveFirstName(fullName: string): string {
   return first || 'there'
 }
 
+/**
+ * Surname derived from a stored full name, for alphabetical sorting (see
+ * the attendance sheet, lib/training/attendance-sheet.ts). Takes the last
+ * whitespace-separated word — the same Western-name-order assumption
+ * deriveFirstName above already makes by taking the first word. A
+ * single-word name has no separate surname to pull out, so it sorts by
+ * that one word rather than being pushed to the end of the list or
+ * treated as blank.
+ */
+export function deriveSurname(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean)
+  return parts.length > 0 ? parts[parts.length - 1]! : ''
+}
+
 /** True when the given template text (subject or body) references {{zoomLink}}. */
 export function usesZoomLinkToken(template: string): boolean {
   return /\{\{\s*zoomLink\s*\}\}/.test(template)

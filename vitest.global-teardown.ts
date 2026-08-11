@@ -37,6 +37,8 @@ const FILE_MARKERS = [
   'unsubscribe-resubscribe-route-test',
   'promote-action-test',
   'promo-code-actions-test',
+  'course-actions-test',
+  'attendance-sheet-test',
   'registrations-actions-test',
   'email-actions-test',
   'send-actions-test',

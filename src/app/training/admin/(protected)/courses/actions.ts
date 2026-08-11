@@ -24,16 +24,44 @@ function fieldErrorsFromZod(error: z.ZodError): Record<string, string> {
   return out
 }
 
+/**
+ * A multi-day course's durationMinutes column can't be left null (the
+ * database column stays NOT NULL, unchanged) even though the admin never
+ * enters one — so it's derived from the same per-day startTime/endTime the
+ * admin already set, representing each day's session length rather than an
+ * independent admin-entered figure. Guards against an overnight-looking
+ * range (endTime earlier than startTime) collapsing to zero or negative.
+ */
+function derivedDailyDurationMinutes(startTime: Date, endTime: Date): number {
+  const minutes = Math.round((endTime.getTime() - startTime.getTime()) / 60_000)
+  return minutes > 0 ? minutes : 1
+}
+
+/**
+ * The stored isMultiDay/endDate/durationMinutes are derived here from
+ * whether endDate is present, never copied verbatim from the form's own
+ * isMultiDay flag — courseFormSchema's superRefine already rejects a
+ * genuinely inconsistent submission (e.g. isMultiDay: true with no
+ * endDate), but this is what makes the server authoritative rather than
+ * merely validating: even a technically-consistent payload is re-derived,
+ * not trusted.
+ */
 function toCourseData(values: CourseFormValues) {
+  const startTime = timeStringToDate(values.startTime)
+  const endTime = timeStringToDate(values.endTime)
+  const isMultiDay = values.endDate != null
+
   return {
     name: values.name,
     shortDescription: values.shortDescription,
     fullDescription: values.fullDescription,
     category: values.category,
     courseDate: values.courseDate,
-    startTime: timeStringToDate(values.startTime),
-    endTime: timeStringToDate(values.endTime),
-    durationMinutes: values.durationMinutes,
+    startTime,
+    endTime,
+    endDate: isMultiDay ? values.endDate : null,
+    isMultiDay,
+    durationMinutes: isMultiDay ? derivedDailyDurationMinutes(startTime, endTime) : values.durationMinutes!,
     deliveryMethod: values.deliveryMethod,
     location: values.location ?? null,
     joiningInstructions: values.joiningInstructions ?? null,

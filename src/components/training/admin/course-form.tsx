@@ -17,6 +17,7 @@ import {
   type CourseCategory as CourseCategoryType,
   type DeliveryMethod as DeliveryMethodType,
 } from '@/domain/training/schema'
+import { courseDayCount } from '@/domain/training/format'
 import { dateToTimeString } from '@/domain/training/time'
 import { utcToCairoDateTimeLocal } from '@/domain/training/timezone'
 import type { CourseDetail } from '@/lib/training/courses'
@@ -47,6 +48,8 @@ interface CourseFormInputs {
   startTime: string
   endTime: string
   durationMinutes: string
+  isMultiDay: boolean
+  endDate: Date | null
   deliveryMethod: DeliveryMethodType
   location: string
   joiningInstructions: string
@@ -77,6 +80,8 @@ function toDefaultValues(course?: CourseDetail): CourseFormInputs {
       startTime: '09:00',
       endTime: '10:00',
       durationMinutes: '60',
+      isMultiDay: false,
+      endDate: null,
       deliveryMethod: 'ONLINE',
       location: '',
       joiningInstructions: '',
@@ -106,6 +111,8 @@ function toDefaultValues(course?: CourseDetail): CourseFormInputs {
     startTime: dateToTimeString(course.startTime),
     endTime: dateToTimeString(course.endTime),
     durationMinutes: String(course.durationMinutes),
+    isMultiDay: course.isMultiDay,
+    endDate: course.endDate,
     deliveryMethod: course.deliveryMethod,
     location: course.location ?? '',
     joiningInstructions: course.joiningInstructions ?? '',
@@ -148,6 +155,11 @@ export function CourseForm({ course, onSuccess }: { course?: CourseDetail; onSuc
   const deliveryMethod = watch('deliveryMethod')
   const maxCapacity = watch('maxCapacity')
   const waitlistEnabled = watch('waitlistEnabled')
+  const isMultiDay = watch('isMultiDay')
+  const courseDate = watch('courseDate')
+  const endDate = watch('endDate')
+
+  const dayCount = isMultiDay && endDate && endDate >= courseDate ? courseDayCount(courseDate, endDate) : null
 
   async function onSubmit(values: CourseFormInputs) {
     setFormError(null)
@@ -166,6 +178,12 @@ export function CourseForm({ course, onSuccess }: { course?: CourseDetail; onSuc
       zoomPasscode: values.zoomPasscode.trim() || null,
       reminderSubject: values.reminderSubject.trim() || null,
       reminderMessage: values.reminderMessage.trim() || null,
+      // The two modes are mutually exclusive — whichever field the current
+      // mode doesn't use is sent as null/absent regardless of what a stale
+      // hidden field might still hold, so switching modes back and forth
+      // never leaks a value from the mode the admin isn't using anymore.
+      endDate: values.isMultiDay ? values.endDate : null,
+      durationMinutes: values.isMultiDay ? null : values.durationMinutes,
     }
 
     const result = course ? await updateCourseAction(course.id, payload) : await createCourseAction(payload)
@@ -252,8 +270,26 @@ export function CourseForm({ course, onSuccess }: { course?: CourseDetail; onSuc
           <FieldError>{errors.deliveryMethod?.message}</FieldError>
         </Field>
 
+        <Field className="col-span-2">
+          <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 p-3">
+            <div>
+              <FieldLabel htmlFor="isMultiDay">Multi-day course</FieldLabel>
+              <FieldDescription>
+                {isMultiDay
+                  ? 'Runs across a range of days — set a start date and an end date below.'
+                  : 'Runs on a single day, as today — a course date and duration in minutes.'}
+              </FieldDescription>
+            </div>
+            <Controller
+              name="isMultiDay"
+              control={control}
+              render={({ field }) => <Switch id="isMultiDay" checked={field.value} onCheckedChange={field.onChange} />}
+            />
+          </div>
+        </Field>
+
         <Field>
-          <FieldLabel htmlFor="courseDate">Date</FieldLabel>
+          <FieldLabel htmlFor="courseDate">{isMultiDay ? 'Start date' : 'Date'}</FieldLabel>
           <Controller
             name="courseDate"
             control={control}
@@ -270,17 +306,38 @@ export function CourseForm({ course, onSuccess }: { course?: CourseDetail; onSuc
           <FieldError>{errors.courseDate?.message}</FieldError>
         </Field>
 
-        <Field>
-          <FieldLabel htmlFor="durationMinutes">Duration (minutes)</FieldLabel>
-          <Input
-            id="durationMinutes"
-            type="number"
-            min={1}
-            {...register('durationMinutes')}
-            aria-invalid={Boolean(errors.durationMinutes)}
-          />
-          <FieldError>{errors.durationMinutes?.message}</FieldError>
-        </Field>
+        {isMultiDay ? (
+          <Field>
+            <FieldLabel htmlFor="endDate">End date</FieldLabel>
+            <Controller
+              name="endDate"
+              control={control}
+              render={({ field }) => (
+                <Input
+                  id="endDate"
+                  type="date"
+                  value={field.value ? toDateInputValue(field.value) : ''}
+                  onChange={(event) => field.onChange(event.target.value ? new Date(event.target.value) : null)}
+                  aria-invalid={Boolean(errors.endDate)}
+                />
+              )}
+            />
+            <FieldDescription>{dayCount != null ? `${dayCount} day${dayCount === 1 ? '' : 's'}` : null}</FieldDescription>
+            <FieldError>{errors.endDate?.message}</FieldError>
+          </Field>
+        ) : (
+          <Field>
+            <FieldLabel htmlFor="durationMinutes">Duration (minutes)</FieldLabel>
+            <Input
+              id="durationMinutes"
+              type="number"
+              min={1}
+              {...register('durationMinutes')}
+              aria-invalid={Boolean(errors.durationMinutes)}
+            />
+            <FieldError>{errors.durationMinutes?.message}</FieldError>
+          </Field>
+        )}
 
         <Field>
           <FieldLabel htmlFor="startTime">Start time</FieldLabel>
@@ -293,6 +350,11 @@ export function CourseForm({ course, onSuccess }: { course?: CourseDetail; onSuc
           <Input id="endTime" type="time" {...register('endTime')} aria-invalid={Boolean(errors.endTime)} />
           <FieldError>{errors.endTime?.message}</FieldError>
         </Field>
+        {isMultiDay && (
+          <FieldDescription className="col-span-2 -mt-2">
+            Start and end times apply to each day of the course.
+          </FieldDescription>
+        )}
 
         <Field className="col-span-2">
           <FieldLabel htmlFor="location">Location{deliveryMethod === 'ONLINE' ? ' (optional)' : ''}</FieldLabel>

@@ -85,6 +85,18 @@ function optionalPositiveInt(message: string) {
   )
 }
 
+/** Blank strings, undefined and null all normalise to null — used for endDate, which only a multi-day course carries. */
+const optionalDate = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? null : value),
+  z.coerce.date().nullable().optional().transform((value) => value ?? null),
+)
+
+/** Blank strings, undefined and null all normalise to null — used for durationMinutes, which a multi-day course must NOT carry (see courseFormSchema's superRefine; the stored value for a multi-day course is server-computed, never admin-entered). */
+const optionalPositiveIntStrict = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? null : value),
+  z.coerce.number().int().positive('Duration must be a positive number of minutes.').nullable().optional().transform((value) => value ?? null),
+)
+
 /** Blank strings, undefined and null all normalise to null. When present, must be a valid, trimmed URL. */
 function optionalUrl(message: string) {
   return z.preprocess(
@@ -98,10 +110,24 @@ const courseBaseSchema = z.object({
   shortDescription: z.string().trim().min(1, 'Short description is required.'),
   fullDescription: z.string().trim().min(1, 'Full description is required.'),
   category: CourseCategory,
+  // The start date for a multi-day course; the sole date for a single-day
+  // one — see the Course.courseDate schema comment.
   courseDate: z.coerce.date({ message: 'Date is required.' }),
   startTime: z.string().regex(TIME_PATTERN, 'Start time must be in HH:MM format.'),
   endTime: z.string().regex(TIME_PATTERN, 'End time must be in HH:MM format.'),
-  durationMinutes: z.coerce.number().int().positive('Duration must be a positive number of minutes.'),
+  // Required for a single-day course, forbidden for a multi-day one — see
+  // the superRefine below. Optional at this base-shape level so both modes
+  // can share one schema.
+  durationMinutes: optionalPositiveIntStrict,
+  // Forbidden for a single-day course, required (and >= courseDate) for a
+  // multi-day one — see the superRefine below.
+  endDate: optionalDate,
+  // The form's own claim about its mode — validated for consistency against
+  // endDate/durationMinutes below, but never trusted as the stored value:
+  // toCourseData (courses/actions.ts) derives the persisted isMultiDay from
+  // whether endDate is present, not from this field. The server is the
+  // authority, not the form.
+  isMultiDay: z.boolean().default(false),
   deliveryMethod: DeliveryMethod,
   location: optionalTrimmedString(),
   joiningInstructions: optionalTrimmedString(),
@@ -141,6 +167,38 @@ export const courseFormSchema = courseBaseSchema.superRefine((data, ctx) => {
       path: ['location'],
       message: 'Location is required unless the delivery method is online.',
     })
+  }
+
+  // Single-day and multi-day are mutually exclusive, and validated by which
+  // fields are actually present — not by trusting the submitted isMultiDay
+  // flag on its own. isMultiDay is checked too (rather than silently
+  // overridden here) so a form/server mismatch surfaces as a validation
+  // error instead of being quietly reinterpreted; toCourseData is what
+  // ultimately derives the authoritative stored value from endDate.
+  if (data.isMultiDay) {
+    if (data.endDate == null) {
+      ctx.addIssue({ code: 'custom', path: ['endDate'], message: 'A multi-day course needs an end date.' })
+    } else if (data.endDate < data.courseDate) {
+      ctx.addIssue({ code: 'custom', path: ['endDate'], message: 'End date must be on or after the start date.' })
+    }
+    if (data.durationMinutes != null) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['durationMinutes'],
+        message: 'A multi-day course cannot also have a duration in minutes.',
+      })
+    }
+  } else {
+    if (data.durationMinutes == null) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['durationMinutes'],
+        message: 'Duration must be a positive number of minutes.',
+      })
+    }
+    if (data.endDate != null) {
+      ctx.addIssue({ code: 'custom', path: ['endDate'], message: 'A single-day course cannot have an end date.' })
+    }
   }
 
   if (

@@ -10,6 +10,8 @@ export interface PublicCourse {
   shortDescription: string
   category: CourseCategory
   courseDate: Date
+  endDate: Date | null
+  isMultiDay: boolean
   startTime: Date
   endTime: Date
   deliveryMethod: DeliveryMethod
@@ -47,6 +49,8 @@ export async function listPublicCourses(): Promise<PublicCourse[]> {
       shortDescription: course.shortDescription,
       category: course.category,
       courseDate: course.courseDate,
+      endDate: course.endDate,
+      isMultiDay: course.isMultiDay,
       startTime: course.startTime,
       endTime: course.endTime,
       deliveryMethod: course.deliveryMethod,

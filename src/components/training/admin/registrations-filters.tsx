@@ -2,11 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Download } from 'lucide-react'
+import { Download, Printer } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import type { CourseFilterOption } from '@/lib/training/registrations'
 
 const STATUS_OPTIONS = [
@@ -34,6 +37,9 @@ export function RegistrationsFilters({ courseOptions }: { courseOptions: CourseF
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const [search, setSearch] = useState(searchParams.get('q') ?? '')
+  const [attendanceDialogOpen, setAttendanceDialogOpen] = useState(false)
+  const [attendancePromptError, setAttendancePromptError] = useState<string | null>(null)
+  const [includeWaitlisted, setIncludeWaitlisted] = useState(false)
 
   function updateParam(key: string, value: string | null) {
     const params = new URLSearchParams(searchParams.toString())
@@ -58,6 +64,27 @@ export function RegistrationsFilters({ courseOptions }: { courseOptions: CourseF
 
   const exportParams = new URLSearchParams(searchParams.toString())
   exportParams.delete('page')
+
+  const selectedCourseId = searchParams.get('courseId')
+  const selectedCourse = selectedCourseId ? courseOptions.find((course) => course.id === selectedCourseId) : undefined
+
+  // The sheet is always for one course, never "all courses" — reusing this
+  // page's own Course filter as the selection, rather than a second course
+  // picker, keeps there being exactly one place to pick a course on this
+  // screen.
+  function handleOpenAttendanceSheet() {
+    if (!selectedCourseId || selectedCourseId === 'ALL' || !selectedCourse) {
+      setAttendancePromptError('Select a course above first — an attendance sheet is for one course at a time.')
+      return
+    }
+    setAttendancePromptError(null)
+    setIncludeWaitlisted(false)
+    setAttendanceDialogOpen(true)
+  }
+
+  const attendanceSheetParams = new URLSearchParams()
+  if (selectedCourseId) attendanceSheetParams.set('courseId', selectedCourseId)
+  if (includeWaitlisted) attendanceSheetParams.set('includeWaitlisted', 'true')
 
   return (
     <div className="flex flex-wrap items-end gap-3">
@@ -139,6 +166,56 @@ export function RegistrationsFilters({ courseOptions }: { courseOptions: CourseF
       >
         <Download /> Export to Excel
       </Button>
+      <div className="flex flex-col gap-1">
+        <Button type="button" variant="outline" onClick={handleOpenAttendanceSheet}>
+          <Printer /> Print Attendance Sheet
+        </Button>
+        {attendancePromptError && <p className="text-xs text-destructive">{attendancePromptError}</p>}
+      </div>
+
+      <Dialog open={attendanceDialogOpen} onOpenChange={setAttendanceDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Print attendance sheet</DialogTitle>
+            <DialogDescription>
+              {selectedCourse ? `For ${selectedCourse.name}.` : ''} Lists confirmed registrations by default.
+            </DialogDescription>
+          </DialogHeader>
+
+          <Field>
+            <div className="flex items-center justify-between">
+              <FieldLabel htmlFor="attendance-include-waitlisted">Include waitlisted registrations</FieldLabel>
+              <Switch
+                id="attendance-include-waitlisted"
+                checked={includeWaitlisted}
+                onCheckedChange={setIncludeWaitlisted}
+              />
+            </div>
+            <FieldDescription>
+              Waitlisted rows are marked clearly on the sheet so staff can see they did not hold a confirmed place.
+            </FieldDescription>
+          </Field>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setAttendanceDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              render={
+                <a
+                  href={`/api/training/admin/registrations/attendance-sheet?${attendanceSheetParams.toString()}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setAttendanceDialogOpen(false)}
+                />
+              }
+            >
+              <Printer /> Open sheet
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

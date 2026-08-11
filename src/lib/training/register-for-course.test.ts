@@ -118,6 +118,24 @@ describe('registerForCourse', () => {
     expect(sendConfirmedEmail).toHaveBeenCalledOnce()
   })
 
+  it('shows the date range and day count for a multi-day course, on both the confirmation screen and the confirmation email', async () => {
+    const course = await makeCourse({
+      maxCapacity: null,
+      isMultiDay: true,
+      courseDate: new Date('2026-09-12T00:00:00.000Z'),
+      endDate: new Date('2026-09-15T00:00:00.000Z'),
+    })
+    const outcome = await registerForCourse(makeInput(course.id))
+
+    expect(outcome.status).toBe('CONFIRMED')
+    if (outcome.status !== 'CONFIRMED') return
+    expect(outcome.courseDateLong).toBe('12 to 15 September 2026, 4 days')
+
+    expect(sendConfirmedEmail).toHaveBeenCalledOnce()
+    const emailParams = sendConfirmedEmail.mock.calls[0]![1] as { courseDateLong: string }
+    expect(emailParams.courseDateLong).toBe('12 to 15 September 2026, 4 days')
+  })
+
   it('blocks a duplicate registration for the same course and email', async () => {
     const course = await makeCourse({ maxCapacity: null })
     const input = makeInput(course.id)

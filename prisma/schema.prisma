@@ -114,10 +114,20 @@ model Course {
   shortDescription     String
   fullDescription      String
   category             CourseCategory
+  // The start date for a multi-day course — no existing meaning changes for
+  // a single-day course, which this remains the sole date for.
   courseDate           DateTime       @db.Date
   startTime            DateTime       @db.Time
   endTime              DateTime       @db.Time
   durationMinutes      Int
+  // Multi-day course support (additive). endDate is null for every
+  // single-day course; isMultiDay is the server-derived, authoritative flag
+  // (see courseFormSchema/toCourseData) — never trusted verbatim from the
+  // form. A multi-day course still stores a durationMinutes value (the
+  // column stays NOT NULL, unchanged) but it is server-computed from
+  // startTime/endTime rather than admin-entered — see toCourseData.
+  endDate              DateTime?      @db.Date
+  isMultiDay           Boolean        @default(false)
   deliveryMethod       DeliveryMethod
   location             String?
   joiningInstructions  String?

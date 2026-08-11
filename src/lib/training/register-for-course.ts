@@ -2,7 +2,7 @@ import 'server-only'
 
 import { Prisma } from '@prisma/client'
 
-import { formatCourseDateLong, formatCourseTimeRange } from '@/domain/training/format'
+import { formatCourseDateOrRange, formatCourseTimeRange } from '@/domain/training/format'
 import { formatPromoDiscountLabel, type PromoBreakdown } from '@/domain/training/promo-code'
 import { DELIVERY_METHOD_LABELS } from '@/domain/training/schema'
 import { sendConfirmedEmail, sendWaitlistedEmail } from './email/send-registration-email'
@@ -257,7 +257,7 @@ export async function registerForCourse(input: RegisterInput): Promise<Registrat
     return { teacher, course, registration, waitlistPosition }
   })
 
-  const courseDateLong = formatCourseDateLong(course.courseDate)
+  const courseDateLong = formatCourseDateOrRange(course)
   const courseTimeRange = formatCourseTimeRange(course.startTime, course.endTime)
 
   // Built from the registration's own stored snapshot, never recalculated —
