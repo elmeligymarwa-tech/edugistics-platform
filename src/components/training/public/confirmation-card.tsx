@@ -1,6 +1,9 @@
+import { useEffect, useRef } from 'react'
+
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatCourseFee } from '@/domain/training/format'
+import { hasFiredConversionEvent, markConversionEventFired, trackCompleteRegistration, trackJoinedWaitlist } from '@/lib/meta-pixel/events'
 import type { PromoBreakdown } from '@/domain/training/promo-code'
 
 export interface ConfirmedConfirmation {
@@ -64,6 +67,27 @@ export function ConfirmationCard({
   onRegisterAnother: () => void
 }) {
   const isConfirmed = confirmation.status === 'CONFIRMED'
+
+  // Fires once per registration reference. Route rendering only ever reaches
+  // this component after a successful CONFIRMED/WAITLISTED response — a
+  // failed submission, duplicate, or full course never sets `confirmation`
+  // in the first place, so those never even mount this component. The
+  // sessionStorage guard (not just the ref) is what keeps a screen refresh
+  // from firing again, since a remount would otherwise re-run this effect.
+  const firedRef = useRef(false)
+  useEffect(() => {
+    if (firedRef.current) return
+    if (hasFiredConversionEvent(confirmation.reference)) return
+    firedRef.current = true
+    markConversionEventFired(confirmation.reference)
+
+    if (confirmation.status === 'CONFIRMED') {
+      trackCompleteRegistration(confirmation.courseName)
+    } else {
+      trackJoinedWaitlist(confirmation.courseName)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmation.reference])
 
   return (
     <Card className="mx-auto max-w-md">

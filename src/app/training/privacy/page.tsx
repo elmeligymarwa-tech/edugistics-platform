@@ -47,6 +47,30 @@ export default function TrainingPrivacyPage() {
         </div>
 
         <div className="flex flex-col gap-1.5">
+          <h2 className="font-medium text-heading">Meta Pixel</h2>
+          <p className="text-muted-foreground">
+            We use Meta Pixel, a tracking tool from Meta (the company behind Facebook and Instagram), on our public
+            pages — the homepage, this registration page, this privacy notice, and the unsubscribe page. It lets us
+            see how many people visit these pages and, when a course registration completes, tells us that a
+            registration happened and which course it was for. It does not receive your name, email address, phone
+            number, school, subject, grade or registration reference — only the course name is ever sent as part of
+            that event.
+          </p>
+          <p className="text-muted-foreground">
+            Meta Pixel is separate from the marketing consent checkbox on the registration form above. Ticking that
+            checkbox is consent to receive emails from us — it has no bearing on Meta Pixel, which runs on this page
+            regardless of whether that box is ticked. Meta may still link your visit to a Meta account it recognises
+            in your browser through its own cookie; that matching happens on Meta&apos;s side and is inherent to
+            using a pixel at all.
+          </p>
+          <p className="text-muted-foreground">
+            To opt out at browser level, use a tracking-protection or ad-blocking browser extension, or enable your
+            browser&apos;s tracking protection or &ldquo;block third-party cookies&rdquo; setting. If you have a Meta
+            account, you can also manage what it does with data like this from that account&apos;s ad settings.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
           <h2 className="font-medium text-heading">Contact us</h2>
           <p className="text-muted-foreground">
             To ask a question about your data, or to update or remove it, contact us
