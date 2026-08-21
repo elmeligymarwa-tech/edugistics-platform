@@ -13,6 +13,7 @@
     "test:marketing-batch": "vitest run --config vitest.marketing-batch.config.mts",
     "test:registration-selection": "vitest run --config vitest.registration-selection.config.mts",
     "test:campaign-composer": "vitest run --config vitest.campaign-composer.config.mts",
+    "test:waitlist-promotion": "vitest run --config vitest.waitlist-promotion.config.mts",
     "typecheck": "tsc --noEmit",
     "admin:hash": "node scripts/admin-hash.mts",
     "seed:analytics-fixture": "node scripts/seed-training-analytics-fixture.mts",

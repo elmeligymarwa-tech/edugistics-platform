@@ -140,7 +140,7 @@ describe('promoteRegistrationAction', () => {
     const regB = await makeRegistration(teacherB.id, 'WAITLISTED', 1)
     const regC = await makeRegistration(teacherC.id, 'WAITLISTED', 2)
 
-    const result = await promoteRegistrationAction(regB.id)
+    const result = await promoteRegistrationAction(regB.id, { sendEmail: true })
     expect(result.success).toBe(true)
     expect(sendPromotedEmail).toHaveBeenCalledOnce()
 
@@ -160,14 +160,14 @@ describe('promoteRegistrationAction', () => {
     await makeRegistration(teacherA.id, 'CONFIRMED', null) // fills maxCapacity: 1
     const regB = await makeRegistration(teacherB.id, 'WAITLISTED', 1)
 
-    const blocked = await promoteRegistrationAction(regB.id)
+    const blocked = await promoteRegistrationAction(regB.id, { sendEmail: true })
     expect(blocked.success).toBe(false)
     if (!blocked.success) expect(blocked.blockedAtCapacity).toBe(true)
 
     const stillWaitlisted = await prisma.registration.findUniqueOrThrow({ where: { id: regB.id } })
     expect(stillWaitlisted.status).toBe('WAITLISTED')
 
-    const overridden = await promoteRegistrationAction(regB.id, true)
+    const overridden = await promoteRegistrationAction(regB.id, { override: true, sendEmail: true })
     expect(overridden.success).toBe(true)
 
     const auditEntry = await prisma.auditLog.findFirst({
@@ -191,7 +191,7 @@ describe('promoteRegistrationAction', () => {
       promoAppliedAt: new Date(),
     })
 
-    const result = await promoteRegistrationAction(reg.id)
+    const result = await promoteRegistrationAction(reg.id, { sendEmail: true })
     expect(result.success).toBe(true)
     if (result.success) expect(result.data.discountLost).toBe(false)
 
@@ -229,7 +229,7 @@ describe('promoteRegistrationAction', () => {
       promoAppliedAt: new Date(),
     })
 
-    const result = await promoteRegistrationAction(reg.id)
+    const result = await promoteRegistrationAction(reg.id, { sendEmail: true })
     expect(result.success).toBe(true)
     if (result.success) expect(result.data.discountLost).toBe(true)
 
@@ -248,5 +248,38 @@ describe('promoteRegistrationAction', () => {
       teacher.emailOriginal,
       expect.objectContaining({ feeAmount: 1000, promo: null }),
     )
+  }, 20_000)
+
+  // Defect 4: sending the confirmation email must be a deliberate choice at
+  // the point of promotion, not an automatic side effect — e.g. promoting
+  // someone a week after the event should not silently email them a
+  // joining link for something already over.
+  it('does not send an email, and leaves emailType/emailStatus untouched, when sendEmail is false', async () => {
+    await prisma.course.update({ where: { id: courseId }, data: { maxCapacity: 5 } })
+    const teacher = await makeTeacher(8)
+    const reg = await makeRegistration(teacher.id, 'WAITLISTED', 1, {
+      emailType: 'WAITLISTED',
+      emailStatus: 'SENT',
+      emailSent: true,
+    })
+
+    const result = await promoteRegistrationAction(reg.id, { sendEmail: false })
+    expect(result.success).toBe(true)
+    expect(sendPromotedEmail).not.toHaveBeenCalled()
+
+    const promoted = await prisma.registration.findUniqueOrThrow({ where: { id: reg.id } })
+    expect(promoted.status).toBe('CONFIRMED')
+    expect(promoted.waitlistPosition).toBeNull()
+    expect(promoted.promotedAt).not.toBeNull()
+    // Untouched — still describes the original waitlist confirmation, the
+    // last email actually sent, rather than a PROMOTED send that never happened.
+    expect(promoted.emailType).toBe('WAITLISTED')
+    expect(promoted.emailStatus).toBe('SENT')
+
+    const auditEntry = await prisma.auditLog.findFirst({
+      where: { entityId: reg.id, action: 'REGISTRATION_PROMOTED' },
+    })
+    expect(auditEntry).not.toBeNull()
+    expect((auditEntry?.afterJson as Record<string, unknown> | null)?.sendEmail).toBe(false)
   }, 20_000)
 })

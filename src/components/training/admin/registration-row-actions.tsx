@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Eye, MoreHorizontal, Pencil, RotateCw, XCircle } from 'lucide-react'
+import { ArrowUpCircle, Eye, MoreHorizontal, Pencil, RotateCw, XCircle } from 'lucide-react'
 
 import {
   AlertDialog,
@@ -19,10 +19,12 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { cancelRegistrationAction, resendRegistrationEmailAction } from '@/app/training/admin/(protected)/registrations/actions'
 import type { RegistrationListItem } from '@/lib/training/registrations'
+import { PromoteRegistrationDialog } from './promote-registration-dialog'
 
 export function RegistrationRowActions({ registration }: { registration: RegistrationListItem }) {
   const router = useRouter()
   const [cancelOpen, setCancelOpen] = useState(false)
+  const [promoteOpen, setPromoteOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
@@ -68,6 +70,11 @@ export function RegistrationRowActions({ registration }: { registration: Registr
               <RotateCw /> Resend confirmation email
             </DropdownMenuItem>
           )}
+          {registration.status === 'WAITLISTED' && (
+            <DropdownMenuItem onClick={() => setPromoteOpen(true)}>
+              <ArrowUpCircle /> Promote to confirmed
+            </DropdownMenuItem>
+          )}
           {registration.status !== 'CANCELLED' && (
             <DropdownMenuItem onClick={() => setCancelOpen(true)}>
               <XCircle /> Cancel registration
@@ -94,6 +101,13 @@ export function RegistrationRowActions({ registration }: { registration: Registr
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <PromoteRegistrationDialog
+        open={promoteOpen}
+        onOpenChange={setPromoteOpen}
+        registrationId={registration.id}
+        fullName={registration.fullName}
+      />
     </>
   )
 }
