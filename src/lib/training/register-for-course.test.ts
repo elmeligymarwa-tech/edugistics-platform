@@ -138,14 +138,86 @@ describe('registerForCourse', () => {
     expect(emailParams.courseDateLong).toBe('5 and 12 September 2026, 2 sessions')
   })
 
-  it('blocks a duplicate registration for the same course and email', async () => {
+  it('blocks a duplicate registration for the same course and email, naming the existing reference', async () => {
     const course = await makeCourse({ maxCapacity: null })
     const input = makeInput(course.id)
-    await registerForCourse(input)
+    const first = await registerForCourse(input)
 
     await expect(registerForCourse(input)).rejects.toThrow(RegistrationRejectedError)
     await expect(registerForCourse(input)).rejects.toThrow('already registered for this course')
+    await expect(registerForCourse(input)).rejects.toThrow(first.reference)
   })
+
+  it('a duplicate attempt against an existing WAITLISTED registration says "waiting list", not "registered"', async () => {
+    const course = await makeCourse({ maxCapacity: 1, waitlistEnabled: true, waitlistCapacity: 5 })
+    await registerForCourse(makeInput(course.id)) // fills the one confirmed seat
+    const input = makeInput(course.id)
+    const waitlisted = await registerForCourse(input)
+    expect(waitlisted.status).toBe('WAITLISTED')
+
+    await expect(registerForCourse(input)).rejects.toThrow('already on the waiting list for this course')
+    await expect(registerForCourse(input)).rejects.toThrow(waitlisted.reference)
+  })
+
+  // Defect 6: Registration has @@unique([courseId, teacherId]) — the
+  // database enforces one row per teacher per course regardless of status.
+  // The pre-existing "already registered" check explicitly treats a
+  // CANCELLED registration as not blocking, but a second create() for the
+  // same pair was always rejected by the database anyway (P2002), which
+  // used to escape uncaught as a raw Prisma error. Re-registering after a
+  // cancellation must actually work, not just fail with a nicer message.
+  it('re-registering for the same course after cancelling reactivates the same row and reference, rather than erroring', async () => {
+    const course = await makeCourse({ maxCapacity: null })
+    const input = makeInput(course.id)
+    const original = await registerForCourse(input)
+    await prisma.registration.update({ where: { reference: original.reference }, data: { status: 'CANCELLED', cancelledAt: new Date() } })
+
+    const again = await registerForCourse(input)
+
+    expect(again.status).toBe('CONFIRMED')
+    expect(again.reference).toBe(original.reference) // same row reactivated, not a second one
+
+    const rows = await prisma.registration.findMany({ where: { courseId: course.id, teacherId: (await prisma.teacher.findUniqueOrThrow({ where: { emailNormalised: input.email.toLowerCase() } })).id } })
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.status).toBe('CONFIRMED')
+    expect(rows[0]!.cancelledAt).toBeNull()
+    // A fresh confirmation email was sent and recorded for the reactivation
+    // itself — not just carried over from the original, cancelled send.
+    expect(rows[0]!.emailStatus).toBe('SENT')
+    expect(sendConfirmedEmail).toHaveBeenCalledTimes(2) // once for the original registration, once for the reactivation
+  })
+
+  it('re-registering after cancellation still respects current capacity — it can land on the waitlist', async () => {
+    const course = await makeCourse({ maxCapacity: 1, waitlistEnabled: true, waitlistCapacity: 5 })
+    const input = makeInput(course.id)
+    const original = await registerForCourse(input)
+    expect(original.status).toBe('CONFIRMED')
+    await prisma.registration.update({ where: { reference: original.reference }, data: { status: 'CANCELLED', cancelledAt: new Date() } })
+
+    // Someone else takes the now-open seat before the original teacher comes back.
+    await registerForCourse(makeInput(course.id))
+
+    const again = await registerForCourse(input)
+    expect(again.status).toBe('WAITLISTED')
+    expect(again.reference).toBe(original.reference)
+  })
+
+  it('two simultaneous submissions for the same new teacher and course produce exactly one success, not a raw database error', async () => {
+    const course = await makeCourse({ maxCapacity: null })
+    const input = makeInput(course.id)
+
+    const results = await Promise.allSettled([registerForCourse(input), registerForCourse(input)])
+
+    const fulfilled = results.filter((result) => result.status === 'fulfilled')
+    const rejected = results.filter((result) => result.status === 'rejected')
+    expect(fulfilled).toHaveLength(1)
+    expect(rejected).toHaveLength(1)
+    expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(RegistrationRejectedError)
+    expect((rejected[0] as PromiseRejectedResult).reason.message).toContain('already registered for this course')
+
+    const totalRegistrations = await prisma.registration.count({ where: { courseId: course.id } })
+    expect(totalRegistrations).toBe(1)
+  }, 20_000)
 
   it('reuses the same teacher record when the same email registers for a different course', async () => {
     const courseA = await makeCourse({ maxCapacity: null })

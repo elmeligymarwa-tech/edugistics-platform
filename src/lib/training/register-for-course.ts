@@ -69,6 +69,30 @@ function isUniqueConstraintOnReference(error: unknown): boolean {
 }
 
 /**
+ * Registration has `@@unique([courseId, teacherId])` — one row per
+ * teacher per course, full stop, regardless of that row's status. The
+ * pre-check below already rejects a second attempt while an existing
+ * CONFIRMED/WAITLISTED registration stands; this recognises the same
+ * constraint firing anyway, which happens in two situations neither of
+ * those checks catches on its own: a genuine race (two submissions for the
+ * same teacher+course land between the pre-check and this insert), and the
+ * moment right after this function reactivates a CANCELLED row in place —
+ * see the `reactivating` branch below — where it's a defensive fallback
+ * only, never expected to actually fire.
+ */
+export function isUniqueConstraintOnCourseTeacher(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') return false
+  const target = (error.meta as { target?: unknown })?.target
+  return Array.isArray(target) && target.includes('courseId') && target.includes('teacherId')
+}
+
+/** Consistent wording wherever a submission is rejected because this teacher already has a live row for this course — the pre-check, and the race fallback below, both use this so the two paths never disagree on phrasing. */
+export function alreadyRegisteredMessage(existing: { status: string; reference: string }): string {
+  const activity = existing.status === 'WAITLISTED' ? 'already on the waiting list for' : 'already registered for'
+  return `This email address is ${activity} this course. Your reference is ${existing.reference}.`
+}
+
+/**
  * Runs the full submission flow from CLAUDE.md's SERVER SIDE SUBMISSION LOGIC
  * (steps 5-10) inside a single transaction, then sends the confirmation email
  * after commit (step 11) and records emailStatus (step 12). Validation, the
@@ -83,12 +107,24 @@ export async function registerForCourse(input: RegisterInput): Promise<Registrat
   const { teacher, course, registration, waitlistPosition } = await prisma.$transaction(async (tx) => {
     const existingTeacher = await tx.teacher.findUnique({ where: { emailNormalised } })
 
+    // A CANCELLED registration for this exact teacher+course still occupies
+    // the row the unique constraint enforces — the database has no concept
+    // of "cancelled doesn't count", so a second CONFIRMED/WAITLISTED row can
+    // never be inserted alongside it. Reactivating that row in place (see
+    // below, where `reactivating` is used instead of a fresh create) is what
+    // actually lets someone register again after cancelling, rather than the
+    // insert always failing with a P2002 the caller never intended to hit.
+    let reactivating: Prisma.PromiseReturnType<typeof tx.registration.findUnique> = null
+
     if (existingTeacher) {
       const existingRegistration = await tx.registration.findUnique({
         where: { courseId_teacherId: { courseId: input.courseId, teacherId: existingTeacher.id } },
       })
-      if (existingRegistration && existingRegistration.status !== 'CANCELLED') {
-        throw new RegistrationRejectedError('This email address is already registered for this course.')
+      if (existingRegistration) {
+        if (existingRegistration.status !== 'CANCELLED') {
+          throw new RegistrationRejectedError(alreadyRegisteredMessage(existingRegistration))
+        }
+        reactivating = existingRegistration
       }
     }
 
@@ -212,44 +248,70 @@ export async function registerForCourse(input: RegisterInput): Promise<Registrat
       ipHash: sourceIpHash,
     })
 
+    // Shared between a fresh row and a reactivated one — every field this
+    // submission determines, independent of whether it ends up as an
+    // insert or an update. Written once, here, and never recalculated
+    // afterwards — a WAITLISTED row gets this same snapshot but doesn't
+    // consume a use, since usage counting only ever counts CONFIRMED rows.
+    const registrationData = {
+      teacherId: teacher.id,
+      courseId: course.id,
+      courseNameSnapshot: course.name,
+      courseDateSnapshot: course.courseDate,
+      courseFeeSnapshot: course.feeAmount,
+      courseCurrencySnapshot: course.currency,
+      status,
+      waitlistPosition,
+      registeredAt: now,
+      consentGiven: input.marketingConsent,
+      consentAt: input.marketingConsent ? now : null,
+      emailStatus: 'PENDING' as const,
+      emailType: status,
+      sourceIpHash,
+      promoCodeId: promoResult?.promoCode.id ?? null,
+      promoCodeSnapshot: promoResult?.promoCode.code ?? null,
+      discountTypeSnapshot: promoResult?.promoCode.discountType ?? null,
+      discountValueSnapshot: promoResult?.promoCode.discountValue ?? null,
+      discountAmount: promoResult?.discountAmount ?? null,
+      originalFee: promoResult?.originalFee ?? null,
+      finalFee: promoResult?.finalFee ?? null,
+      promoAppliedAt: promoResult ? now : null,
+    }
+
     let registration: Prisma.PromiseReturnType<typeof tx.registration.create> | undefined
-    for (let attempt = 0; attempt < MAX_REFERENCE_ATTEMPTS; attempt += 1) {
-      const reference = generateRegistrationReference(now)
-      try {
-        registration = await tx.registration.create({
-          data: {
-            reference,
-            teacherId: teacher.id,
-            courseId: course.id,
-            courseNameSnapshot: course.name,
-            courseDateSnapshot: course.courseDate,
-            courseFeeSnapshot: course.feeAmount,
-            courseCurrencySnapshot: course.currency,
-            status,
-            waitlistPosition,
-            registeredAt: now,
-            consentGiven: input.marketingConsent,
-            consentAt: input.marketingConsent ? now : null,
-            emailStatus: 'PENDING',
-            emailType: status,
-            sourceIpHash,
-            // Written once, here, and never recalculated afterwards — a
-            // WAITLISTED row gets this same snapshot but doesn't consume a
-            // use, since usage counting only ever counts CONFIRMED rows.
-            promoCodeId: promoResult?.promoCode.id ?? null,
-            promoCodeSnapshot: promoResult?.promoCode.code ?? null,
-            discountTypeSnapshot: promoResult?.promoCode.discountType ?? null,
-            discountValueSnapshot: promoResult?.promoCode.discountValue ?? null,
-            discountAmount: promoResult?.discountAmount ?? null,
-            originalFee: promoResult?.originalFee ?? null,
-            finalFee: promoResult?.finalFee ?? null,
-            promoAppliedAt: promoResult ? now : null,
-          },
-        })
-        break
-      } catch (error) {
-        if (isUniqueConstraintOnReference(error)) continue
-        throw error
+
+    if (reactivating) {
+      // Same row, same reference — this is the same teacher's same course
+      // slot coming back to CONFIRMED/WAITLISTED, not a new registration
+      // event, so there is no reference to regenerate. Every field a fresh
+      // create would have set from scratch is reset explicitly, including
+      // the email-delivery bookkeeping (a re-registration needs its own
+      // confirmation/waitlist email, not the cancelled one's stale status)
+      // and cancelledAt, which must be cleared for the row to read as active.
+      registration = await tx.registration.update({
+        where: { id: reactivating.id },
+        data: { ...registrationData, emailSent: false, emailSentAt: null, emailError: null, cancelledAt: null },
+      })
+    } else {
+      for (let attempt = 0; attempt < MAX_REFERENCE_ATTEMPTS; attempt += 1) {
+        const reference = generateRegistrationReference(now)
+        try {
+          registration = await tx.registration.create({ data: { ...registrationData, reference } })
+          break
+        } catch (error) {
+          if (isUniqueConstraintOnReference(error)) continue
+          if (isUniqueConstraintOnCourseTeacher(error)) {
+            // Lost a race: another request for this same teacher+course
+            // committed between the pre-check above and this insert. Look
+            // up what it actually left behind and report that, rather than
+            // letting a raw Prisma error reach the caller as a 500.
+            const raced = await tx.registration.findUnique({
+              where: { courseId_teacherId: { courseId: course.id, teacherId: teacher.id } },
+            })
+            throw new RegistrationRejectedError(raced ? alreadyRegisteredMessage(raced) : 'This email address is already registered for this course.')
+          }
+          throw error
+        }
       }
     }
 
