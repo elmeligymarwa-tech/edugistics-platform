@@ -51,6 +51,36 @@ export function useMarkdownBodyEditor(setBody: (updater: (current: string) => st
     })
   }
 
+  /**
+   * Inserts text as its own paragraph — blank-line-separated from whatever
+   * is immediately before and after the cursor, regardless of where the
+   * cursor happens to be. Unlike insertAtCursor, which drops text in place
+   * with no regard for surrounding content: used for markup that only
+   * renders correctly as a standalone block (a button link — see
+   * rich-text.ts's BUTTON_LINE_PATTERN, which only recognises one alone on
+   * its own line — never one dropped mid-sentence).
+   */
+  function insertBlock(text: string) {
+    const el = textareaRef.current
+    if (!el) {
+      setBody((current) => (current.length === 0 ? `${text}\n\n` : `${current.replace(/\n*$/, '')}\n\n${text}\n\n`))
+      return
+    }
+    const { selectionStart, selectionEnd, value } = el
+    const before = value.slice(0, selectionStart)
+    const after = value.slice(selectionEnd)
+    const prefix = before.length === 0 || before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n'
+    const suffix = after.length === 0 || after.startsWith('\n\n') ? '' : after.startsWith('\n') ? '\n' : '\n\n'
+    const inserted = `${prefix}${text}${suffix}`
+    const next = before + inserted + after
+    setBody(() => next)
+    const cursor = before.length + prefix.length + text.length
+    requestAnimationFrame(() => {
+      el.focus()
+      el.selectionStart = el.selectionEnd = cursor
+    })
+  }
+
   function insertBulletList() {
     const el = textareaRef.current
     if (!el) {
@@ -69,7 +99,7 @@ export function useMarkdownBodyEditor(setBody: (updater: (current: string) => st
     setBody(() => value.slice(0, lineStart) + bulleted + value.slice(lineEnd))
   }
 
-  return { textareaRef, replaceSelection, insertAtCursor, insertBulletList }
+  return { textareaRef, replaceSelection, insertAtCursor, insertBlock, insertBulletList }
 }
 
 export function MarkdownEditorToolbar({

@@ -21,12 +21,15 @@ import {
 } from '@/app/training/admin/(protected)/registrations/email-actions'
 import { sendCampaignAction, sendTestEmailAction } from '@/app/training/admin/(protected)/registrations/send-actions'
 import type { RecipientCriteriaInput } from '@/lib/training/email/criteria'
+import { buildButtonLinkMarkdown } from '@/lib/training/email/rich-text'
 import { MarkdownEditorToolbar, useMarkdownBodyEditor } from './markdown-body-editor'
 
 const TEMPLATE_OPTIONS: SelectOption[] = CampaignEmailType.options.map((value) => ({
   value,
   label: CAMPAIGN_EMAIL_TYPE_LABELS[value],
 }))
+
+const DEFAULT_ZOOM_BUTTON_LABEL = 'Join Webinar'
 
 interface SendEmailComposerProps {
   open: boolean
@@ -58,7 +61,7 @@ export function SendEmailComposer({ open, onOpenChange, criteria, initialSummary
   const [testAddress, setTestAddress] = useState('')
   const [testSending, setTestSending] = useState(false)
   const [testMessage, setTestMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
-  const { textareaRef, replaceSelection, insertAtCursor, insertBulletList } = useMarkdownBodyEditor(setBody)
+  const { textareaRef, replaceSelection, insertAtCursor, insertBlock, insertBulletList } = useMarkdownBodyEditor(setBody)
 
   useEffect(() => {
     if (!open) {
@@ -88,11 +91,17 @@ export function SendEmailComposer({ open, onOpenChange, criteria, initialSummary
   }
 
   const multiCourse = initialSummary.courses.length > 1
-  const zoomDisabledReason = multiCourse
-    ? 'Selection spans multiple courses — insert the {{zoomLink}} token instead so it resolves per recipient.'
-    : !initialSummary.singleCourseZoomLink
-      ? 'This course has no Zoom link stored.'
-      : null
+  // Multi-course: the {{zoomLink}} token resolves per recipient from their
+  // own registration, so the button can still be inserted — just built
+  // around the token rather than a literal URL. It only has to be disabled
+  // when there is truly no URL to put behind it at all.
+  const zoomButtonUrl = multiCourse ? '{{zoomLink}}' : initialSummary.singleCourseZoomLink
+  const zoomDisabledReason = zoomButtonUrl ? null : 'This course has no Zoom link stored.'
+
+  function handleInsertZoomButton() {
+    if (!zoomButtonUrl) return
+    insertBlock(buildButtonLinkMarkdown(DEFAULT_ZOOM_BUTTON_LABEL, zoomButtonUrl))
+  }
 
   async function handleContinueToPreview() {
     setSubjectError(null)
@@ -262,12 +271,7 @@ export function SendEmailComposer({ open, onOpenChange, criteria, initialSummary
                         <TooltipContent>{zoomDisabledReason}</TooltipContent>
                       </Tooltip>
                     ) : (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => insertAtCursor(initialSummary.singleCourseZoomLink ?? '')}
-                      >
+                      <Button type="button" variant="ghost" size="sm" onClick={handleInsertZoomButton}>
                         Insert Zoom Link
                       </Button>
                     )
