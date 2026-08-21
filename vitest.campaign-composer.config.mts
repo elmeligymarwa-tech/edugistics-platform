@@ -21,7 +21,7 @@ const dirname = path.dirname(fileURLToPath(import.meta.url))
 // Deliberately NOT a broad include glob: this file only ever runs the two
 // specific files listed below, so it can never become an accidental way to
 // run a DB-touching test outside the guard. See vitest.database-guard.config.mts,
-// vitest.marketing-batch.config.mts and vitest.registration-selection.config.mts
+// vitest.batch-send.config.mts and vitest.registration-selection.config.mts
 // for the same narrow pattern applied to earlier defects.
 export default defineConfig({
   plugins: [react()],

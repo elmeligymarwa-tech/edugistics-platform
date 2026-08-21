@@ -21,12 +21,21 @@ vi.mock('@/lib/training/background', () => ({
   },
 }))
 
+// sendMock backs the single-send path (resend.emails.send) — still used
+// as-is by dispatchTestMarketingEmail ("Send Test to Myself"), which was
+// never batched. batchSendMock backs resend.batch.send — what
+// processMarketingCampaignSend now calls for every real campaign send, in
+// batches of up to BATCH_SIZE (see batch-send.ts, defect 1).
 const sendMock = vi.fn()
+const batchSendMock = vi.fn()
 const MARKETING_FROM = 'Edugistics <updates@news.edugistics.online>'
 const TRANSACTIONAL_FROM = 'Edugistics Training <training@send.edugistics.online>'
 const validateMarketingEmailConfigMock = vi.fn<() => string | null>(() => null)
 vi.mock('@/lib/training/email/resend-client', () => ({
-  getResendClient: () => ({ emails: { send: (...args: unknown[]) => sendMock(...args) } }),
+  getResendClient: () => ({
+    emails: { send: (...args: unknown[]) => sendMock(...args) },
+    batch: { send: (...args: unknown[]) => batchSendMock(...args) },
+  }),
   getMarketingEmailFrom: () => MARKETING_FROM,
   getEmailFrom: () => TRANSACTIONAL_FROM,
   getEmailReplyTo: () => 'info@edugistics.online',
@@ -92,7 +101,23 @@ function successResponse(id: string) {
   return { data: { id }, error: null }
 }
 
-function errorResponse(name: string, message: string) {
+/** A successful resend.batch.send response — every recipient in the call accepted, in order. */
+function batchSuccessResponse(ids: string[]) {
+  return { data: { data: ids.map((id) => ({ id })), errors: [] }, error: null }
+}
+
+/**
+ * A permissive-mode resend.batch.send response mixing accepted and rejected
+ * recipients. `errors[].index` is the position in the *original* call
+ * payload — see mapBatchResponseToOutcomes (batch-send.ts) for how that's
+ * reconciled back onto the right recipient.
+ */
+function batchPartialResponse(dataIds: string[], errors: { index: number; message: string }[]) {
+  return { data: { data: dataIds.map((id) => ({ id })), errors }, error: null }
+}
+
+/** The whole batch call rejected outright — no per-recipient breakdown available. */
+function batchErrorResponse(name: string, message: string) {
   return { data: null, error: { name, message, statusCode: name === 'rate_limit_exceeded' ? 429 : 400 } }
 }
 
@@ -104,6 +129,7 @@ function freshKey() {
 
 beforeEach(() => {
   sendMock.mockReset()
+  batchSendMock.mockReset()
   capturedWork = null
   validateMarketingEmailConfigMock.mockReset()
   validateMarketingEmailConfigMock.mockReturnValue(null)
@@ -123,14 +149,12 @@ afterAll(async () => {
   await prisma.$disconnect()
 })
 
-process.env.MARKETING_EMAIL_SEND_RATE_PER_SECOND = '1000' // near-zero inter-send delay so tests run fast
+process.env.MARKETING_EMAIL_SEND_RATE_PER_SECOND = '1000' // near-zero inter-batch delay so tests run fast
 
 describe('sendMarketingCampaignAction', () => {
-  it('creates one campaign and one recipient row per subscriber, and sends each individually addressed from MARKETING_EMAIL_FROM', async () => {
+  it('creates one campaign and one recipient row per subscriber, and sends every recipient in one batch call, each individually addressed from MARKETING_EMAIL_FROM', async () => {
     const a = await makeSubscriber()
     const b = await makeSubscriber()
-
-    sendMock.mockResolvedValueOnce(successResponse('msg-a')).mockResolvedValueOnce(successResponse('msg-b'))
 
     const result = await sendMarketingCampaignAction({
       criteria: { mode: 'ids', subscriberIds: [a.subscriber.id, b.subscriber.id] },
@@ -148,16 +172,21 @@ describe('sendMarketingCampaignAction', () => {
     const recipientRows = await prisma.marketingCampaignRecipient.findMany({ where: { campaignId: result.data.campaignId } })
     expect(recipientRows).toHaveLength(2)
 
+    batchSendMock.mockResolvedValueOnce(batchSuccessResponse(['msg-a', 'msg-b']))
+
     await capturedWork?.()
 
-    expect(sendMock).toHaveBeenCalledTimes(2)
-    for (const call of sendMock.mock.calls) {
-      const payload = call[0] as Record<string, unknown>
-      expect(typeof payload.to).toBe('string')
-      expect(payload).not.toHaveProperty('cc')
-      expect(payload).not.toHaveProperty('bcc')
-      expect(payload.from).toBe(MARKETING_FROM)
-      expect(payload.from).not.toBe(TRANSACTIONAL_FROM)
+    // Both recipients fit in one batch call (well under BATCH_SIZE) —
+    // that's the whole point of batching, and what fixed defect 1.
+    expect(batchSendMock).toHaveBeenCalledTimes(1)
+    const payload = batchSendMock.mock.calls[0]![0] as Record<string, unknown>[]
+    expect(payload).toHaveLength(2)
+    for (const message of payload) {
+      expect(typeof message.to).toBe('string')
+      expect(message).not.toHaveProperty('cc')
+      expect(message).not.toHaveProperty('bcc')
+      expect(message.from).toBe(MARKETING_FROM)
+      expect(message.from).not.toBe(TRANSACTIONAL_FROM)
     }
 
     const finalCampaign = await prisma.marketingCampaign.findUniqueOrThrow({ where: { id: result.data.campaignId } })
@@ -167,8 +196,6 @@ describe('sendMarketingCampaignAction', () => {
 
   it('resolves every token before dispatch — no literal token survives into the sent message', async () => {
     const a = await makeSubscriber()
-
-    sendMock.mockResolvedValueOnce(successResponse('msg-token'))
 
     const result = await sendMarketingCampaignAction({
       criteria: { mode: 'ids', subscriberIds: [a.subscriber.id] },
@@ -180,18 +207,19 @@ describe('sendMarketingCampaignAction', () => {
     if (!result.success) return
     campaignIds.push(result.data.campaignId)
 
+    batchSendMock.mockResolvedValueOnce(batchSuccessResponse(['msg-token']))
+
     await capturedWork?.()
 
-    const payload = sendMock.mock.calls[0]![0] as { subject: string; html: string; text: string }
-    expect(payload.subject).not.toContain('{{')
-    expect(payload.html).not.toContain('{{')
-    expect(payload.text).not.toContain('{{')
-    expect(payload.subject).toContain(a.teacher.fullName.split(' ')[0])
+    const payload = batchSendMock.mock.calls[0]![0] as { subject: string; html: string; text: string }[]
+    expect(payload[0]!.subject).not.toContain('{{')
+    expect(payload[0]!.html).not.toContain('{{')
+    expect(payload[0]!.text).not.toContain('{{')
+    expect(payload[0]!.subject).toContain(a.teacher.fullName.split(' ')[0])
   })
 
   it('every sent message carries the recipient’s own unsubscribe link and List-Unsubscribe headers', async () => {
     const a = await makeSubscriber()
-    sendMock.mockResolvedValueOnce(successResponse('msg-headers'))
 
     const result = await sendMarketingCampaignAction({
       criteria: { mode: 'ids', subscriberIds: [a.subscriber.id] },
@@ -203,14 +231,16 @@ describe('sendMarketingCampaignAction', () => {
     if (!result.success) return
     campaignIds.push(result.data.campaignId)
 
+    batchSendMock.mockResolvedValueOnce(batchSuccessResponse(['msg-headers']))
+
     await capturedWork?.()
 
-    const payload = sendMock.mock.calls[0]![0] as { html: string; text: string; headers: Record<string, string> }
+    const payload = batchSendMock.mock.calls[0]![0] as { html: string; text: string; headers: Record<string, string> }[]
     const token = (await prisma.subscriber.findUniqueOrThrow({ where: { id: a.subscriber.id } })).unsubscribeToken
-    expect(payload.html).toContain(token)
-    expect(payload.text).toContain(token)
-    expect(payload.headers['List-Unsubscribe']).toContain(token)
-    expect(payload.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click')
+    expect(payload[0]!.html).toContain(token)
+    expect(payload[0]!.text).toContain(token)
+    expect(payload[0]!.headers['List-Unsubscribe']).toContain(token)
+    expect(payload[0]!.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click')
   })
 
   it('recipient resolution at send time re-applies the subscribed-only rule, excluding an unsubscribed contact even if named explicitly', async () => {
@@ -226,7 +256,7 @@ describe('sendMarketingCampaignAction', () => {
     expect(result.success).toBe(false)
     if (result.success) return
     expect(result.kind).toBe('validation')
-    expect(sendMock).not.toHaveBeenCalled()
+    expect(batchSendMock).not.toHaveBeenCalled()
   })
 
   it('a subscriber who unsubscribes mid-campaign is skipped, not sent to, and marked SKIPPED_UNSUBSCRIBED', async () => {
@@ -247,7 +277,9 @@ describe('sendMarketingCampaignAction', () => {
 
     await capturedWork?.()
 
-    expect(sendMock).not.toHaveBeenCalled()
+    // The only recipient is skipped before the batch is even built — no
+    // batch call is made (dispatchBatch short-circuits on an empty list).
+    expect(batchSendMock).not.toHaveBeenCalled()
     const recipient = await prisma.marketingCampaignRecipient.findFirstOrThrow({ where: { campaignId: result.data.campaignId } })
     expect(recipient.status).toBe('SKIPPED_UNSUBSCRIBED')
     const campaign = await prisma.marketingCampaign.findUniqueOrThrow({ where: { id: result.data.campaignId } })
@@ -269,7 +301,7 @@ describe('sendMarketingCampaignAction', () => {
     expect(result.success).toBe(false)
     if (result.success) return
     expect(result.kind).toBe('count-mismatch')
-    expect(sendMock).not.toHaveBeenCalled()
+    expect(batchSendMock).not.toHaveBeenCalled()
     expect(await prisma.marketingCampaignRecipient.count({ where: { subscriberId: a.subscriber.id } })).toBe(0)
   })
 
@@ -306,13 +338,12 @@ describe('sendMarketingCampaignAction', () => {
     expect(result.success).toBe(false)
     if (result.success) return
     expect(result.kind).toBe('over-limit')
-    expect(sendMock).not.toHaveBeenCalled()
+    expect(batchSendMock).not.toHaveBeenCalled()
     expect(await prisma.marketingCampaignRecipient.count({ where: { subscriberId: { in: [a.subscriber.id, b.subscriber.id, c.subscriber.id] } } })).toBe(0)
   })
 
   it('a double click with the same idempotency key produces one campaign, not two', async () => {
     const a = await makeSubscriber()
-    sendMock.mockResolvedValue(successResponse('msg-double'))
 
     const key = freshKey()
     const input = {
@@ -334,13 +365,9 @@ describe('sendMarketingCampaignAction', () => {
     expect(count).toBe(1)
   })
 
-  it('a failed send does not stop the remaining queue, and records the failed error message', async () => {
+  it('a failed recipient within a batch does not stop the rest of that batch, and records the failure reason', async () => {
     const a = await makeSubscriber()
     const b = await makeSubscriber()
-
-    sendMock
-      .mockResolvedValueOnce(errorResponse('invalid_parameter', 'Invalid recipient address.'))
-      .mockResolvedValueOnce(successResponse('msg-ok'))
 
     const result = await sendMarketingCampaignAction({
       criteria: { mode: 'ids', subscriberIds: [a.subscriber.id, b.subscriber.id] },
@@ -352,22 +379,41 @@ describe('sendMarketingCampaignAction', () => {
     if (!result.success) return
     campaignIds.push(result.data.campaignId)
 
+    // Both recipients land in the same batch call — query the actual
+    // PENDING order (the same order processOneBatch will build the batch
+    // payload in) rather than assuming which subscriber's row comes first.
+    const pendingRows = await prisma.marketingCampaignRecipient.findMany({
+      where: { campaignId: result.data.campaignId },
+      orderBy: { createdAt: 'asc' },
+    })
+    expect(pendingRows).toHaveLength(2)
+
+    // Resend's batchValidation:'permissive' response: index 0 rejected,
+    // index 1 accepted — one bad recipient doesn't block the other.
+    batchSendMock.mockResolvedValueOnce(batchPartialResponse(['msg-ok'], [{ index: 0, message: 'Invalid recipient address.' }]))
+
     await capturedWork?.()
 
-    expect(sendMock).toHaveBeenCalledTimes(2)
+    expect(batchSendMock).toHaveBeenCalledTimes(1)
     const campaign = await prisma.marketingCampaign.findUniqueOrThrow({ where: { id: result.data.campaignId } })
     expect(campaign.sentCount).toBe(1)
     expect(campaign.failedCount).toBe(1)
 
-    const failedRow = await prisma.marketingCampaignRecipient.findFirstOrThrow({ where: { campaignId: result.data.campaignId, status: 'FAILED' } })
+    const failedRow = await prisma.marketingCampaignRecipient.findUniqueOrThrow({ where: { id: pendingRows[0]!.id } })
+    expect(failedRow.status).toBe('FAILED')
     expect(failedRow.errorMessage).toBe('Invalid recipient address.')
-    const sentRow = await prisma.marketingCampaignRecipient.findFirstOrThrow({ where: { campaignId: result.data.campaignId, status: 'SENT' } })
+    const sentRow = await prisma.marketingCampaignRecipient.findUniqueOrThrow({ where: { id: pendingRows[1]!.id } })
+    expect(sentRow.status).toBe('SENT')
     expect(sentRow.providerMessageId).toBe('msg-ok')
   })
 
   it('never marks a recipient SENT without provider confirmation', async () => {
     const a = await makeSubscriber()
-    sendMock.mockResolvedValueOnce({ data: null, error: null })
+
+    // A malformed response — neither a result nor an error. dispatchBatch
+    // treats this the same as any other failure: every recipient in the
+    // call is failed with a generic reason, never silently marked SENT.
+    batchSendMock.mockResolvedValueOnce({ data: null, error: null })
 
     const result = await sendMarketingCampaignAction({
       criteria: { mode: 'ids', subscriberIds: [a.subscriber.id] },
@@ -385,12 +431,12 @@ describe('sendMarketingCampaignAction', () => {
     expect(recipient.status).toBe('FAILED')
   })
 
-  it('backs off and retries on a rate-limit response instead of failing the recipient', async () => {
+  it('backs off and retries the whole batch on a rate-limit response instead of failing the recipient', async () => {
     const a = await makeSubscriber()
 
-    sendMock
-      .mockResolvedValueOnce(errorResponse('rate_limit_exceeded', 'Too many requests.'))
-      .mockResolvedValueOnce(successResponse('msg-after-backoff'))
+    batchSendMock
+      .mockResolvedValueOnce(batchErrorResponse('rate_limit_exceeded', 'Too many requests.'))
+      .mockResolvedValueOnce(batchSuccessResponse(['msg-after-backoff']))
 
     const result = await sendMarketingCampaignAction({
       criteria: { mode: 'ids', subscriberIds: [a.subscriber.id] },
@@ -404,7 +450,7 @@ describe('sendMarketingCampaignAction', () => {
 
     await capturedWork?.()
 
-    expect(sendMock).toHaveBeenCalledTimes(2)
+    expect(batchSendMock).toHaveBeenCalledTimes(2)
     const recipient = await prisma.marketingCampaignRecipient.findFirstOrThrow({ where: { campaignId: result.data.campaignId } })
     expect(recipient.status).toBe('SENT')
     expect(recipient.providerMessageId).toBe('msg-after-backoff')
@@ -413,10 +459,6 @@ describe('sendMarketingCampaignAction', () => {
   it('updates marketingEmailsSent and lastMarketingEmailAt only on a successful send', async () => {
     const sent = await makeSubscriber()
     const failed = await makeSubscriber()
-
-    sendMock
-      .mockResolvedValueOnce(successResponse('msg-count'))
-      .mockResolvedValueOnce(errorResponse('invalid_parameter', 'Bounced.'))
 
     const result = await sendMarketingCampaignAction({
       criteria: { mode: 'ids', subscriberIds: [sent.subscriber.id, failed.subscriber.id] },
@@ -428,13 +470,22 @@ describe('sendMarketingCampaignAction', () => {
     if (!result.success) return
     campaignIds.push(result.data.campaignId)
 
+    const pendingRows = await prisma.marketingCampaignRecipient.findMany({
+      where: { campaignId: result.data.campaignId },
+      orderBy: { createdAt: 'asc' },
+    })
+    batchSendMock.mockResolvedValueOnce(batchPartialResponse(['msg-count'], [{ index: 1, message: 'Bounced.' }]))
+
     await capturedWork?.()
 
-    const sentSubscriber = await prisma.subscriber.findUniqueOrThrow({ where: { id: sent.subscriber.id } })
+    const sentSubscriberId = pendingRows[0]!.subscriberId
+    const failedSubscriberId = pendingRows[1]!.subscriberId
+
+    const sentSubscriber = await prisma.subscriber.findUniqueOrThrow({ where: { id: sentSubscriberId } })
     expect(sentSubscriber.marketingEmailsSent).toBe(1)
     expect(sentSubscriber.lastMarketingEmailAt).not.toBeNull()
 
-    const failedSubscriber = await prisma.subscriber.findUniqueOrThrow({ where: { id: failed.subscriber.id } })
+    const failedSubscriber = await prisma.subscriber.findUniqueOrThrow({ where: { id: failedSubscriberId } })
     expect(failedSubscriber.marketingEmailsSent).toBe(0)
     expect(failedSubscriber.lastMarketingEmailAt).toBeNull()
   })
@@ -445,10 +496,6 @@ describe('retryFailedMarketingRecipientsAction', () => {
     const a = await makeSubscriber()
     const b = await makeSubscriber()
 
-    sendMock
-      .mockResolvedValueOnce(successResponse('msg-original'))
-      .mockResolvedValueOnce(errorResponse('invalid_parameter', 'First attempt failed.'))
-
     const result = await sendMarketingCampaignAction({
       criteria: { mode: 'ids', subscriberIds: [a.subscriber.id, b.subscriber.id] },
       content: { subject: 'Subject', body: 'Body' },
@@ -458,11 +505,20 @@ describe('retryFailedMarketingRecipientsAction', () => {
     expect(result.success).toBe(true)
     if (!result.success) return
     campaignIds.push(result.data.campaignId)
+
+    const pendingRows = await prisma.marketingCampaignRecipient.findMany({
+      where: { campaignId: result.data.campaignId },
+      orderBy: { createdAt: 'asc' },
+    })
+    batchSendMock.mockResolvedValueOnce(
+      batchPartialResponse(['msg-original'], [{ index: 1, message: 'First attempt failed.' }]),
+    )
     await capturedWork?.()
 
-    const sentBefore = await prisma.marketingCampaignRecipient.findFirstOrThrow({ where: { campaignId: result.data.campaignId, status: 'SENT' } })
+    const sentBefore = await prisma.marketingCampaignRecipient.findUniqueOrThrow({ where: { id: pendingRows[0]!.id } })
+    expect(sentBefore.status).toBe('SENT')
 
-    sendMock.mockResolvedValueOnce(successResponse('msg-retry'))
+    batchSendMock.mockResolvedValueOnce(batchSuccessResponse(['msg-retry']))
     const retryResult = await retryFailedMarketingRecipientsAction(result.data.campaignId)
     expect(retryResult.success).toBe(true)
     if (!retryResult.success) return
@@ -537,7 +593,7 @@ describe('retryFailedMarketingRecipientsAction', () => {
       data: { updatedAt: new Date(Date.now() - 11 * 60 * 1000) },
     })
 
-    sendMock.mockResolvedValueOnce(successResponse('msg-recovered'))
+    batchSendMock.mockResolvedValueOnce(batchSuccessResponse(['msg-recovered']))
     const staleRetry = await retryFailedMarketingRecipientsAction(result.data.campaignId)
     expect(staleRetry.success).toBe(true)
     if (!staleRetry.success) return
@@ -552,14 +608,16 @@ describe('retryFailedMarketingRecipientsAction', () => {
 })
 
 describe('processMarketingCampaignSend hardening', () => {
-  it('a throw on every recipient dispatch (a misconfigured MARKETING_EMAIL_FROM) marks each one FAILED individually, leaving none stuck at PENDING', async () => {
+  it('a batch call that throws outright (a misconfigured MARKETING_EMAIL_FROM) marks every recipient in it FAILED, leaving none stuck at PENDING', async () => {
     const a = await makeSubscriber()
     const b = await makeSubscriber()
     const c = await makeSubscriber()
 
     // Reproduces the actual production incident: MARKETING_EMAIL_FROM
-    // resolution throws before any Resend call, every time.
-    sendMock.mockRejectedValue(new Error('MARKETING_EMAIL_FROM is not set on the server.'))
+    // resolution throws before any Resend call, every time. All three
+    // recipients fit in one batch call (well under BATCH_SIZE), so this is
+    // one rejected call, not three.
+    batchSendMock.mockRejectedValue(new Error('MARKETING_EMAIL_FROM is not set on the server.'))
 
     const result = await sendMarketingCampaignAction({
       criteria: { mode: 'ids', subscriberIds: [a.subscriber.id, b.subscriber.id, c.subscriber.id] },
@@ -573,7 +631,7 @@ describe('processMarketingCampaignSend hardening', () => {
 
     await capturedWork?.()
 
-    expect(sendMock).toHaveBeenCalledTimes(3)
+    expect(batchSendMock).toHaveBeenCalledTimes(1)
     const rows = await prisma.marketingCampaignRecipient.findMany({ where: { campaignId: result.data.campaignId } })
     expect(rows).toHaveLength(3)
     expect(rows.every((row) => row.status === 'FAILED')).toBe(true)
@@ -585,15 +643,8 @@ describe('processMarketingCampaignSend hardening', () => {
     expect(campaign.failedCount).toBe(3)
   })
 
-  it('a throw on the third of five recipients still leaves every recipient attempted, not abandoned', async () => {
+  it('one rejected recipient among five still leaves every recipient attempted, not abandoned', async () => {
     const subscribers = await Promise.all([1, 2, 3, 4, 5].map(() => makeSubscriber()))
-
-    sendMock
-      .mockResolvedValueOnce(successResponse('msg-1'))
-      .mockResolvedValueOnce(successResponse('msg-2'))
-      .mockRejectedValueOnce(new Error('Simulated crash on the third recipient.'))
-      .mockResolvedValueOnce(successResponse('msg-4'))
-      .mockResolvedValueOnce(successResponse('msg-5'))
 
     const result = await sendMarketingCampaignAction({
       criteria: { mode: 'ids', subscriberIds: subscribers.map((s) => s.subscriber.id) },
@@ -605,16 +656,25 @@ describe('processMarketingCampaignSend hardening', () => {
     if (!result.success) return
     campaignIds.push(result.data.campaignId)
 
+    // All five land in one batch call — the third is rejected by Resend's
+    // permissive validation, the other four succeed alongside it.
+    batchSendMock.mockResolvedValueOnce(
+      batchPartialResponse(
+        ['msg-1', 'msg-2', 'msg-4', 'msg-5'],
+        [{ index: 2, message: 'Simulated rejection on the third recipient.' }],
+      ),
+    )
+
     await capturedWork?.()
 
-    // All five were attempted — the throw on the third never abandoned the rest.
-    expect(sendMock).toHaveBeenCalledTimes(5)
+    // All five were attempted in that one call — the rejection on the third never abandoned the rest.
+    expect(batchSendMock).toHaveBeenCalledTimes(1)
     const rows = await prisma.marketingCampaignRecipient.findMany({ where: { campaignId: result.data.campaignId } })
     expect(rows.some((row) => row.status === 'PENDING')).toBe(false)
     expect(rows.filter((row) => row.status === 'SENT')).toHaveLength(4)
     const failedRows = rows.filter((row) => row.status === 'FAILED')
     expect(failedRows).toHaveLength(1)
-    expect(failedRows[0]!.errorMessage).toBe('Simulated crash on the third recipient.')
+    expect(failedRows[0]!.errorMessage).toBe('Simulated rejection on the third recipient.')
 
     const campaign = await prisma.marketingCampaign.findUniqueOrThrow({ where: { id: result.data.campaignId } })
     expect(campaign.sentCount).toBe(4)
@@ -641,7 +701,7 @@ describe('config validation gates campaign creation', () => {
     if (result.kind !== 'config') return
     expect(result.missing).toBe('MARKETING_EMAIL_FROM')
     expect(result.error).toContain('MARKETING_EMAIL_FROM')
-    expect(sendMock).not.toHaveBeenCalled()
+    expect(batchSendMock).not.toHaveBeenCalled()
     expect(await prisma.marketingCampaignRecipient.count({ where: { subscriberId: a.subscriber.id } })).toBe(0)
   })
 })
@@ -649,7 +709,6 @@ describe('config validation gates campaign creation', () => {
 describe('getMarketingCampaignStatusAction', () => {
   it('reads the true state from the database', async () => {
     const a = await makeSubscriber()
-    sendMock.mockResolvedValueOnce(successResponse('msg-status'))
 
     const sendResult = await sendMarketingCampaignAction({
       criteria: { mode: 'ids', subscriberIds: [a.subscriber.id] },
@@ -660,6 +719,7 @@ describe('getMarketingCampaignStatusAction', () => {
     expect(sendResult.success).toBe(true)
     if (!sendResult.success) return
     campaignIds.push(sendResult.data.campaignId)
+    batchSendMock.mockResolvedValueOnce(batchSuccessResponse(['msg-status']))
     await capturedWork?.()
 
     const status = await getMarketingCampaignStatusAction(sendResult.data.campaignId)
@@ -692,7 +752,11 @@ describe('sendTestMarketingEmailAction', () => {
     if (!result.success) return
     expect(result.data.messageId).toBe('msg-test')
 
+    // "Send Test to Myself" was never part of defect 1/5's batching — it's
+    // a single, immediate send (dispatchTestMarketingEmail), so it still
+    // goes through resend.emails.send, not resend.batch.send.
     expect(sendMock).toHaveBeenCalledTimes(1)
+    expect(batchSendMock).not.toHaveBeenCalled()
     const payload = sendMock.mock.calls[0]![0] as { to: string; subject: string; from: string }
     expect(payload.to).toBe('admin-test@example.com')
     expect(payload.from).toBe(MARKETING_FROM)

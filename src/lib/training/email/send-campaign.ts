@@ -1,15 +1,15 @@
 import 'server-only'
 
+import type { Prisma } from '@prisma/client'
 import type { CampaignEmailType } from '@/domain/training/schema'
 import { prisma } from '../prisma'
+import { BATCH_SIZE, TIME_BUDGET_MS, dispatchBatch, type BatchRecipient } from './batch-send'
 import { renderCampaignEmail } from './campaign-render'
 import { resolveRecipients, toPersonalizationValues, type ResolvedRecipient } from './recipients'
 import { getEmailFrom, getEmailReplyTo, getResendClient } from './resend-client'
 
 const DEFAULT_MAX_RECIPIENTS = 500
 const DEFAULT_SEND_RATE_PER_SECOND = 2
-const MAX_RATE_LIMIT_RETRIES = 5
-const RATE_LIMIT_BASE_BACKOFF_MS = 1000
 const DUPLICATE_WINDOW_MS = 24 * 60 * 60 * 1000
 
 /** Configurable so operators can raise it if their Resend plan allows — see spec section 7 ("configurable maximum recipients per campaign"). */
@@ -19,8 +19,15 @@ export function getMaxRecipientsPerCampaign(): number {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : DEFAULT_MAX_RECIPIENTS
 }
 
-/** Conservative default matching Resend's base-plan limit; raise via env for a higher-tier plan. */
-function getSendIntervalMs(): number {
+/**
+ * Throttles batch API calls, not individual emails — one call now carries up
+ * to BATCH_SIZE recipients, so the same EMAIL_SEND_RATE_PER_SECOND setting
+ * that used to space out individual sends now spaces out batches instead.
+ * Independent of the marketing-campaign throttle
+ * (MARKETING_EMAIL_SEND_RATE_PER_SECOND) even though both share the same
+ * Resend account quota.
+ */
+function getBatchIntervalMs(): number {
   const raw = process.env.EMAIL_SEND_RATE_PER_SECOND
   const parsed = raw ? Number(raw) : NaN
   const rate = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SEND_RATE_PER_SECOND
@@ -67,76 +74,6 @@ export async function findRecentDuplicateTeacherIds(
   return duplicateTeacherIds
 }
 
-interface DispatchOutcome {
-  ok: boolean
-  messageId?: string
-  error?: string
-}
-
-/**
- * One recipient, one message, one `to` address — never cc, bcc or multiple
- * addresses. Resend's own idempotencyKey (the recipient row's id) is passed
- * so a stray duplicate dispatch of the same row is deduplicated by the
- * provider too, not just by our own PENDING/SENT bookkeeping. On a
- * rate_limit_exceeded response this backs off and retries the same
- * recipient rather than treating it as a failure; other errors are returned
- * immediately so the caller can record FAILED and move on to the next
- * recipient without blocking the queue.
- */
-async function dispatchWithBackoff(
-  recipientRowId: string,
-  to: string,
-  content: { subject: string; html: string; text: string },
-): Promise<DispatchOutcome> {
-  const resend = getResendClient()
-
-  for (let attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt += 1) {
-    const { data, error } = await resend.emails.send(
-      {
-        from: getEmailFrom(),
-        to,
-        replyTo: getEmailReplyTo(),
-        subject: content.subject,
-        html: content.html,
-        text: content.text,
-      },
-      { idempotencyKey: recipientRowId },
-    )
-
-    if (!error && data) return { ok: true, messageId: data.id }
-
-    const isRateLimited = error?.name === 'rate_limit_exceeded'
-    if (isRateLimited && attempt < MAX_RATE_LIMIT_RETRIES) {
-      await delay(RATE_LIMIT_BASE_BACKOFF_MS * 2 ** attempt)
-      continue
-    }
-
-    return { ok: false, error: error?.message ?? 'Unknown error from the email provider.' }
-  }
-
-  return { ok: false, error: 'Rate limited by the email provider after repeated retries.' }
-}
-
-async function recordSent(campaignId: string, recipientId: string, messageId: string): Promise<void> {
-  await prisma.$transaction([
-    prisma.emailCampaignRecipient.update({
-      where: { id: recipientId },
-      data: { status: 'SENT', sentAt: new Date(), providerMessageId: messageId, errorMessage: null },
-    }),
-    prisma.emailCampaign.update({ where: { id: campaignId }, data: { sentCount: { increment: 1 } } }),
-  ])
-}
-
-async function recordFailed(campaignId: string, recipientId: string, errorMessage: string): Promise<void> {
-  await prisma.$transaction([
-    prisma.emailCampaignRecipient.update({
-      where: { id: recipientId },
-      data: { status: 'FAILED', errorMessage },
-    }),
-    prisma.emailCampaign.update({ where: { id: campaignId }, data: { failedCount: { increment: 1 } } }),
-  ])
-}
-
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -145,13 +82,12 @@ const QUEUE_ABORTED_PREFIX = 'Sending queue aborted before this recipient could 
 
 /**
  * The queue's last line of defence: whatever is still PENDING when
- * `processCampaignSend` itself throws (not an individual recipient — see the
- * per-recipient try/catch below, which handles that case without ever
- * reaching here) is marked FAILED with a reason, so the administrator sees
- * an explanation instead of a campaign frozen at zero forever. This is what
- * closes the exact gap that orphaned two production marketing campaigns: a
- * config error thrown before any Resend call left every recipient stuck at
- * PENDING with no record of why.
+ * `processCampaignSend` itself throws (not an individual batch — see the
+ * per-batch try/catch below) is marked FAILED with a reason, so the
+ * administrator sees an explanation instead of a campaign frozen at zero
+ * forever. This is what closes the exact gap that orphaned two production
+ * marketing campaigns: a config error thrown before any Resend call left
+ * every recipient stuck at PENDING with no record of why.
  */
 async function failAllRemainingPending(campaignId: string, reason: string): Promise<void> {
   const remaining = await prisma.emailCampaignRecipient.findMany({
@@ -173,76 +109,178 @@ async function failAllRemainingPending(campaignId: string, reason: string): Prom
 }
 
 /**
- * Sends every PENDING recipient of a campaign, one at a time, spaced to
- * respect the provider's rate limit. Recipients are re-resolved fresh from
- * the database here (not from any snapshot taken when the campaign was
- * created) so a registration cancelled between queueing and dispatch is
- * caught and failed rather than emailed. includeWaitlisted is always true at
- * this stage: the recipient set itself was already fixed to specific
- * registration ids when the manifest was written, so this only needs to
- * exclude a registration that has since been cancelled — a still-waitlisted
- * registration that was intentionally included stays included.
+ * Persists every outcome from one batch (sent and failed) in a single
+ * transaction — one round trip regardless of batch size. `providerMessageId`
+ * and `errorMessage` differ per recipient so those rows are updated
+ * individually within the transaction; the campaign's own sentCount/
+ * failedCount are uniform per group, so that's a single update statement
+ * covering the whole group.
+ */
+async function recordBatchOutcomes(
+  campaignId: string,
+  sent: { recipientId: string; messageId: string }[],
+  failed: { recipientId: string; error: string }[],
+): Promise<void> {
+  if (sent.length === 0 && failed.length === 0) return
+
+  const now = new Date()
+  const statements: Prisma.PrismaPromise<unknown>[] = [
+    ...sent.map((s) =>
+      prisma.emailCampaignRecipient.update({
+        where: { id: s.recipientId },
+        data: { status: 'SENT', sentAt: now, providerMessageId: s.messageId, errorMessage: null },
+      }),
+    ),
+    ...failed.map((f) =>
+      prisma.emailCampaignRecipient.update({
+        where: { id: f.recipientId },
+        data: { status: 'FAILED', errorMessage: f.error },
+      }),
+    ),
+  ]
+
+  statements.push(
+    prisma.emailCampaign.update({
+      where: { id: campaignId },
+      data: { sentCount: { increment: sent.length }, failedCount: { increment: failed.length } },
+    }),
+  )
+
+  await prisma.$transaction(statements)
+}
+
+/**
+ * Builds and sends one batch (up to BATCH_SIZE rows) via the shared
+ * dispatchBatch (batch-send.ts), then persists every outcome. Recipients are
+ * re-resolved fresh from the database immediately before this batch is
+ * built — never from a snapshot taken when the campaign was created — so a
+ * registration cancelled between queueing and dispatch is caught and failed
+ * rather than emailed. includeWaitlisted is always true at this stage: the
+ * recipient set itself was already fixed to specific registration ids when
+ * the manifest was written, so this only needs to exclude a registration
+ * that has since been cancelled — a still-waitlisted registration that was
+ * intentionally included stays included.
+ */
+async function processOneBatch(
+  campaign: { id: string; subject: string; bodyTemplate: string },
+  pending: { id: string; registrationId: string }[],
+): Promise<void> {
+  const resolution = await resolveRecipients({
+    mode: 'ids',
+    registrationIds: pending.map((row) => row.registrationId),
+    includeWaitlisted: true,
+  })
+  const byRegistrationId = new Map(resolution.recipients.map((recipient) => [recipient.registrationId, recipient]))
+
+  const toSend: BatchRecipient[] = []
+  const failedBeforeDispatch: { recipientId: string; error: string }[] = []
+
+  for (const row of pending) {
+    const resolved = byRegistrationId.get(row.registrationId)
+    if (!resolved) {
+      failedBeforeDispatch.push({
+        recipientId: row.id,
+        error: 'This registration is no longer active — the teacher may have cancelled since the campaign was queued.',
+      })
+      continue
+    }
+
+    try {
+      const content = renderCampaignEmail(campaign.subject, campaign.bodyTemplate, toPersonalizationValues(resolved))
+      toSend.push({
+        recipientId: row.id,
+        email: {
+          from: getEmailFrom(),
+          to: resolved.email,
+          replyTo: getEmailReplyTo(),
+          subject: content.subject,
+          html: content.html,
+          text: content.text,
+        },
+      })
+    } catch (error) {
+      failedBeforeDispatch.push({ recipientId: row.id, error: describeError(error) })
+    }
+  }
+
+  const outcomes = await dispatchBatch(toSend)
+  const sent = outcomes.filter((o) => o.ok).map((o) => ({ recipientId: o.recipientId, messageId: o.messageId! }))
+  const failed = [
+    ...failedBeforeDispatch,
+    ...outcomes.filter((o) => !o.ok).map((o) => ({ recipientId: o.recipientId, error: o.error ?? 'Unknown error from the email provider.' })),
+  ]
+
+  await recordBatchOutcomes(campaign.id, sent, failed)
+}
+
+/**
+ * Sends every PENDING recipient of a campaign, in batches of up to
+ * BATCH_SIZE via Resend's batch endpoint (see dispatchBatch in
+ * batch-send.ts), spaced to respect the provider's rate limit. Meant to run
+ * inside runAfterResponse so it continues even after the admin's request has
+ * returned.
  *
- * A failed send never stops the queue — every remaining recipient is still
- * attempted. Meant to run inside runAfterResponse so it continues even after
- * the admin's request has returned.
+ * Same defect-1 fix applied to this, the other bulk sender that shared its
+ * one-call-per-recipient architecture: this used to make one Resend API
+ * call per recipient inside a single serverless invocation extended past
+ * the response via Next's after(), with no `maxDuration` configured
+ * anywhere in this codebase — so a large course campaign (up to
+ * getMaxRecipientsPerCampaign(), 500 by default) was exposed to exactly the
+ * same platform-timeout cliff that stalled marketing campaigns around ~268
+ * recipients. Batching cuts the recipient-count-to-API-call ratio roughly
+ * 50x, and voluntarily checkpointing at TIME_BUDGET_MS (see batch-send.ts)
+ * means this never depends on what the platform's actual timeout is.
  *
- * Two layers of failure isolation, both required: an exception specific to
- * one recipient (a bad row, a rendering bug, dispatchWithBackoff throwing
- * instead of returning an outcome) must not stop the recipients behind it —
- * the inner try/catch marks that one row FAILED and moves on. An exception
- * that has nothing to do with any single recipient (the initial queries
- * above, or a database write itself failing inside the inner catch) would
- * otherwise escape the loop entirely and leave every row it never reached
- * silently PENDING forever — the outer try/catch is what used to be
- * missing, and is what now sweeps every row still PENDING into FAILED with
- * a clear reason the moment that happens.
+ * Safe to call again for the same campaign at any time: it only ever looks
+ * at rows still PENDING, so anything already SENT is never re-sent.
+ *
+ * Two layers of failure isolation, both required: a problem specific to one
+ * batch (a bad row, a rendering bug, dispatchBatch itself throwing) must not
+ * stop the batches behind it — the per-batch try/catch below marks that
+ * batch's rows FAILED and moves on. A problem that has nothing to do with
+ * any single batch (the initial campaign lookup, or a database write itself
+ * failing) would otherwise escape the loop entirely and leave every row it
+ * never reached silently PENDING forever — the outer try/catch sweeps every
+ * row still PENDING into FAILED with a clear reason the moment that happens.
  */
 export async function processCampaignSend(campaignId: string): Promise<void> {
+  const startedAt = Date.now()
   try {
     const campaign = await prisma.emailCampaign.findUnique({ where: { id: campaignId } })
     if (!campaign) return
 
-    const pending = await prisma.emailCampaignRecipient.findMany({
-      where: { campaignId, status: 'PENDING' },
-      select: { id: true, registrationId: true },
-    })
-    if (pending.length === 0) return
+    const batchIntervalMs = getBatchIntervalMs()
+    let isFirstBatch = true
 
-    const resolution = await resolveRecipients({
-      mode: 'ids',
-      registrationIds: pending.map((row) => row.registrationId),
-      includeWaitlisted: true,
-    })
-    const byRegistrationId = new Map(resolution.recipients.map((recipient) => [recipient.registrationId, recipient]))
+    for (;;) {
+      const pending = await prisma.emailCampaignRecipient.findMany({
+        where: { campaignId, status: 'PENDING' },
+        select: { id: true, registrationId: true },
+        orderBy: { createdAt: 'asc' },
+        take: BATCH_SIZE,
+      })
+      if (pending.length === 0) return
 
-    const intervalMs = getSendIntervalMs()
+      if (!isFirstBatch) await delay(batchIntervalMs)
+      isFirstBatch = false
 
-    for (const row of pending) {
       try {
-        const resolved = byRegistrationId.get(row.registrationId)
-
-        if (!resolved) {
-          await recordFailed(campaignId, row.id, 'This registration is no longer active — the teacher may have cancelled since the campaign was queued.')
-        } else {
-          const content = renderCampaignEmail(campaign.subject, campaign.bodyTemplate, toPersonalizationValues(resolved))
-          const outcome = await dispatchWithBackoff(row.id, resolved.email, content)
-
-          if (outcome.ok && outcome.messageId) {
-            await recordSent(campaignId, row.id, outcome.messageId)
-          } else {
-            await recordFailed(campaignId, row.id, outcome.error ?? 'Unknown error from the email provider.')
-          }
-        }
+        await processOneBatch(campaign, pending)
       } catch (error) {
-        // Deliberately not caught-and-swallowed: if recordFailed itself is
-        // what threw (e.g. the database is unreachable), this rethrows out
-        // to the outer catch below, which sweeps this row up too rather
-        // than silently leaving it PENDING.
-        await recordFailed(campaignId, row.id, describeError(error))
+        // A batch-level failure (not an individual recipient) — mark this
+        // batch's rows FAILED and move on to the next one rather than
+        // letting the whole queue die here.
+        const reason = describeError(error)
+        await prisma.$transaction([
+          prisma.emailCampaignRecipient.updateMany({
+            where: { id: { in: pending.map((row) => row.id) } },
+            data: { status: 'FAILED', errorMessage: reason },
+          }),
+          prisma.emailCampaign.update({ where: { id: campaignId }, data: { failedCount: { increment: pending.length } } }),
+        ])
       }
 
-      await delay(intervalMs)
+      if (Date.now() - startedAt >= TIME_BUDGET_MS) return
     }
   } catch (error) {
     const reason = `${QUEUE_ABORTED_PREFIX}: ${describeError(error)}`
