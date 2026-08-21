@@ -27,7 +27,11 @@ export function SubscribersSelectionBar({ templates }: { templates: MarketingTem
     ? null
     : state.mode === 'ids'
       ? { mode: 'ids', subscriberIds: state.ids }
-      : criteriaFromFiltersKey(filtersKey, state.excludedIds)
+      : // mode 'all' — resolved from the filter snapshot it was captured under
+        // (state.filtersKey), never from whatever filter is displayed right
+        // now; those can differ once the admin navigates elsewhere without
+        // losing the selection (defect 2).
+        criteriaFromFiltersKey(state.filtersKey ?? filtersKey, state.excludedIds)
 
   useEffect(() => {
     if (!criteria) {
@@ -46,7 +50,7 @@ export function SubscribersSelectionBar({ templates }: { templates: MarketingTem
     }
     // criteria is derived fresh each render from primitives already in the dependency array below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.mode, state.ids.join(','), state.excludedIds.join(','), filtersKey])
+  }, [state.mode, state.ids.join(','), state.excludedIds.join(','), state.filtersKey, filtersKey])
 
   useEffect(() => {
     let cancelled = false
@@ -88,10 +92,10 @@ export function SubscribersSelectionBar({ templates }: { templates: MarketingTem
           .
         </p>
       )}
-      {state.mode === 'all' && <p className="text-sm text-muted-foreground">Every subscribed contact matching the current filters is selected.</p>}
-      {selection.clearedNotice && (
-        <p className="text-sm text-muted-foreground" role="status">
-          {selection.clearedNotice}
+      {state.mode === 'all' && (
+        <p className="text-sm text-muted-foreground">
+          Every subscribed contact matching the filters used when you selected all is selected — still true even if
+          you&apos;ve since changed filters to look at something else.
         </p>
       )}
 

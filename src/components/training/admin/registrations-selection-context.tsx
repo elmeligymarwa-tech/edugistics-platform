@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'next/navigation'
 
 import * as Selection from '@/domain/training/registration-selection'
@@ -18,8 +18,6 @@ interface SelectionContextValue {
   clearSelection: () => void
   isSelected: (id: string) => boolean
   areAllVisibleSelected: (ids: string[]) => boolean
-  clearedNotice: string | null
-  dismissClearedNotice: () => void
 }
 
 const SelectionContext = createContext<SelectionContextValue | null>(null)
@@ -32,48 +30,36 @@ function computeFiltersKey(searchParams: URLSearchParams): string {
   return params.toString()
 }
 
+/**
+ * Selections persist across filter, tab and "include waitlisted" changes
+ * (defect 2) — nothing here resets `state` when `filtersKey` changes
+ * anymore. An 'ids'-mode selection is just a set of ids, correct regardless
+ * of what filter produced them; an 'all'-mode selection stays scoped to the
+ * filter snapshot it was captured under (see registration-selection.ts) and
+ * is resolved server-side from that snapshot, not from whatever filter
+ * happens to be on screen right now. "Clear selection" (always visible
+ * alongside the running total in RegistrationsSelectionBar) is the way out
+ * if a kept selection isn't what's wanted.
+ */
 export function RegistrationsSelectionProvider({ children }: { children: ReactNode }) {
   const searchParams = useSearchParams()
   const filtersKey = useMemo(() => computeFiltersKey(searchParams), [searchParams])
 
   const [state, setState] = useState<SelectionState>(Selection.EMPTY_SELECTION)
   const [includeWaitlisted, setIncludeWaitlistedState] = useState(false)
-  const [clearedNotice, setClearedNotice] = useState<string | null>(null)
-  const previousFiltersKey = useRef(filtersKey)
-
-  useEffect(() => {
-    if (previousFiltersKey.current === filtersKey) return
-    previousFiltersKey.current = filtersKey
-    setState((current) => {
-      const next = Selection.clearSelectionIfFiltersChanged(current, filtersKey)
-      if (next !== current) setClearedNotice('Selection cleared because filters changed.')
-      return next
-    })
-  }, [filtersKey])
 
   const value: SelectionContextValue = {
     state,
     filtersKey,
     includeWaitlisted,
-    setIncludeWaitlisted: (value) => {
-      setIncludeWaitlistedState(value)
-      // The pool of selectable rows just changed (waitlisted rows became eligible or ineligible) — a kept
-      // selection could silently reference rows that are no longer valid, so start over instead.
-      setState(Selection.EMPTY_SELECTION)
-      setClearedNotice(null)
-    },
+    setIncludeWaitlisted: setIncludeWaitlistedState,
     toggleRow: (id, selectable) => setState((current) => Selection.toggleRow(current, id, filtersKey, selectable)),
-    selectVisible: (ids) => setState((current) => Selection.selectVisible(current, ids, filtersKey)),
+    selectVisible: (ids) => setState((current) => Selection.selectVisible(current, ids)),
     deselectVisible: (ids) => setState((current) => Selection.deselectVisible(current, ids, filtersKey)),
     selectAllMatchingFilters: () => setState(() => Selection.selectAllMatchingFilters(filtersKey)),
-    clearSelection: () => {
-      setState(Selection.EMPTY_SELECTION)
-      setClearedNotice(null)
-    },
-    isSelected: (id) => Selection.isRowSelected(state, id),
-    areAllVisibleSelected: (ids) => Selection.areAllVisibleSelected(state, ids),
-    clearedNotice,
-    dismissClearedNotice: () => setClearedNotice(null),
+    clearSelection: () => setState(Selection.EMPTY_SELECTION),
+    isSelected: (id) => Selection.isRowSelected(state, id, filtersKey),
+    areAllVisibleSelected: (ids) => Selection.areAllVisibleSelected(state, ids, filtersKey),
   }
 
   return <SelectionContext.Provider value={value}>{children}</SelectionContext.Provider>

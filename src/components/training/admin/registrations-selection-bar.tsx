@@ -32,7 +32,11 @@ export function RegistrationsSelectionBar() {
     ? null
     : state.mode === 'ids'
       ? { mode: 'ids', registrationIds: state.ids, includeWaitlisted }
-      : criteriaFromFiltersKey(filtersKey, state.excludedIds, includeWaitlisted)
+      : // mode 'all' — always resolved from the filter snapshot it was captured
+        // under (state.filtersKey), never from whatever filter happens to be
+        // displayed right now; those can differ once the admin navigates
+        // elsewhere without losing the selection (defect 2).
+        criteriaFromFiltersKey(state.filtersKey ?? filtersKey, state.excludedIds, includeWaitlisted)
 
   useEffect(() => {
     if (!criteria) {
@@ -51,7 +55,7 @@ export function RegistrationsSelectionBar() {
     }
     // criteria is derived fresh each render from primitives already in the dependency array below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.mode, state.ids.join(','), state.excludedIds.join(','), filtersKey, includeWaitlisted])
+  }, [state.mode, state.ids.join(','), state.excludedIds.join(','), state.filtersKey, filtersKey, includeWaitlisted])
 
   useEffect(() => {
     let cancelled = false
@@ -77,11 +81,6 @@ export function RegistrationsSelectionBar() {
         {includeWaitlisted && (
           <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning-foreground">
             Waitlisted teachers do not hold a place and should not normally receive a joining link.
-          </p>
-        )}
-        {selection.clearedNotice && (
-          <p className="text-sm text-muted-foreground" role="status">
-            {selection.clearedNotice}
           </p>
         )}
       </div>
@@ -135,11 +134,9 @@ export function RegistrationsSelectionBar() {
         </p>
       )}
       {state.mode === 'all' && (
-        <p className="text-sm text-muted-foreground">Every record matching the current filters is selected.</p>
-      )}
-      {selection.clearedNotice && (
-        <p className="text-sm text-muted-foreground" role="status">
-          {selection.clearedNotice}
+        <p className="text-sm text-muted-foreground">
+          Every record matching the filters used when you selected all is selected — still true even if you&apos;ve
+          since changed filters or tabs to look at something else.
         </p>
       )}
 
