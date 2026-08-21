@@ -17,10 +17,15 @@ export default defineConfig({
   test: {
     environment: 'node',
     setupFiles: ['./vitest.setup.ts'],
-    // Sweeps test-marked rows from the shared production database before any
-    // test runs and again after every test file has finished — see
-    // vitest.global-teardown.ts for why both ends are needed.
-    globalSetup: ['./vitest.global-teardown.ts'],
+    // Order matters: the guard runs first and aborts the whole run before
+    // any database connection is made if DATABASE_URL isn't a confirmed
+    // test database (see vitest.database-guard.ts) — including before the
+    // sweep below gets a chance to connect. Only once the guard passes does
+    // the sweep run, clearing test-marked rows from that confirmed-safe
+    // database before any test runs and again after every test file has
+    // finished — see vitest.global-teardown.ts for why both ends are
+    // needed.
+    globalSetup: ['./vitest.database-guard.ts', './vitest.global-teardown.ts'],
     // The remote Supabase database this project's tests run against adds enough
     // round-trip latency that a multi-query action test can exceed Vitest's 5s default.
     testTimeout: 20000,
