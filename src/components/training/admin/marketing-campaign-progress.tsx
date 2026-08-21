@@ -63,6 +63,7 @@ export function MarketingCampaignProgress({ campaignId }: { campaignId: string }
 
   const attempted = status.sentCount + status.failedCount + status.skippedCount
   const isComplete = attempted >= status.recipientCount
+  const pendingCount = Math.max(status.recipientCount - attempted, 0)
   const percent = status.recipientCount === 0 ? 100 : Math.round((attempted / status.recipientCount) * 100)
   const failedRecipients = status.recipients.filter((recipient) => recipient.status === 'FAILED')
   const skippedRecipients = status.recipients.filter((recipient) => recipient.status === 'SKIPPED_UNSUBSCRIBED')
@@ -78,7 +79,7 @@ export function MarketingCampaignProgress({ campaignId }: { campaignId: string }
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-3 text-sm">
+      <div className="grid grid-cols-5 gap-3 text-sm">
         <div className="rounded-lg border border-border bg-muted/30 p-3">
           <p className="text-xs text-muted-foreground">Total</p>
           <p className="text-lg font-medium text-heading">{status.recipientCount}</p>
@@ -86,6 +87,10 @@ export function MarketingCampaignProgress({ campaignId }: { campaignId: string }
         <div className="rounded-lg border border-border bg-muted/30 p-3">
           <p className="text-xs text-muted-foreground">Sent</p>
           <p className="text-lg font-medium text-success">{status.sentCount}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-muted/30 p-3">
+          <p className="text-xs text-muted-foreground">Pending</p>
+          <p className="text-lg font-medium text-heading">{pendingCount}</p>
         </div>
         <div className="rounded-lg border border-border bg-muted/30 p-3">
           <p className="text-xs text-muted-foreground">Failed</p>
@@ -96,6 +101,17 @@ export function MarketingCampaignProgress({ campaignId }: { campaignId: string }
           <p className="text-lg font-medium text-foreground">{status.skippedCount}</p>
         </div>
       </div>
+
+      {!isComplete && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 p-3">
+          <p className="text-xs text-muted-foreground">
+            Sending runs in the background — safe to close this window. If pending stops moving for a while, resume it here.
+          </p>
+          <Button type="button" size="sm" variant="outline" onClick={handleRetry} disabled={retrying}>
+            {retrying ? 'Resuming…' : 'Resume Sending'}
+          </Button>
+        </div>
+      )}
 
       {isComplete && failedRecipients.length > 0 && (
         <div className="flex flex-col gap-2">
