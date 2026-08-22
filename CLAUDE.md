@@ -15,15 +15,19 @@
 - Round only at presentation, never inside the engine.
 - Before saying a stage is complete, run `npm run typecheck`, `npm run lint`, `npm run test` and `npm run build`, and report the output.
 
-## Test suite writes to the production database
+## The test suite runs against a dedicated test database
 
-`npm run test` runs against the same Supabase database that production reads from — there is no separate test database (a deliberate decision; see the `feature/mailing-list` branch history for the trade-offs considered). `DATABASE_URL` is loaded automatically by `@prisma/client` from `.env` the moment any test imports the training app's Prisma client, independently of Vitest's own config.
+The test suite runs against its own Supabase project (ref `paipadncvmjikeedxnth`), separate from the production project (ref `ndkhfqhyuglwtpwlxrxo`) that `edugistics.online/training` reads from. See `TEST-DATABASE.md` for the full setup.
 
-Most training-app test files clean up the rows they create in `afterAll`, but that cleanup only runs if the process exits normally — an interrupted run (Ctrl+C, a crashed worker, a lost connection to the remote pooler) skips it and leaves real rows behind. `src/lib/training/analytics.test.ts` in particular seeds courses with `isActive:true, archivedAt:null` — the exact conditions the public `/training` page uses to decide what a visitor sees — so an interrupted run there can leave fixture courses publicly visible on the live site.
+`vitest.database-guard.ts` runs as Vitest's first `globalSetup` step, before any test file loads, and hard-fails the run unless two independent checks both pass: a denylist (`DATABASE_URL` must not reference the production project ref) and an allowlist (`TEST_DATABASE_URL` must be set and byte-for-byte equal to `DATABASE_URL` — a deliberate, explicit opt-in). Neither check can be satisfied by the other, an unrecognised database is treated as unsafe by default, and there is no flag or config option that skips either check.
 
-**Never run the test suite while teachers or the public can reach edugistics.online/training.** Run it only when you can personally verify the site immediately afterwards, and never leave a run unattended or interrupt it partway through.
+`npm run testdb:run` is the correct way to run the full suite — it loads `.env.test` explicitly (`node --env-file=.env.test`), which is what actually points `DATABASE_URL`/`TEST_DATABASE_URL` at the test project. Run `npm run testdb:migrate` first after any `prisma/schema.prisma` change, to keep the test database's schema in step with `prisma/migrations/`.
 
-`vitest.global-teardown.ts` sweeps every test-marked row from the database before the suite starts and again after every file finishes — a backstop for an interrupted run, or a per-test timeout whose in-flight write lands after that file's own `afterAll` already ran. It only ever deletes a row that matches one of the explicit markers below; it never uses a heuristic (no "contains test", no recency, no `isActive`) that could touch real data.
+For local development (`next dev`), `.env.development.local` (gitignored, per-machine — copy `.env.development.local.example`) points `DATABASE_URL`/`DIRECT_URL` at the same test project. Next.js loads it ahead of `.env.local` whenever `NODE_ENV=development`, so ordinary local dev — clicking around the admin, testing a form — resolves to the test database automatically, with no code change; `next build`/`next start`/Vercel still resolve through `.env.local` (production) untouched.
+
+The admin UI also carries a `DatabaseEnvironmentBadge` (`src/lib/training/database-environment.ts`, `src/components/training/admin/database-environment-badge.tsx`), derived from the resolved `DATABASE_URL` itself, never from `NODE_ENV`: an amber "TEST DATABASE" badge whenever the app is running against the test project, a red "UNKNOWN DATABASE" badge if `DATABASE_URL` doesn't match either known project ref, and nothing at all on production — so a dev server or deploy that isn't actually pointed where it should be shows this at a glance rather than looking like a clean, ordinary admin.
+
+Most training-app test files clean up the rows they create in `afterAll`, but that cleanup only runs if the process exits normally — an interrupted run (Ctrl+C, a crashed worker, a lost connection to the remote pooler) skips it and leaves fixture rows behind in the test database. `vitest.global-teardown.ts` sweeps every test-marked row from the database before the suite starts and again after every file finishes — a backstop for an interrupted run, or a per-test timeout whose in-flight write lands after that file's own `afterAll` already ran. It only ever deletes a row that matches one of the explicit markers below; it never uses a heuristic (no "contains test", no recency, no `isActive`) that could touch real data.
 
 **Convention every new test file that writes to the training database must follow, so the sweep actually catches it:**
 - Define `const MARKER = '<kebab-case-name>-test'` at the top of the file, unique to that file.
@@ -31,4 +35,4 @@ Most training-app test files clean up the rows they create in `afterAll`, but th
 - Use `@test.local` as the email domain for every `Teacher`/`Subscriber` the file creates.
 - Add the new `MARKER` string to the `FILE_MARKERS` array in `vitest.global-teardown.ts`.
 
-A test file that doesn't follow this convention can still clean up correctly on a normal run via its own `afterAll` — but its rows will not be caught by the global sweep if that run is interrupted or races a timeout, meaning a leak from that file could reach production and go unswept indefinitely.
+A test file that doesn't follow this convention can still clean up correctly on a normal run via its own `afterAll` — but its rows will not be caught by the global sweep if that run is interrupted or races a timeout, leaving stray fixture data in the test database.
