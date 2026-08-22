@@ -44,7 +44,17 @@ function loadEnvFileIfPresent(path: string): void {
 loadEnvFileIfPresent('.env')
 loadEnvFileIfPresent('.env.local')
 
-const PRODUCTION_PROJECT_REF = 'ndkhfqhyuglwtpwlxrxo'
+export const PRODUCTION_PROJECT_REF = 'ndkhfqhyuglwtpwlxrxo'
+
+/**
+ * The denylist half of the check below, exported standalone so any script
+ * that can write to the database — not just the test suite — can refuse to
+ * run against production regardless of which env file put that value in
+ * `process.env.DATABASE_URL`. See scripts/training-reset.mts.
+ */
+export function isProductionDatabaseUrl(url: string | undefined): boolean {
+  return !!url && url.includes(PRODUCTION_PROJECT_REF)
+}
 
 function describeDatabase(url: string | undefined): string {
   if (!url) return '(not set)'
@@ -82,7 +92,7 @@ export function checkDatabaseIsSafeForTests(env: Record<string, string | undefin
     )
   }
 
-  if (databaseUrl.includes(PRODUCTION_PROJECT_REF)) {
+  if (isProductionDatabaseUrl(databaseUrl)) {
     throw new Error(
       abortMessage('DATABASE_URL points at production', [
         `Detected database: ${describeDatabase(databaseUrl)}`,

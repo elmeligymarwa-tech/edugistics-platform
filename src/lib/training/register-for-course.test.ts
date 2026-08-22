@@ -219,6 +219,26 @@ describe('registerForCourse', () => {
     expect(totalRegistrations).toBe(1)
   }, 20_000)
 
+  it('two simultaneous submissions for the same new teacher email but different courses both succeed', async () => {
+    const courseA = await makeCourse({ maxCapacity: null })
+    const courseB = await makeCourse({ maxCapacity: null })
+    const input = makeInput(courseA.id)
+
+    const results = await Promise.allSettled([registerForCourse(input), registerForCourse({ ...input, courseId: courseB.id })])
+
+    const fulfilled = results.filter((result) => result.status === 'fulfilled')
+    const rejected = results.filter((result) => result.status === 'rejected')
+    expect(rejected).toHaveLength(0)
+    expect(fulfilled).toHaveLength(2)
+
+    const teachers = await prisma.teacher.findMany({ where: { emailNormalised: input.email.toLowerCase() } })
+    expect(teachers).toHaveLength(1)
+
+    const registrations = await prisma.registration.findMany({ where: { teacherId: teachers[0]!.id } })
+    expect(registrations).toHaveLength(2)
+    expect(registrations.map((registration) => registration.courseId).sort()).toEqual([courseA.id, courseB.id].sort())
+  }, 20_000)
+
   it('reuses the same teacher record when the same email registers for a different course', async () => {
     const courseA = await makeCourse({ maxCapacity: null })
     const courseB = await makeCourse({ maxCapacity: null })

@@ -19,10 +19,10 @@
     "testdb:run": "node --env-file=.env.test node_modules/.bin/vitest run",
     "typecheck": "tsc --noEmit",
     "admin:hash": "node scripts/admin-hash.mts",
-    "seed:analytics-fixture": "node scripts/seed-training-analytics-fixture.mts",
-    "training:reset": "node scripts/training-reset.mts",
+    "seed:analytics-fixture": "node --env-file=.env.test scripts/seed-training-analytics-fixture.mts",
+    "training:reset": "node --env-file=.env.test scripts/training-reset.mts",
     "migrate:legacy-consent": "node scripts/migrate-legacy-consent-to-subscribers.mts",
-    "seed:marketing-templates": "node scripts/seed-marketing-templates.mts"
+    "seed:marketing-templates": "node --env-file=.env.test scripts/seed-marketing-templates.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

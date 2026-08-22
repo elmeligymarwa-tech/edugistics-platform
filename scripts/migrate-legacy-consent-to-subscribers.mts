@@ -7,6 +7,14 @@
 //
 // Always reports the count it WOULD migrate. Requires --confirm to
 // actually write anything.
+//
+// Deliberately has no default env file wired up in package.json: this is a
+// one-off migration against the real Teacher/Subscriber data, i.e.
+// production, and must never run by accident against whatever DATABASE_URL
+// happens to be lying around. Invoke it directly with an explicit env file,
+// e.g. `node --env-file=.env.production.backup scripts/migrate-legacy-consent-to-subscribers.mts --confirm`
+// — `npm run migrate:legacy-consent` alone will fail with a missing
+// DATABASE_URL, which is the point.
 import { PrismaClient } from '@prisma/client'
 
 import { previewLegacyConsentMigration, runLegacyConsentMigration } from './migrate-legacy-consent-plan.ts'

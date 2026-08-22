@@ -151,25 +151,22 @@ async function recordBatchOutcomes(
 
 /**
  * Builds and sends one batch (up to BATCH_SIZE rows) via the shared
- * dispatchBatch (batch-send.ts), then persists every outcome. Recipients are
- * re-resolved fresh from the database immediately before this batch is
- * built — never from a snapshot taken when the campaign was created — so a
- * registration cancelled between queueing and dispatch is caught and failed
- * rather than emailed. includeWaitlisted is always true at this stage: the
- * recipient set itself was already fixed to specific registration ids when
- * the manifest was written, so this only needs to exclude a registration
- * that has since been cancelled — a still-waitlisted registration that was
- * intentionally included stays included.
+ * dispatchBatch (batch-send.ts), then persists every outcome. `resolution` is
+ * re-resolved fresh from the database by the caller immediately before each
+ * batch is built — never from a snapshot taken when the campaign was
+ * created — so a registration cancelled between queueing and dispatch is
+ * caught and failed rather than emailed. includeWaitlisted is always true at
+ * that resolution step: the recipient set itself was already fixed to
+ * specific registration ids when the manifest was written, so this only
+ * needs to exclude a registration that has since been cancelled — a
+ * still-waitlisted registration that was intentionally included stays
+ * included.
  */
 async function processOneBatch(
   campaign: { id: string; subject: string; bodyTemplate: string },
   pending: { id: string; registrationId: string }[],
+  resolution: Awaited<ReturnType<typeof resolveRecipients>>,
 ): Promise<void> {
-  const resolution = await resolveRecipients({
-    mode: 'ids',
-    registrationIds: pending.map((row) => row.registrationId),
-    includeWaitlisted: true,
-  })
   const byRegistrationId = new Map(resolution.recipients.map((recipient) => [recipient.registrationId, recipient]))
 
   const toSend: BatchRecipient[] = []
@@ -264,8 +261,21 @@ export async function processCampaignSend(campaignId: string): Promise<void> {
       if (!isFirstBatch) await delay(batchIntervalMs)
       isFirstBatch = false
 
+      // Resolved outside the per-batch try/catch below, deliberately: a
+      // failure here (e.g. a lost database connection) isn't specific to
+      // this batch's recipients or content — it's a systemic problem that
+      // would recur on every subsequent batch too, so it belongs to the
+      // outer catch's whole-queue abort (see failAllRemainingPending)
+      // rather than being absorbed as if only this batch's rows were
+      // affected.
+      const resolution = await resolveRecipients({
+        mode: 'ids',
+        registrationIds: pending.map((row) => row.registrationId),
+        includeWaitlisted: true,
+      })
+
       try {
-        await processOneBatch(campaign, pending)
+        await processOneBatch(campaign, pending, resolution)
       } catch (error) {
         // A batch-level failure (not an individual recipient) — mark this
         // batch's rows FAILED and move on to the next one rather than

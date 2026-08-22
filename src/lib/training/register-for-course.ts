@@ -86,6 +86,19 @@ export function isUniqueConstraintOnCourseTeacher(error: unknown): boolean {
   return Array.isArray(target) && target.includes('courseId') && target.includes('teacherId')
 }
 
+/**
+ * The other half of the same race: two concurrent submissions for a teacher
+ * email that doesn't exist yet both see `existingTeacher` as null and both
+ * attempt `tx.teacher.create`. `Teacher.emailNormalised` is unique on its
+ * own, independent of `Registration`'s constraint, so the loser collides
+ * here first — before ever reaching `tx.registration.create` below.
+ */
+export function isUniqueConstraintOnTeacherEmail(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') return false
+  const target = (error.meta as { target?: unknown })?.target
+  return Array.isArray(target) && target.includes('emailNormalised')
+}
+
 /** Consistent wording wherever a submission is rejected because this teacher already has a live row for this course — the pre-check, and the race fallback below, both use this so the two paths never disagree on phrasing. */
 export function alreadyRegisteredMessage(existing: { status: string; reference: string }): string {
   const activity = existing.status === 'WAITLISTED' ? 'already on the waiting list for' : 'already registered for'
@@ -104,7 +117,54 @@ export async function registerForCourse(input: RegisterInput): Promise<Registrat
   const emailNormalised = normaliseEmail(input.email)
   const sourceIpHash = await hashIp(input.ip)
 
-  const { teacher, course, registration, waitlistPosition } = await prisma.$transaction(async (tx) => {
+  const { teacher, course, registration, waitlistPosition } = await runRegistrationTransaction()
+
+  async function runRegistrationTransaction() {
+    try {
+      return await prisma.$transaction(transactionCallback)
+    } catch (error) {
+      if (isUniqueConstraintOnTeacherEmail(error)) {
+        // Lost the race to create the Teacher row, not to register for this
+        // course — the teacher we were about to create now exists, created
+        // by whichever concurrent request won. That's unrelated to whether
+        // *this* courseId is free, so retry once: `transactionCallback`
+        // re-reads `existingTeacher` from scratch, finds the row that now
+        // exists, and proceeds as an ordinary existing-teacher registration
+        // instead of attempting another create. This is what makes the same
+        // email registering for two different courses at once succeed
+        // twice, rather than the loser being wrongly told it's already
+        // registered for a course it never touched. Capped at one retry —
+        // if it fails the exact same way again, something more persistent
+        // than a one-off race is wrong, so we stop rather than loop.
+        try {
+          return await prisma.$transaction(transactionCallback)
+        } catch (retryError) {
+          error = retryError
+        }
+      }
+
+      if (!isUniqueConstraintOnCourseTeacher(error) && !isUniqueConstraintOnTeacherEmail(error)) throw error
+
+      // Genuine duplicate: another request registered this exact
+      // teacher+course pairing — either on the original attempt (the
+      // teacher already existed, so the retry above never ran) or on the
+      // retry itself. By the time Postgres reports a unique-constraint
+      // conflict the other transaction is guaranteed to have fully
+      // committed, so this lookup — run against `prisma` directly, not the
+      // now-aborted `tx` — is safe and will find what it left behind.
+      const racedTeacher = await prisma.teacher.findUnique({ where: { emailNormalised } })
+      const racedRegistration = racedTeacher
+        ? await prisma.registration.findUnique({
+            where: { courseId_teacherId: { courseId: input.courseId, teacherId: racedTeacher.id } },
+          })
+        : null
+      throw new RegistrationRejectedError(
+        racedRegistration ? alreadyRegisteredMessage(racedRegistration) : 'This email address is already registered for this course.',
+      )
+    }
+  }
+
+  async function transactionCallback(tx: Prisma.TransactionClient) {
     const existingTeacher = await tx.teacher.findUnique({ where: { emailNormalised } })
 
     // A CANCELLED registration for this exact teacher+course still occupies
@@ -300,16 +360,14 @@ export async function registerForCourse(input: RegisterInput): Promise<Registrat
           break
         } catch (error) {
           if (isUniqueConstraintOnReference(error)) continue
-          if (isUniqueConstraintOnCourseTeacher(error)) {
-            // Lost a race: another request for this same teacher+course
-            // committed between the pre-check above and this insert. Look
-            // up what it actually left behind and report that, rather than
-            // letting a raw Prisma error reach the caller as a 500.
-            const raced = await tx.registration.findUnique({
-              where: { courseId_teacherId: { courseId: course.id, teacherId: teacher.id } },
-            })
-            throw new RegistrationRejectedError(raced ? alreadyRegisteredMessage(raced) : 'This email address is already registered for this course.')
-          }
+          // A courseId/teacherId collision here (lost a race against another
+          // request for this same teacher+course) is deliberately left
+          // uncaught: Postgres aborts the whole transaction on any failed
+          // statement, so a lookup against `tx` at this point would itself
+          // fail with "current transaction is aborted" rather than ever
+          // producing a useful result. It propagates out of `$transaction`
+          // instead, where the caller below can safely query with a fresh
+          // connection once the transaction has actually rolled back.
           throw error
         }
       }
@@ -320,7 +378,7 @@ export async function registerForCourse(input: RegisterInput): Promise<Registrat
     }
 
     return { teacher, course, registration, waitlistPosition }
-  })
+  }
 
   const courseDateLong = formatCourseDateOrSessions({
     courseDate: course.courseDate,
