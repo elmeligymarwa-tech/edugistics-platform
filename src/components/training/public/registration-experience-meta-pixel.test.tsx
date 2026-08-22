@@ -120,6 +120,7 @@ describe('RegistrationExperience — Meta Pixel conversion event only fires on r
             courseDateLong: '1 September 2026',
             courseTimeRange: '9:00 – 10:00',
             promo: null,
+            eventId: 'REG-INTEGRATION-1:CompleteRegistration',
           },
         }),
       }),
@@ -129,6 +130,9 @@ describe('RegistrationExperience — Meta Pixel conversion event only fires on r
     await fillAndSubmit()
 
     await waitFor(() => expect(screen.getByText('Registration confirmed')).toBeInTheDocument())
-    expect(trackCompleteRegistration).toHaveBeenCalledExactlyOnceWith('Leadership Essentials')
+    expect(trackCompleteRegistration).toHaveBeenCalledExactlyOnceWith(
+      'Leadership Essentials',
+      'REG-INTEGRATION-1:CompleteRegistration',
+    )
   })
 })

@@ -9,6 +9,11 @@ vi.mock('@/lib/training/email/send-registration-email', () => ({
   sendPromotedEmail: (...args: unknown[]) => sendPromotedEmail(...args),
 }))
 
+const sendConversionEvent = vi.fn().mockResolvedValue(undefined)
+vi.mock('@/lib/training/meta-capi/send-conversion-event', () => ({
+  sendConversionEvent: (...args: unknown[]) => sendConversionEvent(...args),
+}))
+
 const { promoteRegistrationAction } = await import('./actions')
 const { prisma } = await import('@/lib/training/prisma')
 
@@ -112,6 +117,8 @@ beforeEach(async () => {
 afterEach(() => {
   sendPromotedEmail.mockClear()
   sendPromotedEmail.mockResolvedValue('email-id')
+  sendConversionEvent.mockClear()
+  sendConversionEvent.mockResolvedValue(undefined)
 })
 
 afterAll(async () => {
@@ -281,5 +288,71 @@ describe('promoteRegistrationAction', () => {
     })
     expect(auditEntry).not.toBeNull()
     expect((auditEntry?.afterJson as Record<string, unknown> | null)?.sendEmail).toBe(false)
+  }, 20_000)
+})
+
+describe('promoteRegistrationAction — Meta CAPI', () => {
+  it('fires a CompleteRegistration event with action_source system_generated, no eventSourceUrl or client info, and a deterministic reference+eventName+promotedAt id', async () => {
+    await prisma.course.update({ where: { id: courseId }, data: { maxCapacity: 5 } })
+    const teacher = await makeTeacher(9)
+    const reg = await makeRegistration(teacher.id, 'WAITLISTED', 1)
+
+    const result = await promoteRegistrationAction(reg.id, { sendEmail: false })
+    expect(result.success).toBe(true)
+
+    expect(sendConversionEvent).toHaveBeenCalledTimes(1)
+    const sent = sendConversionEvent.mock.calls[0]![0]
+    expect(sent.eventName).toBe('CompleteRegistration')
+    expect(sent.actionSource).toBe('system_generated')
+    const course = await prisma.course.findUniqueOrThrow({ where: { id: courseId } })
+    expect(sent.courseName).toBe(course.name) // courseNameSnapshot ('x') isn't used here — the action re-reads course.name fresh
+    expect(sent.eventSourceUrl).toBeUndefined()
+    expect(sent.clientIpAddress).toBeUndefined()
+    expect(sent.clientUserAgent).toBeUndefined()
+
+    const promoted = await prisma.registration.findUniqueOrThrow({ where: { id: reg.id } })
+    expect(promoted.promotedAt).not.toBeNull()
+    expect(sent.eventId).toBe(`${reg.reference}:CompleteRegistration:${promoted.promotedAt!.getTime()}`)
+  }, 20_000)
+
+  it('produces a different event_id for two separate promotions, even for the same reference, because the promotion timestamp differs', async () => {
+    // Not reachable through the UI today (a promoted registration is no
+    // longer WAITLISTED, so a second promoteRegistrationAction call on the
+    // same row is rejected before reaching this code) — this asserts the id
+    // itself would not collide if that ever changed, since it's derived
+    // from the promotion's own timestamp rather than the reference alone.
+    await prisma.course.update({ where: { id: courseId }, data: { maxCapacity: 5 } })
+    const teacherA = await makeTeacher(10)
+    const teacherB = await makeTeacher(11)
+    const regA = await makeRegistration(teacherA.id, 'WAITLISTED', 1)
+    const regB = await makeRegistration(teacherB.id, 'WAITLISTED', 2)
+
+    await promoteRegistrationAction(regA.id, { sendEmail: false })
+    await promoteRegistrationAction(regB.id, { sendEmail: false })
+
+    const idA = sendConversionEvent.mock.calls[0]![0].eventId
+    const idB = sendConversionEvent.mock.calls[1]![0].eventId
+    expect(idA).not.toBe(idB)
+  }, 20_000)
+
+  it('does not wait on the CAPI send before completing the promotion (never-block)', async () => {
+    // sendConversionEvent itself never rejects by design (see
+    // send-conversion-event.test.ts) — that's what actually keeps a real
+    // failure from reaching here. What this asserts is the other half of
+    // the never-block guarantee: promoteRegistrationAction must not be
+    // depending on the CAPI call settling at all. A promise that never
+    // resolves proves that without risking an unhandled rejection from a
+    // deliberately-rejected mock racing runAfterResponse's fire-and-forget
+    // fallback outside request scope.
+    await prisma.course.update({ where: { id: courseId }, data: { maxCapacity: 5 } })
+    sendConversionEvent.mockImplementationOnce(() => new Promise(() => {}))
+    const teacher = await makeTeacher(12)
+    const reg = await makeRegistration(teacher.id, 'WAITLISTED', 1)
+
+    const result = await promoteRegistrationAction(reg.id, { sendEmail: false })
+
+    expect(result.success).toBe(true)
+    const updated = await prisma.registration.findUniqueOrThrow({ where: { id: reg.id } })
+    expect(updated.status).toBe('CONFIRMED')
   }, 20_000)
 })

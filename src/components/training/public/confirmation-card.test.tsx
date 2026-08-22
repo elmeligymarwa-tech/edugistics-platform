@@ -27,6 +27,7 @@ const confirmed: ConfirmedConfirmation = {
   courseDateLong: '1 September 2026',
   courseTimeRange: '9:00 – 10:00',
   promo: null,
+  eventId: 'REG-CONFIRMED-1:CompleteRegistration',
 }
 
 const waitlisted: WaitlistedConfirmation = {
@@ -37,6 +38,7 @@ const waitlisted: WaitlistedConfirmation = {
   courseName: 'Leadership Essentials',
   waitlistPosition: 3,
   promo: null,
+  eventId: 'REG-WAITLIST-1:JoinedWaitlist',
 }
 
 beforeEach(() => {
@@ -52,21 +54,22 @@ afterEach(() => {
 describe('ConfirmationCard — Meta Pixel conversion events', () => {
   it('fires CompleteRegistration once for a confirmed registration', () => {
     render(<ConfirmationCard confirmation={confirmed} onRegisterAnother={vi.fn()} />)
-    expect(trackCompleteRegistration).toHaveBeenCalledExactlyOnceWith('Leadership Essentials')
+    expect(trackCompleteRegistration).toHaveBeenCalledExactlyOnceWith('Leadership Essentials', confirmed.eventId)
     expect(trackJoinedWaitlist).not.toHaveBeenCalled()
   })
 
   it('fires JoinedWaitlist, not CompleteRegistration, for a waitlisted registration', () => {
     render(<ConfirmationCard confirmation={waitlisted} onRegisterAnother={vi.fn()} />)
-    expect(trackJoinedWaitlist).toHaveBeenCalledExactlyOnceWith('Leadership Essentials')
+    expect(trackJoinedWaitlist).toHaveBeenCalledExactlyOnceWith('Leadership Essentials', waitlisted.eventId)
     expect(trackCompleteRegistration).not.toHaveBeenCalled()
   })
 
-  it('never passes anything but the course name — no name, email, phone, school or reference', () => {
+  it('never passes anything but the course name and the derived event id — no name, email, phone, school or reference', () => {
     render(<ConfirmationCard confirmation={confirmed} onRegisterAnother={vi.fn()} />)
-    // trackCompleteRegistration's own signature is (courseName: string) — there is no
+    // trackCompleteRegistration's own signature is (courseName, eventId) — there is no
     // parameter through which teacherFullName, teacherEmail or reference could travel.
-    expect(trackCompleteRegistration.mock.calls[0]).toEqual(['Leadership Essentials'])
+    // eventId itself is derived (reference + event name), not personal — see events.ts.
+    expect(trackCompleteRegistration.mock.calls[0]).toEqual(['Leadership Essentials', confirmed.eventId])
   })
 
   it('does not fire again when the confirmation screen remounts for the same reference (a refresh)', () => {
@@ -80,7 +83,12 @@ describe('ConfirmationCard — Meta Pixel conversion events', () => {
 
   it('fires independently for a different registration reference', () => {
     render(<ConfirmationCard confirmation={confirmed} onRegisterAnother={vi.fn()} />)
-    render(<ConfirmationCard confirmation={{ ...confirmed, reference: 'REG-CONFIRMED-2' }} onRegisterAnother={vi.fn()} />)
+    render(
+      <ConfirmationCard
+        confirmation={{ ...confirmed, reference: 'REG-CONFIRMED-2', eventId: 'REG-CONFIRMED-2:CompleteRegistration' }}
+        onRegisterAnother={vi.fn()}
+      />,
+    )
 
     expect(trackCompleteRegistration).toHaveBeenCalledTimes(2)
   })

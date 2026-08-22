@@ -21,8 +21,8 @@ describe('meta pixel events', () => {
   it('does not throw and does nothing when window.fbq is not present', () => {
     delete window.fbq
     expect(() => trackPageView()).not.toThrow()
-    expect(() => trackCompleteRegistration('Course A')).not.toThrow()
-    expect(() => trackJoinedWaitlist('Course A')).not.toThrow()
+    expect(() => trackCompleteRegistration('Course A', 'REG-1:CompleteRegistration')).not.toThrow()
+    expect(() => trackJoinedWaitlist('Course A', 'REG-1:JoinedWaitlist')).not.toThrow()
   })
 
   it('trackPageView calls fbq("track", "PageView") with no extra data', () => {
@@ -32,22 +32,28 @@ describe('meta pixel events', () => {
     expect(fbq).toHaveBeenCalledExactlyOnceWith('track', 'PageView')
   })
 
-  it('trackCompleteRegistration sends only the course name', () => {
+  it('trackCompleteRegistration sends only the course name, with the event id as the fbq eventID option', () => {
     const fbq = vi.fn()
     window.fbq = fbq
-    trackCompleteRegistration('Leadership Essentials')
-    expect(fbq).toHaveBeenCalledExactlyOnceWith('track', 'CompleteRegistration', {
-      course_name: 'Leadership Essentials',
-    })
+    trackCompleteRegistration('Leadership Essentials', 'REG-1:CompleteRegistration')
+    expect(fbq).toHaveBeenCalledExactlyOnceWith(
+      'track',
+      'CompleteRegistration',
+      { course_name: 'Leadership Essentials' },
+      { eventID: 'REG-1:CompleteRegistration' },
+    )
   })
 
-  it('trackJoinedWaitlist fires as a distinct custom event with only the course name', () => {
+  it('trackJoinedWaitlist fires as a distinct custom event with only the course name, with the event id as the fbq eventID option', () => {
     const fbq = vi.fn()
     window.fbq = fbq
-    trackJoinedWaitlist('Leadership Essentials')
-    expect(fbq).toHaveBeenCalledExactlyOnceWith('trackCustom', 'JoinedWaitlist', {
-      course_name: 'Leadership Essentials',
-    })
+    trackJoinedWaitlist('Leadership Essentials', 'REG-1:JoinedWaitlist')
+    expect(fbq).toHaveBeenCalledExactlyOnceWith(
+      'trackCustom',
+      'JoinedWaitlist',
+      { course_name: 'Leadership Essentials' },
+      { eventID: 'REG-1:JoinedWaitlist' },
+    )
   })
 
   it('conversion-fired guard is false until marked, then true for that reference only', () => {
