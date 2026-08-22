@@ -8,7 +8,9 @@ import { formatPromoDiscountLabel } from '@/domain/training/promo-code'
 import { DELIVERY_METHOD_LABELS } from '@/domain/training/schema'
 import { ADMIN_ACTOR } from '@/lib/training/audit-log'
 import { requireAdminSession } from '@/lib/training/auth/require-admin'
+import { runAfterResponse } from '@/lib/training/background'
 import { sendPromotedEmail } from '@/lib/training/email/send-registration-email'
+import { sendConversionEvent } from '@/lib/training/meta-capi/send-conversion-event'
 import { prisma } from '@/lib/training/prisma'
 import { validatePromoCodeForCourse } from '@/lib/training/promo-code-validation'
 
@@ -142,6 +144,24 @@ export async function promoteRegistrationAction(
   }
 
   const { registration, teacher, course, discountLost } = outcome
+
+  // A waitlisted teacher becoming confirmed is a real conversion — excluding
+  // it would make Meta's numbers and the admin's own registration count
+  // irreconcilable. action_source is "system_generated", not "website":
+  // this never happened in a browser, so unlike the public registration
+  // flow there is no Pixel event to deduplicate against — event_id only
+  // has to stop a retry of this action from double-sending, not match a
+  // client-side send. Deferred past the response (runAfterResponse) and
+  // gated/never-throwing exactly like every other sendConversionEvent call
+  // — a failed CAPI send must not fail the promotion itself.
+  runAfterResponse(() =>
+    sendConversionEvent({
+      eventName: 'CompleteRegistration',
+      eventId: `${registration.reference}:CompleteRegistration:${registration.promotedAt!.getTime()}`,
+      actionSource: 'system_generated',
+      courseName: course.name,
+    }),
+  )
 
   // sendEmail is a deliberate choice made at the point of promotion (see
   // PromoteRegistrationDialog) — never automatic. When it's false, nothing

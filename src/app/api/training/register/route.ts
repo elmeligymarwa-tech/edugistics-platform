@@ -36,6 +36,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Too many submissions from this connection. Please try again later.' }, { status: 429 })
   }
 
+  const userAgent = request.headers.get('user-agent') ?? ''
+
   const { courseId, fullName, email, phone, schoolName, subject, grade, address, marketingConsent, promoCode } = parsed.data
 
   try {
@@ -51,6 +53,7 @@ export async function POST(request: NextRequest) {
       marketingConsent,
       promoCode,
       ip,
+      userAgent,
     })
     return NextResponse.json({ data: outcome })
   } catch (error) {

@@ -61,6 +61,7 @@ function makeInput(courseId: string, overrides: Partial<Parameters<typeof regist
     marketingConsent: false,
     promoCode: null,
     ip: '127.0.0.1',
+    userAgent: 'vitest-test-agent',
     ...overrides,
   }
 }
@@ -176,6 +177,17 @@ describe('registerForCourse', () => {
 
     expect(again.status).toBe('CONFIRMED')
     expect(again.reference).toBe(original.reference) // same row reactivated, not a second one
+
+    // Defect: reference stays the same on reactivation, so without
+    // something to distinguish them, conversionEventId would produce the
+    // exact same event_id as the original send — Meta's own dedup would
+    // then silently discard this second, genuinely new conversion as a
+    // repeat of the first. Both ids still start with the shared
+    // reference:eventName prefix; only a reactivation gets a distinguishing
+    // suffix appended.
+    expect(again.eventId).not.toBe(original.eventId)
+    expect(original.eventId).toBe(`${original.reference}:CompleteRegistration`)
+    expect(again.eventId.startsWith(`${again.reference}:CompleteRegistration:`)).toBe(true)
 
     const rows = await prisma.registration.findMany({ where: { courseId: course.id, teacherId: (await prisma.teacher.findUniqueOrThrow({ where: { emailNormalised: input.email.toLowerCase() } })).id } })
     expect(rows).toHaveLength(1)

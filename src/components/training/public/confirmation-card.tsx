@@ -15,6 +15,8 @@ export interface ConfirmedConfirmation {
   courseDateLong: string
   courseTimeRange: string
   promo: PromoBreakdown | null
+  /** Shared with the server-side Conversions API send of this same conversion — see trackCompleteRegistration. Derived (reference + event name), not personal. */
+  eventId: string
 }
 
 export interface WaitlistedConfirmation {
@@ -25,6 +27,8 @@ export interface WaitlistedConfirmation {
   courseName: string
   waitlistPosition: number
   promo: PromoBreakdown | null
+  /** Shared with the server-side Conversions API send of this same conversion — see trackJoinedWaitlist. Derived (reference + event name), not personal. */
+  eventId: string
 }
 
 export type Confirmation = ConfirmedConfirmation | WaitlistedConfirmation
@@ -82,9 +86,9 @@ export function ConfirmationCard({
     markConversionEventFired(confirmation.reference)
 
     if (confirmation.status === 'CONFIRMED') {
-      trackCompleteRegistration(confirmation.courseName)
+      trackCompleteRegistration(confirmation.courseName, confirmation.eventId)
     } else {
-      trackJoinedWaitlist(confirmation.courseName)
+      trackJoinedWaitlist(confirmation.courseName, confirmation.eventId)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [confirmation.reference])

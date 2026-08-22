@@ -51,6 +51,7 @@ async function makeRegistration(marketingConsent: boolean) {
     marketingConsent,
     promoCode: null,
     ip: '127.0.0.1',
+    userAgent: 'vitest-test-agent',
   })
   const registration = await prisma.registration.findUniqueOrThrow({ where: { reference: outcome.reference } })
   registrationIds.push(registration.id)

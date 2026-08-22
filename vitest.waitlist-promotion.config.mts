@@ -14,11 +14,13 @@ const dirname = path.dirname(fileURLToPath(import.meta.url))
 // (courses/[id]/waitlist/actions.test.ts) genuinely does hit the real
 // database (row-locked capacity checks and waitlist-position resequencing
 // have no mockable boundary from Postgres — see that file's own comment)
-// and is NOT run through this config, or any config, in this environment:
-// this repo's current DATABASE_URL is production with no TEST_DATABASE_URL,
-// so vitest.database-guard.ts correctly refuses to run it. It was reviewed
-// and updated for the new promoteRegistrationAction({ override, sendEmail })
-// signature, but not executed — see the defect 4 report.
+// and runs through the default suite instead (npm run testdb:run), same as
+// every other *.test.ts file — it needs the real guard/sweep in
+// vitest.config.mts's globalSetup, unlike this file's DB-free component
+// test. It could not run at all until this repo had a dedicated test
+// database (see TEST-DATABASE.md); before that, DATABASE_URL was production
+// with no TEST_DATABASE_URL, and vitest.database-guard.ts correctly refused
+// to run anything against it.
 //
 // Otherwise mirrors vitest.config.mts (react plugin, aliases, setupFiles for
 // jsdom/jest-dom) but deliberately has no `globalSetup`. See

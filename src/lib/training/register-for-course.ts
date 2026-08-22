@@ -5,14 +5,17 @@ import { Prisma } from '@prisma/client'
 import { formatCourseDateOrSessions, formatCourseTimeRange } from '@/domain/training/format'
 import { formatPromoDiscountLabel, type PromoBreakdown } from '@/domain/training/promo-code'
 import { DELIVERY_METHOD_LABELS } from '@/domain/training/schema'
+import { runAfterResponse } from './background'
 import { sendConfirmedEmail, sendWaitlistedEmail } from './email/send-registration-email'
 import { hashIp } from './ip-hash'
+import { type ConversionEventName, sendConversionEvent } from './meta-capi/send-conversion-event'
 import { normaliseEmail, normaliseGrade, normalisePhone, normaliseSubject } from './normalise'
 import { prisma } from './prisma'
 import { validatePromoCodeForCourse } from './promo-code-validation'
 import { generateRegistrationReference } from './reference'
 import { isCourseOpenForRegistration } from './registration-window'
 import { resolveSchool } from './school-matching'
+import { getSiteUrl } from './site-url'
 import { applyRegistrationConsent } from './subscribers'
 
 /** Carries the exact user-facing message from CLAUDE.md's server-side submission rules straight out of the transaction. */
@@ -31,6 +34,8 @@ export interface RegisterInput {
   /** The code string the browser sends back after a successful Apply, or null. Never trusted — re-validated from scratch inside the transaction below. */
   promoCode: string | null
   ip: string
+  /** Raw User-Agent header — server-side CAPI use only (see sendConversionEvent below). Never stored on the Registration row itself. */
+  userAgent: string
 }
 
 export type { PromoBreakdown }
@@ -45,6 +50,8 @@ interface ConfirmedOutcome {
   courseTimeRange: string
   emailStatus: 'SENT' | 'FAILED'
   promo: PromoBreakdown | null
+  /** Shared with the browser Meta Pixel's eventID parameter so the same conversion is never double-counted — see meta-capi/send-conversion-event.ts. */
+  eventId: string
 }
 
 interface WaitlistedOutcome {
@@ -56,11 +63,33 @@ interface WaitlistedOutcome {
   waitlistPosition: number
   emailStatus: 'SENT' | 'FAILED'
   promo: PromoBreakdown | null
+  /** Shared with the browser Meta Pixel's eventID parameter so the same conversion is never double-counted — see meta-capi/send-conversion-event.ts. */
+  eventId: string
 }
 
 export type RegistrationOutcome = ConfirmedOutcome | WaitlistedOutcome
 
 const MAX_REFERENCE_ATTEMPTS = 5
+
+/**
+ * Deterministic from the registration reference and the event name alone —
+ * nothing random or time-based — so a retry can never mint a second id for
+ * the same conversion. A genuine duplicate submission never reaches this
+ * point anyway (it's rejected before a reference exists), so this only ever
+ * runs once per real registration/waitlist event, EXCEPT for reactivating a
+ * CANCELLED row: that keeps the same reference, so without
+ * reactivationCancelledAt a reactivated CONFIRMED registration would
+ * produce the exact same id as the original send, and Meta's own dedup
+ * would silently discard it as a repeat of a conversion that already
+ * happened. reactivationCancelledAt — the timestamp of the specific
+ * cancellation being reversed, read from the row before this transaction's
+ * update clears it — is fresh on every real reactivation but fixed for the
+ * one transaction that reads it, so it distinguishes each life of the row
+ * without making the first-time-creation id non-deterministic.
+ */
+function conversionEventId(reference: string, eventName: ConversionEventName, reactivationCancelledAt: Date | null): string {
+  return reactivationCancelledAt ? `${reference}:${eventName}:${reactivationCancelledAt.getTime()}` : `${reference}:${eventName}`
+}
 
 function isUniqueConstraintOnReference(error: unknown): boolean {
   if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') return false
@@ -117,7 +146,7 @@ export async function registerForCourse(input: RegisterInput): Promise<Registrat
   const emailNormalised = normaliseEmail(input.email)
   const sourceIpHash = await hashIp(input.ip)
 
-  const { teacher, course, registration, waitlistPosition } = await runRegistrationTransaction()
+  const { teacher, course, registration, waitlistPosition, reactivationCancelledAt } = await runRegistrationTransaction()
 
   async function runRegistrationTransaction() {
     try {
@@ -377,7 +406,7 @@ export async function registerForCourse(input: RegisterInput): Promise<Registrat
       throw new Error('Could not generate a unique registration reference.')
     }
 
-    return { teacher, course, registration, waitlistPosition }
+    return { teacher, course, registration, waitlistPosition, reactivationCancelledAt: reactivating?.cancelledAt ?? null }
   }
 
   const courseDateLong = formatCourseDateOrSessions({
@@ -440,6 +469,26 @@ export async function registerForCourse(input: RegisterInput): Promise<Registrat
     })
   }
 
+  const eventName: ConversionEventName = registration.status === 'CONFIRMED' ? 'CompleteRegistration' : 'JoinedWaitlist'
+  const eventId = conversionEventId(registration.reference, eventName, reactivationCancelledAt)
+
+  // Deferred past the response (see runAfterResponse) so a slow or failing
+  // call to Meta never delays or breaks the registration itself — the
+  // teacher's confirmation does not wait on this. sendConversionEvent
+  // applies its own environment gating (see meta-capi/send-conversion-event.ts)
+  // and never throws.
+  runAfterResponse(() =>
+    sendConversionEvent({
+      eventName,
+      eventId,
+      actionSource: 'website',
+      eventSourceUrl: `${getSiteUrl()}/training`,
+      courseName: course.name,
+      clientIpAddress: input.ip,
+      clientUserAgent: input.userAgent,
+    }),
+  )
+
   if (registration.status === 'CONFIRMED') {
     return {
       status: 'CONFIRMED',
@@ -451,6 +500,7 @@ export async function registerForCourse(input: RegisterInput): Promise<Registrat
       courseTimeRange,
       emailStatus,
       promo,
+      eventId,
     }
   }
 
@@ -463,5 +513,6 @@ export async function registerForCourse(input: RegisterInput): Promise<Registrat
     waitlistPosition: waitlistPosition!,
     promo,
     emailStatus,
+    eventId,
   }
 }
