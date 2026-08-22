@@ -15,6 +15,8 @@
     "test:campaign-composer": "vitest run --config vitest.campaign-composer.config.mts",
     "test:waitlist-promotion": "vitest run --config vitest.waitlist-promotion.config.mts",
     "test:registration-conflict": "vitest run --config vitest.registration-conflict.config.mts",
+    "testdb:migrate": "node --env-file=.env.test scripts/testdb-migrate.mts",
+    "testdb:run": "node --env-file=.env.test node_modules/.bin/vitest run",
     "typecheck": "tsc --noEmit",
     "admin:hash": "node scripts/admin-hash.mts",
     "seed:analytics-fixture": "node scripts/seed-training-analytics-fixture.mts",
