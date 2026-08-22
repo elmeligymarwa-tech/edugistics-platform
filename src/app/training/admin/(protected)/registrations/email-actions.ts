@@ -4,10 +4,24 @@ import { getDefaultCampaignTemplate } from '@/domain/training/campaign-templates
 import { usesZoomLinkToken } from '@/domain/training/personalization'
 import { CampaignEmailType } from '@/domain/training/schema'
 import { requireAdminSession } from '@/lib/training/auth/require-admin'
+import { databaseEnvironmentBadgeInfo, resolveDatabaseEnvironment, type DatabaseEnvironmentBadgeInfo } from '@/lib/training/database-environment'
 import { renderCampaignEmail } from '@/lib/training/email/campaign-render'
 import { contentSchema, criteriaInputSchema, fieldErrorsFromZod, toCriteria, type RecipientCriteriaInput } from '@/lib/training/email/criteria'
 import { renderCampaignBodyHtml } from '@/lib/training/email/rich-text'
 import { resolveRecipients, toPersonalizationValues } from '@/lib/training/email/recipients'
+
+/**
+ * Same badge as the admin header (database-environment-badge.tsx), fetched
+ * separately here because the composer is a Client Component and can't read
+ * DATABASE_URL itself — only this label/variant crosses that boundary, never
+ * the connection string. This is the highest-stakes screen for a
+ * wrong-database mistake, so it's surfaced right next to the Send button,
+ * not just in the header behind the dialog.
+ */
+export async function getDatabaseEnvironmentBadgeAction(): Promise<DatabaseEnvironmentBadgeInfo | null> {
+  await requireAdminSession()
+  return databaseEnvironmentBadgeInfo(resolveDatabaseEnvironment(process.env.DATABASE_URL))
+}
 
 export type ActionResult<T = undefined> =
   | { success: true; data: T }

@@ -8,9 +8,14 @@ vi.mock('next/navigation', () => ({
 
 const previewCampaignAction = vi.fn()
 const getTemplateForSelectionAction = vi.fn()
+// Resolves to null (no badge) by default — none of these tests are about the
+// database-environment badge itself, so it just needs to settle rather than
+// leave the component's fetch hanging or throwing on a bare vi.fn().
+const getDatabaseEnvironmentBadgeAction = vi.fn().mockResolvedValue(null)
 vi.mock('@/app/training/admin/(protected)/registrations/email-actions', () => ({
   previewCampaignAction: (...args: unknown[]) => previewCampaignAction(...args),
   getTemplateForSelectionAction: (...args: unknown[]) => getTemplateForSelectionAction(...args),
+  getDatabaseEnvironmentBadgeAction: (...args: unknown[]) => getDatabaseEnvironmentBadgeAction(...args),
 }))
 
 const sendCampaignAction = vi.fn()

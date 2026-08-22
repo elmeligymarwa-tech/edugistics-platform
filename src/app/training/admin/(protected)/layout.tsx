@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { isAdminAuthenticated } from '@/lib/training/auth/require-admin'
+import { DatabaseEnvironmentBadge } from '@/components/training/admin/database-environment-badge'
 import { TrainingAdminSignOutButton } from '@/components/training/admin/sign-out-button'
 
 export default async function TrainingAdminProtectedLayout({ children }: { children: React.ReactNode }) {
@@ -15,6 +16,7 @@ export default async function TrainingAdminProtectedLayout({ children }: { child
       <header className="flex items-center justify-between border-b border-border px-6 py-3">
         <nav className="flex items-center gap-4">
           <span className="text-sm font-medium text-heading">Edugistics Training</span>
+          <DatabaseEnvironmentBadge />
           <Link href="/training/admin" className="text-sm text-muted-foreground hover:text-foreground">
             Analytics
           </Link>

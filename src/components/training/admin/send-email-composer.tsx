@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Field, FieldError, FieldLabel } from '@/components/ui/field'
@@ -13,7 +14,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { getDefaultCampaignTemplate } from '@/domain/training/campaign-templates'
 import { PERSONALIZATION_TOKENS } from '@/domain/training/personalization'
 import { CAMPAIGN_EMAIL_TYPE_LABELS, CampaignEmailType } from '@/domain/training/schema'
+import type { DatabaseEnvironmentBadgeInfo } from '@/lib/training/database-environment'
 import {
+  getDatabaseEnvironmentBadgeAction,
   getTemplateForSelectionAction,
   previewCampaignAction,
   type CampaignPreview,
@@ -30,6 +33,12 @@ const TEMPLATE_OPTIONS: SelectOption[] = CampaignEmailType.options.map((value) =
 }))
 
 const DEFAULT_ZOOM_BUTTON_LABEL = 'Join Webinar'
+
+/** Shared across every step's DialogTitle — this is the highest-stakes screen for a wrong-database send. */
+function DbBadgeInline({ badge }: { badge: DatabaseEnvironmentBadgeInfo | null }) {
+  if (!badge) return null
+  return <Badge variant={badge.variant}>{badge.label}</Badge>
+}
 
 interface SendEmailComposerProps {
   open: boolean
@@ -61,7 +70,12 @@ export function SendEmailComposer({ open, onOpenChange, criteria, initialSummary
   const [testAddress, setTestAddress] = useState('')
   const [testSending, setTestSending] = useState(false)
   const [testMessage, setTestMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
+  const [dbBadge, setDbBadge] = useState<DatabaseEnvironmentBadgeInfo | null>(null)
   const { textareaRef, replaceSelection, insertAtCursor, insertBlock, insertBulletList } = useMarkdownBodyEditor(setBody)
+
+  useEffect(() => {
+    if (open) void getDatabaseEnvironmentBadgeAction().then(setDbBadge)
+  }, [open])
 
   useEffect(() => {
     if (!open) {
@@ -206,7 +220,10 @@ export function SendEmailComposer({ open, onOpenChange, criteria, initialSummary
         {step === 'compose' ? (
           <>
             <DialogHeader>
-              <DialogTitle>Send Email</DialogTitle>
+              <DialogTitle className="flex items-center gap-2">
+                Send Email
+                <DbBadgeInline badge={dbBadge} />
+              </DialogTitle>
               <DialogDescription>Opening this composer never sends anything.</DialogDescription>
             </DialogHeader>
 
@@ -346,7 +363,10 @@ export function SendEmailComposer({ open, onOpenChange, criteria, initialSummary
         ) : step === 'preview' && preview ? (
           <>
             <DialogHeader>
-              <DialogTitle>Preview</DialogTitle>
+              <DialogTitle className="flex items-center gap-2">
+                Preview
+                <DbBadgeInline badge={dbBadge} />
+              </DialogTitle>
               <DialogDescription>Review carefully — sending cannot be undone.</DialogDescription>
             </DialogHeader>
 
@@ -430,7 +450,10 @@ export function SendEmailComposer({ open, onOpenChange, criteria, initialSummary
         ) : step === 'duplicate-warning' && duplicateInfo && preview ? (
           <>
             <DialogHeader>
-              <DialogTitle>Possible duplicate send</DialogTitle>
+              <DialogTitle className="flex items-center gap-2">
+                Possible duplicate send
+                <DbBadgeInline badge={dbBadge} />
+              </DialogTitle>
               <DialogDescription>These teachers already received this email type recently.</DialogDescription>
             </DialogHeader>
 
