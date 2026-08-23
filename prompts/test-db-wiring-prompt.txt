@@ -1,0 +1,120 @@
+Wire a dedicated test database into the test suite.
+
+Work on a new branch chore/test-database off main. Do not merge to main.
+
+==================================================
+OPERATIONAL RULES, READ FIRST
+==================================================
+
+Until the test database is wired and verified, the same rule applies as
+every previous task: do not run the full test suite. The guard added in
+fix/test-db-guard will refuse anyway. Do not work around it.
+
+Once the test database is wired and you have confirmed the connection points
+at the test project, running the full suite becomes the point of this task.
+
+Do not modify the school-planning application under /app.
+
+Never write database credentials into any file you create. Tell me what to
+put where, and I will create the file myself.
+
+==================================================
+BACKGROUND
+==================================================
+
+Production Supabase project ref: ndkhfqhyuglwtpwlxrxo
+A second Supabase project has been created for testing. I hold its pooled
+connection string and its direct connection string.
+
+The existing guard requires two conditions to pass: DATABASE_URL must not
+match the production denylist, and TEST_DATABASE_URL must match DATABASE_URL
+exactly. Work with that design. Do not weaken it.
+
+Five DB-backed test files gained new or rewritten cases during recent work
+and have never been executed. Six tests were already failing before that work
+began, from Prisma interactive transaction timeouts against the Supabase
+pooler.
+
+==================================================
+WHAT IS NEEDED
+==================================================
+
+1. Schema application
+
+   A command that applies the current Prisma schema to the test database.
+   Note that Prisma needs the direct connection for migrations and the pooled
+   connection for queries. Check how the schema currently declares url and
+   directUrl and follow the same pattern.
+
+   The command must be safe to run repeatedly.
+
+   It must be impossible to point this command at production. Apply the same
+   denylist logic the test guard uses, or reuse the guard itself.
+
+2. Running the suite against the test database
+
+   A command that runs the full suite with the test database configured,
+   without requiring me to edit .env or export variables by hand each time.
+
+   The intended file for these credentials is .env.test. Add it to
+   .gitignore. Create .env.test.example with placeholders and comments
+   explaining each value. Do not create .env.test itself.
+
+3. Keeping the two databases in step
+
+   Document, in a short markdown file at the repository root, what I must run
+   after any future schema change so the test database does not drift.
+   One page maximum. Commands and reasons only.
+
+4. First real run
+
+   Once wired, verify the connection points at the test project and not
+   production, then run the full suite.
+
+   Report the complete list of failures: file, test name, and the actual
+   error. Group them into what you judge to be pre-existing latency failures
+   versus genuine breakage from recent work.
+
+   Do not fix any failing test in this task. I want the unedited picture
+   first. If you believe a failure is trivial and obvious, say so and leave
+   it alone.
+
+==================================================
+CONSTRAINTS
+==================================================
+
+The existing guard must keep working exactly as it does today. Verify this by
+running test:db-guard after your changes.
+
+If DATABASE_URL is unset or points at production, everything must still fail
+closed, with the same clear message.
+
+No new bypass. TEST_DATABASE_URL is an additional required condition, never
+an override.
+
+==================================================
+CHECKS
+==================================================
+
+Report actual numbers:
+  npm run typecheck
+  npm run lint
+  npm run build
+  npm run test:db-guard
+  the full suite, against the test database
+
+==================================================
+DELIVERABLE
+==================================================
+
+Tell me exactly what to put in .env.test, variable by variable, and which of
+my two connection strings goes where.
+
+Show the command for applying schema to the test database, and the command
+for running the suite against it.
+
+Confirm what happens if either command is pointed at production.
+
+Give me the full failure list from the first run, grouped as described.
+
+Commit to chore/test-database. Report when done. Do not merge.

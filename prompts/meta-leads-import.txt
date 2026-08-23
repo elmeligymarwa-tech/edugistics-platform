@@ -1,0 +1,167 @@
+Import Meta lead-form leads into the mailing list.
+
+Work on a new branch feature/meta-leads-import off main. Do not merge to main.
+
+One phase at a time. Report after each and wait for approval.
+
+==================================================
+OPERATIONAL RULES
+==================================================
+
+The test suite runs against the test database (paipadncvmjikeedxnth). Run the full
+suite with npm run testdb:run and report actual numbers.
+
+Do not modify the existing school-planning application under /app.
+
+Never write to the production database from a script. The import runs through an
+admin page, not a CLI script.
+
+==================================================
+PURPOSE, READ THIS BEFORE DESIGNING ANYTHING
+==================================================
+
+1,057 leads came from a Meta lead-form campaign that ran 17 to 20 August 2026. They
+gave their details to attend a free webinar. They did NOT consent to marketing.
+
+The ONLY purpose of this import is attribution: when one of these people later
+registers for a course on their own initiative, we want to know they originally came
+from the Meta campaign, and from which creative.
+
+This is not a marketing list build. Consent is recorded as false for every row and
+nothing in this feature may send them anything.
+
+==================================================
+WHAT TO IMPORT, AND WHAT TO DISCARD
+==================================================
+
+The export has 21 columns. Most are worthless. Import only these:
+
+  email             the join key, lowercased and trimmed
+  full_name         display only
+  phone_number      already E.164 in this export, store as text, do not reformat
+  id                Meta's lead id, store as metaLeadId with a unique constraint
+  created_time      when the lead was captured
+  ad_name           the creative, 5 distinct values, this is the real attribution
+  platform          fb or ig
+
+DISCARD these, and do not offer to add them later:
+
+  current_school_or_institution
+      Unusable. 51 rows say "school", 38 say "School", 22 say "institution", 18 say
+      "current school". 748 of 813 distinct values appear exactly once. Importing this
+      would poison the canonical schools table before it is built.
+
+  subject_taught, grade_or_year_taught
+      Free text, 244 and 605 distinct values. Same problem.
+
+  date_of_birth
+      No lawful purpose under PDPL for this use. Also remove this field from the Meta
+      lead form itself so it stops being collected.
+
+  job_title
+      Unreliable, and serves no purpose for attribution.
+
+  campaign_id, campaign_name, adset_id, adset_name, form_id, form_name, ad_id
+      Each has exactly one distinct value across all 1,057 rows. Storing them records
+      nothing. ad_name is the only field with variance.
+
+  is_organic
+      False for every row.
+
+  retailer_item_id
+      Empty for every row.
+
+==================================================
+CONSENT AND SMS
+==================================================
+
+Every imported subscriber records:
+
+  marketing consent   false
+  sms consent         false
+  consent source      identifies this as a Meta lead-form import, with the date
+
+If the Subscriber model has no field for SMS consent, add one, defaulting to false.
+A phone number stored with no consent field is the version that creates exposure,
+because in six months nobody will remember whether these people agreed to be texted.
+They did not. The record must say so.
+
+No code path in this feature may email or text an imported lead.
+
+==================================================
+IDEMPOTENCY AND DEDUPLICATION
+==================================================
+
+metaLeadId carries a unique constraint. Re-running the same file imports nothing new.
+
+Deduplicate on lowercased, trimmed email, NOT on lead id. Two rows in this file share
+an email with another row (4 rows in duplicate groups). Keep the earliest created_time
+and skip the later one, reporting it as a duplicate rather than failing.
+
+If an email already exists in the mailing list from another source, link the metaLeadId
+and attribution fields onto the existing subscriber rather than creating a second row.
+Do not change that subscriber's existing consent state in either direction. A person who
+already consented stays consented; a person who did not stays unconsented.
+
+==================================================
+LINKING TO REGISTRATIONS
+==================================================
+
+Registration already links a new teacher to an existing landing-page subscriber. Reuse
+that mechanism exactly. Do not write a second linking path.
+
+When a linked subscriber carries Meta attribution, that attribution must be visible on
+the registration in the admin, so the question "which creative produced this
+registration" can be answered without a spreadsheet.
+
+==================================================
+ADMIN UPLOAD PAGE
+==================================================
+
+An admin page that accepts the xlsx and runs in two steps.
+
+Step 1, dry run, always first, never skippable:
+  total rows read
+  valid rows
+  rows rejected and why
+  duplicates within the file
+  emails already in the mailing list, and whether they would be linked or skipped
+  new subscribers that would be created
+  a breakdown by ad_name and platform
+
+Step 2, commit, only after the dry run, on an explicit second click.
+
+The page must show the environment badge. Importing 1,057 real people into the wrong
+database is exactly the mistake the badge exists to prevent.
+
+If the upload dies partway, re-running must be safe. The unique constraint on
+metaLeadId is what guarantees that; prove it with a test.
+
+==================================================
+CHECKS
+==================================================
+
+Run and report actual numbers:
+  npm run typecheck
+  npm run lint
+  npm run build
+  npm run testdb:run
+
+Tests must cover: consent recorded false in every path, dedupe on email keeping the
+earliest, an existing subscriber's consent state left untouched when linked, re-running
+the same file being a no-op, and a partial failure being safely resumable.
+
+==================================================
+DELIVERABLE
+==================================================
+
+Report the schema change, if any, and why it was needed.
+
+Show the exact set of fields written for one imported lead, so I can confirm nothing
+discarded above crept back in.
+
+Confirm no code path in this feature can send an email or SMS to an imported lead.
+
+Report the dry-run output against the real file before any commit step is built.
+
+Report actual check numbers. Commit to feature/meta-leads-import. Do not merge.

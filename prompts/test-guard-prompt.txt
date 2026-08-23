@@ -1,0 +1,92 @@
+Add a guard that prevents the test suite from running against the production
+database.
+
+Work on a new branch fix/test-db-guard off main. Do not merge to main.
+
+==================================================
+OPERATIONAL RULES, READ FIRST
+==================================================
+
+The test suite currently writes to the live production Supabase database.
+That is the problem this task exists to fix.
+
+Do not run the full test suite at any point during this task. Not to
+reproduce the problem, not to confirm the fix works, not for any reason.
+Run only tests scoped to the guard file you create.
+
+If you believe a full run is necessary, stop and report why. Do not run it.
+
+Do not modify the school-planning application under /app.
+
+==================================================
+BACKGROUND
+==================================================
+
+On 17 August the full suite was run against production. The rule forbidding
+it lives in CLAUDE.md, and an explicit instruction in a prompt outranked it.
+A written rule loses that argument. A code-level guard does not.
+
+The production Supabase project ref is ndkhfqhyuglwtpwlxrxo.
+
+==================================================
+WHAT IS NEEDED
+==================================================
+
+A check that runs before any test executes, and aborts the entire run if the
+database it is pointed at looks like production.
+
+Requirements:
+
+  The check runs in global setup, before the first test file loads. Aborting
+  after tests have already written rows is useless.
+
+  It aborts the whole run, not an individual test. Exit non-zero.
+
+  The failure message states plainly what happened, which database was
+  detected and what to do instead. Someone reading it at speed must
+  understand immediately.
+
+  Detection must not rely on a single signal. Check the production project
+  ref, and separately require an explicit opt-in marker for a database to be
+  treated as safe for testing. A new database with an unfamiliar host should
+  fail closed, not pass.
+
+  There must be no environment variable or flag that bypasses the guard.
+  A bypass will be used under time pressure, which is exactly when it must
+  not be.
+
+  The guard must work whether tests are run by npm, by a CI runner, or by an
+  agent invoking the test command directly.
+
+  Add the required test-database variable to .env.local.example with a
+  placeholder and a comment explaining it.
+
+Recommend, but do not set up, whatever you judge the right longer-term
+arrangement to be for an actual test database. Report the options with their
+trade-offs. I will decide separately.
+
+==================================================
+CHECKS
+==================================================
+
+Run and report actual numbers:
+  npm run typecheck
+  npm run lint
+  npm run build
+  tests scoped to the guard file only
+
+==================================================
+DELIVERABLE
+==================================================
+
+Show the exact failure output someone sees when the guard fires.
+
+Explain how the guard behaves in each case:
+  DATABASE_URL points at production
+  DATABASE_URL is unset
+  DATABASE_URL points at an unrecognised database with no safe marker
+  DATABASE_URL points at a correctly marked test database
+
+Confirm there is no bypass.
+
+Commit to fix/test-db-guard. Report when done. Do not merge.

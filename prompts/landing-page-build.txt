@@ -1,0 +1,321 @@
+Build the Edugistics landing page, policy pages and contact page.
+
+Work on a new branch feature/landing-page off main. Do not merge to main.
+
+==================================================
+HARD SCOPE BOUNDARY, READ FIRST
+==================================================
+
+You may create or modify ONLY:
+
+  the public landing page route
+  new policy pages: privacy, refund and cancellation, terms and conditions,
+    payment policy, digital delivery policy
+  a new contact page
+  new components used only by the above
+  SEO metadata for the above routes only
+
+You may NOT touch, under any circumstances:
+
+  /app                       the school-planning application
+  /training/*                the teacher training registration system
+  /training/admin/*          the admin
+  prisma/schema.prisma       no schema changes at all
+  any existing API route
+  any existing server action
+  any existing email or Meta CAPI code
+
+If a requirement appears to need a change outside this list, STOP and report it
+rather than making the change. This codebase had six branches merged today and the
+training system is stable. Nothing in this task justifies putting that at risk.
+
+There is a /training/privacy page already live. Do not modify it. If the new
+privacy policy overlaps, report the overlap and let me decide; do not merge or
+redirect the two.
+
+==================================================
+NO PAYMENT GATEWAY
+==================================================
+
+There is no payment gateway. Do not build one, do not stub one, do not reference
+one, do not add a "Payment" step to any described flow, do not write copy implying
+card payment is available today.
+
+REGISTER NOW buttons link to the existing registration flow and stop there.
+
+The payment policy page still gets written, because the gateway application needs
+it, but it must describe payment handling in configurable, clearly-marked
+placeholder terms rather than naming a provider or claiming a capability.
+
+==================================================
+PHASING
+==================================================
+
+One phase at a time. Report after each and wait for approval.
+
+Phase 1  Policy pages and contact page. Lowest risk, unblocks the payment gateway
+         application. No integration with existing systems.
+Phase 2  Landing page structure, hero, about, why, footer, WhatsApp.
+Phase 3  Course and webinar sections wired to real data.
+
+Do not begin a later phase until I approve the earlier one.
+
+==================================================
+BEFORE WRITING ANY CODE
+==================================================
+
+Inspect the project and report back:
+
+  the current landing page route and what it contains
+  the existing brand colours, fonts and logo assets, and where they live
+  whether course data is reachable from a public page without auth, and how
+  whether any webinar model or webinar data exists at all
+  whether any contact form submission path already exists
+  whether testimonials exist anywhere in the data
+
+Do not invent answers. If something does not exist, say so plainly. I would rather
+omit a section than ship a fabricated one.
+
+==================================================
+PRIMARY OBJECTIVE
+==================================================
+
+A teacher lands on the page and understands within seconds that Edugistics runs
+professional development training, then finds and registers for a course.
+
+Journey: landing page, teacher training section, course, register. It ends at
+register. There is no payment step yet.
+
+Teacher training must sit in the upper-middle of the page, not the bottom.
+
+==================================================
+SKILLS
+==================================================
+
+Use the installed 21st and UI/UX development skills for the visual build. Read them
+before writing any component.
+
+If those skills ship default palettes, typography scales or component themes, they
+are overridden by the colour system below. The brand comes first; the skill supplies
+craft, not identity. Map the palette into the Tailwind config so components inherit
+it rather than carrying hardcoded colours.
+
+==================================================
+COLOUR SYSTEM, NON-NEGOTIABLE
+==================================================
+
+These four values are taken from the Edugistics logo. Use no colour outside this
+palette and its tints, other than neutrals.
+
+  Navy    #1E3060    dominant. Structure, headings, header, footer, body text.
+  Teal    #3C8C90    secondary. Links, icons, section accents, the tagline.
+  Gold    #E5B366    accent. Primary CTAs only, where the eye must land.
+  Coral   #D8483C    sparing. Urgency and status only: seats remaining,
+                     Registration Closed, form errors.
+
+The hierarchy is not decorative preference, it mirrors the logo itself: the mark is
+predominantly navy, the tagline is teal, gold and coral appear only inside the
+letterform.
+
+Do NOT distribute the four colours evenly across the page. Four saturated colours at
+equal weight reads as a children's app and destroys the consultancy positioning. Navy
+and generous white space carry the page. Teal appears regularly but quietly. Gold
+appears rarely and always means "act here". Coral is almost absent.
+
+Neutrals: white, and a small set of warm greys derived from navy at low opacity. No
+pure black.
+
+Check contrast. Gold on white fails for body text; if a gold CTA is used, the label
+sits in navy, not white. Verify every text and background pair meets WCAG AA before
+reporting the phase complete, and tell me any pair you had to adjust.
+
+==================================================
+BRANDING
+==================================================
+
+Use the existing Edugistics logo asset already in the project. Do not redraw,
+recolour or substitute it.
+
+Typography: one serif or high-quality sans for headings, one clean sans for body. No
+more than two families. Generous line height. The page should read as a professional
+educational consultancy, not a course marketplace.
+
+No heavy gradients. No decorative animation. No parallax. No floating illustrations.
+Whitespace and typographic hierarchy do the work.
+
+If the project already defines brand fonts, use those and do not introduce new ones.
+
+==================================================
+STRUCTURE
+==================================================
+
+Header, sticky, not tall. Logo left. Nav: Home, About, Teacher Training, Webinars,
+Services, Contact. CTA: Register for Training. Hamburger on mobile.
+
+Hero.
+  Headline:   Empowering Educators. Transforming Education.
+  Support:    Edugistics provides professional development, teacher training,
+              educational consultancy and school management solutions designed to
+              help educators and educational institutions achieve lasting impact.
+  Primary:    Explore Teacher Training
+  Secondary:  Upcoming Webinars
+  Plus a WhatsApp CTA.
+
+Teacher training section, the conversion section.
+  Heading:    Professional Development for Teachers
+  Support:    Learn. Grow. Lead. Enhance your teaching practice through practical,
+              high-quality professional development programmes designed for
+              today's educators.
+
+  Course cards pull from real course data. Per card, only fields that actually
+  exist: title, short description, category, date, duration, delivery method, fee,
+  discounted fee, seats remaining, status, REGISTER NOW.
+
+  Sold out shows "Registration Closed". Not yet open shows "Coming Soon".
+
+  If a field does not exist in the data, omit it. Do not display a placeholder.
+  Do not create fake courses, fake prices or fake dates.
+
+Training CTA banner.
+  Ready to Develop Your Teaching Skills?
+  Explore our upcoming professional development programmes and secure your place
+  today.
+  VIEW ALL TRAINING COURSES / CONTACT EDUGISTICS
+
+Webinars section.
+  Only build this if webinar data actually exists. If it does not, report that and
+  omit the section rather than mocking it. Do not build a parallel webinar system.
+
+About Edugistics, concise.
+  Edugistics is an educational management and consultancy organisation dedicated
+  to supporting schools, educators and educational leaders through professional
+  expertise, strategic guidance and high-quality training.
+  Services: teacher training, professional development, school management,
+  educational consultancy, curriculum support, quality assurance, strategic
+  planning, leadership development.
+
+Why Choose Edugistics, four or five value propositions: practical learning,
+professional expertise, quality development, educator-focused, flexible learning.
+No accreditation or recognition claims.
+
+Testimonials only if real ones exist in the data. Otherwise omit entirely.
+
+Final CTA before the footer.
+  Continue Your Professional Development
+  Take the next step in your teaching journey with Edugistics.
+
+Contact section on the landing page, and a dedicated contact page.
+
+Footer with contact details, navigation and policy links.
+
+==================================================
+BUSINESS DETAILS, THE ONLY ONES YOU MAY USE
+==================================================
+
+  Edugistics
+  Educational Management and Consultancy
+  Building 5, Zizina Gardens, New Cairo, Cairo, Egypt
+  01040400015
+  01040400016
+  Info@edugistics.online
+  WhatsApp: +201040400015
+
+Phone numbers use tel:. Email uses mailto:. WhatsApp uses https://wa.me/201040400015
+with no spaces or stray characters.
+
+Footer copyright: (c) 2026 Edugistics. All Rights Reserved.
+
+Invent nothing else. No registration number, no tax number, no accreditation, no
+certification, no awards, no partnerships, no trainer names, no testimonials, no
+course dates, no prices, no refund percentages.
+
+==================================================
+WHATSAPP
+==================================================
+
+A floating button on desktop and mobile. Recognisable, aria-labelled, opens in a new
+tab, does not obscure content, works on mobile. Optional prefilled message:
+"Hello Edugistics, I would like to learn more about your teacher training courses."
+It must not send automatically.
+
+==================================================
+POLICY PAGES
+==================================================
+
+Five pages: privacy, refund and cancellation, terms and conditions, payment policy,
+digital delivery policy. All linked from the footer.
+
+Write them for an Egyptian payment gateway application. That means the Egyptian
+address, both phone numbers and the email must be reachable from the footer and the
+contact page.
+
+Rules for all five:
+
+  Claim compliance with no specific legislation or certification.
+  Name no payment provider.
+  State no refund period or percentage. Where a business decision is still needed,
+    use an obvious marked placeholder and list it in your final report so I can fill
+    it in.
+  Do not state that Edugistics stores card data. Do not state that a provider does
+    either, since no provider is chosen.
+  No physical shipping policy. Nothing physical is sold.
+
+The digital delivery policy covers course and webinar access, email confirmation,
+access credentials, materials, technical requirements, the teacher's responsibility
+for a valid email address, and what happens if a session is rescheduled.
+
+==================================================
+CONTACT PAGE
+==================================================
+
+The business details above. A contact form only if a submission path already exists.
+If one does not, do not build a new one in this task; report it and I will decide
+separately. Never put a key in client code.
+
+==================================================
+QUALITY BAR
+==================================================
+
+Responsive across phone, tablet, laptop, desktop. Mobile matters most; most teachers
+arrive on a phone. Real touch targets.
+
+Accessibility: heading hierarchy, semantic HTML, keyboard navigation, ARIA where
+needed, contrast, visible focus, alt text, nothing conveyed by colour alone.
+
+SEO for the new routes only.
+  Title: Edugistics | Teacher Training & Educational Consultancy
+  Description: Edugistics provides professional development, teacher training,
+  educational consultancy and school management solutions for educators and
+  educational institutions.
+  Open Graph, canonical, favicon. No keyword stuffing.
+
+Performance: lazy-load non-critical images, size images properly, no unnecessary
+libraries, light animation, fast on mobile.
+
+Security: no keys in client code, server-side validation on anything that accepts
+input, no weakening of existing controls.
+
+==================================================
+CHECKS
+==================================================
+
+  npm run typecheck
+  npm run lint
+  npm run build
+  npm run testdb:run
+
+Report actual numbers. The suite was 846 passing across 96 files before this branch.
+If that number drops, something outside scope was touched.
+
+==================================================
+DELIVERABLE PER PHASE
+==================================================
+
+Files created and modified, with a diff stat.
+Confirmation that nothing under /app, /training, or prisma was touched.
+Which existing components and data you reused rather than rebuilt.
+Anything you omitted because the underlying data did not exist.
+Every placeholder left for me to fill in.
+Actual check numbers.
+
+Commit to feature/landing-page. Do not merge.

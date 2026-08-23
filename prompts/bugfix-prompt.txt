@@ -1,0 +1,140 @@
+Fix four defects found during live use of the training platform.
+
+Work on a new branch fix/post-webinar-defects off main. Do not merge to main.
+
+==================================================
+OPERATIONAL RULES, READ FIRST
+==================================================
+
+The test suite writes to the live production Supabase database.
+Run only tests scoped to the files you create or change.
+Do not run the full suite. If you believe a full run is necessary, stop and
+report why.
+
+Do not modify the school-planning application under /app.
+
+Work through the four defects one at a time. Report after each. Do not begin
+the next until I approve.
+
+==================================================
+DEFECT 1: BULK EMAIL STOPS AT ~268 RECIPIENTS
+==================================================
+
+Symptom: a campaign addressed to 500 recipients sends to roughly 268, then
+the process hangs and never completes. Remaining recipients are never sent
+to and, I believe, are left in a non-final state.
+
+Hypothesis to verify first, before changing anything:
+The send loop runs inside a single Vercel serverless invocation and is being
+killed at the function timeout. 268 sequential sends at roughly 200ms each
+lands very close to a 60 second limit. Confirm or reject this by reading the
+route and checking the configured maxDuration.
+
+Report the true cause before proposing a fix.
+
+Requirements for the fix:
+
+  Recipients must never be silently dropped. Every intended recipient ends
+  in a definite state: sent, failed with a reason, or explicitly queued.
+
+  Raising maxDuration alone is not an acceptable fix. It defers the same
+  failure to a larger list.
+
+  Investigate Resend's batch endpoint, which accepts multiple messages in a
+  single API call. Personalisation per recipient must be preserved.
+
+  Persist progress as the send proceeds, so an interrupted run resumes from
+  where it stopped rather than restarting or losing recipients.
+
+  A partially completed campaign must be visible in the admin: how many sent,
+  how many pending, how many failed and why.
+
+  Re-running a campaign must not double-send to anyone already sent.
+
+Note the prior incident where MARKETING_EMAIL_FROM was misspelled in Vercel
+and silently left recipients at PENDING. Check whether that same PENDING
+state is what these ~232 recipients are stuck in.
+
+==================================================
+DEFECT 2: RECIPIENT SELECTION IS LOST ON FILTER CHANGE
+==================================================
+
+Symptom: in the campaign composer I select all teachers, then switch to the
+waiting list filter. The page re-renders and every selection is discarded. I
+have to start again.
+
+Requirements:
+
+  Selections persist across filter and tab changes within the composer.
+  Selection is tracked by recipient id, not by list position.
+  The UI shows a running total of how many recipients are currently selected,
+  visible regardless of which filter is active.
+  A clear-all control exists, so the persistence cannot trap someone.
+
+Report what was causing the reset.
+
+==================================================
+DEFECT 3: LINKS RENDER AS PLAIN TEXT IN CAMPAIGN EMAILS
+==================================================
+
+Symptom: inserting a Zoom link into a campaign produces plain text. The
+recipient has to copy and paste it.
+
+Requirements:
+
+  A link inserted into a campaign renders as a clickable button in the HTML
+  email, with configurable label text, defaulting to "Join Webinar".
+
+  Use table-based markup for the button. Div-and-CSS buttons break in Outlook.
+
+  The plain text alternative of the same email must contain the full raw URL
+  on its own line. Never ship an HTML-only campaign.
+
+  The URL must survive intact. Do not wrap, shorten or rewrite it.
+
+==================================================
+DEFECT 4: NO WAY TO PROMOTE A WAITLIST ENTRY
+==================================================
+
+Requirement: from the three-dot menu on a waitlist row in the admin, promote
+that person to a confirmed registration.
+
+On promotion:
+
+  The record becomes a confirmed registration and is counted as one
+  everywhere: analytics, attendance sheets, Excel exports, seat counts.
+
+  It generates a registration reference in the existing EDU-YYYY-XXXXXX
+  format, consistent with every other registration.
+
+  Seat capacity is checked. If the course is full, warn clearly and require a
+  deliberate confirmation to exceed capacity. Do not silently overfill.
+
+  Sending a confirmation email is a choice presented at the point of
+  promotion, not an automatic side effect. Someone promoted a week after the
+  event should not receive a joining email.
+
+  The promotion is reversible, or at minimum recorded, so a mistake can be
+  traced. Note that individual admin accounts do not exist yet, so attribution
+  is limited for now. Design the record so a user id can be attached later.
+
+==================================================
+CHECKS
+==================================================
+
+After each defect, run and report actual numbers:
+  npm run typecheck
+  npm run lint
+  npm run build
+  tests scoped to the files you changed
+
+==================================================
+DELIVERABLE
+==================================================
+
+For each defect: the true cause, what you changed, and how you verified it.
+
+For defect 1 specifically: show the recipient state transitions and explain
+what now happens if the process is interrupted at recipient 268 of 500.
+
+Commit to fix/post-webinar-defects. Report when done. Do not merge.

@@ -1,0 +1,175 @@
+Add Meta Conversions API server-side event tracking.
+
+Work on a new branch feature/meta-capi off main. Do not merge to main.
+
+==================================================
+OPERATIONAL RULES, READ FIRST
+==================================================
+
+The test suite runs against the dedicated test database
+(paipadncvmjikeedxnth), not production. Run the full suite as normal and
+report the actual pass and fail counts.
+
+Do not modify the existing school-planning application under /app.
+
+One phase at a time. Report after each phase and wait for approval before
+continuing.
+
+==================================================
+CONTEXT
+==================================================
+
+The browser Meta Pixel is already live on main. It fires:
+
+  CompleteRegistration  on the confirmation screen for a confirmed registration
+  JoinedWaitlist        custom event, on the confirmation screen for a waitlist entry
+
+Both carry only cd[course_name]. Both are guarded by sessionStorage keyed on
+the registration reference so they fire exactly once.
+
+Problem being solved: Safari, iOS browsers and ad blockers stop a large share
+of browser pixel events. Meta undercounts registrations by an estimated 30 to
+50 percent. Server-side events are not blocked.
+
+==================================================
+WHAT IS NEEDED
+==================================================
+
+A server-side Conversions API integration that sends the same two events from
+the backend, deduplicated against the browser pixel.
+
+DECIDED SCOPE. This is deliberately a no-personal-data integration.
+
+Send:
+  event_name        CompleteRegistration or JoinedWaitlist
+  event_time        unix timestamp
+  event_id          shared with the browser event, see deduplication below
+  event_source_url  the confirmation page URL
+  action_source     "website"
+  custom_data       course_name only
+  user_data         client_ip_address and client_user_agent only
+
+Do NOT send:
+  email, phone, first name, last name, school, subject, grade,
+  registration reference, external_id, fbp, fbc, or any hashed
+  version of any of the above
+
+The absence of hashed contact data is intentional. Do not add it to improve
+match quality. Do not suggest adding it in code comments.
+
+==================================================
+ENVIRONMENT GATING, MANDATORY
+==================================================
+
+A registration created in local development must never reach the live Meta
+dataset. Fixture registrations sent as real conversions would corrupt the ad
+algorithm's training data.
+
+Requirements:
+
+1. Determine the environment using the existing helper in
+   src/lib/training/database-environment.ts. Do not write a second copy of
+   the project ref detection. Two implementations will drift apart, and the
+   one that drifts is the one that silently sends real events.
+
+2. Behaviour by environment:
+
+   PRODUCTION ref   send live, no test_event_code
+   Any other ref    send only if a test_event_code environment variable is
+                    set, and include it on every event. If it is not set,
+                    do not send at all.
+
+3. Log which path was taken on the first send of a process, so it is visible
+   in local terminal output and in Vercel logs which mode is active.
+
+4. Never infer the environment from NODE_ENV. NODE_ENV says nothing about
+   which database or dataset is connected.
+
+==================================================
+DEDUPLICATION, THE CRITICAL PART
+==================================================
+
+Browser and server will both send the same event. Without a shared event_id
+Meta counts each registration twice and every conversion metric is wrong.
+
+Requirements:
+
+1. Generate one event_id per registration event, server-side, at the point the
+   registration or waitlist entry is confirmed. Derive it deterministically
+   from the registration reference plus the event name so a retry cannot
+   produce a second id.
+
+2. Return that event_id to the client as part of the confirmation response.
+
+3. The browser pixel must send the same event_id via the eventID parameter on
+   its fbq track call. This means changing the existing tracking function
+   signatures in src/lib/meta-pixel/events.ts to accept an event id alongside
+   the course name.
+
+4. The existing sessionStorage refresh guard must continue to work. A page
+   refresh must not fire a second browser event.
+
+5. Do not break the existing rule that no personal data travels through the
+   tracking function parameters. Adding an event id string is acceptable
+   because it is derived, not personal.
+
+==================================================
+IMPLEMENTATION NOTES
+==================================================
+
+Dataset ID:  2040486313339822
+Token:       read from process.env.META_CAPI_ACCESS_TOKEN, server-side only.
+             Already set in Vercel, Production, marked Sensitive.
+             Never reference it in client code. Never prefix with NEXT_PUBLIC.
+
+Add META_CAPI_ACCESS_TOKEN and the test event code variable to
+.env.local.example and .env.development.local.example with placeholder values.
+
+Behaviour when the token is absent:
+  The application must work normally. Log once that CAPI is disabled.
+  Do not throw. Do not block a registration.
+
+Behaviour when the Meta API call fails:
+  Never block or fail a registration. The teacher's registration must
+  complete regardless. Catch, log, move on. A failed analytics call is not
+  a user-facing error.
+
+Send events asynchronously so the confirmation response is not delayed by a
+round trip to Meta. Note that this runs on Vercel Fluid Compute, so confirm
+the async send actually completes rather than being cut off when the response
+returns.
+
+==================================================
+CHECKS
+==================================================
+
+Run and report actual numbers:
+  npm run typecheck
+  npm run lint
+  npm run build
+  npm run test, full suite against the test database
+
+==================================================
+DELIVERABLE
+==================================================
+
+Report how deduplication works, showing where the event_id is generated and
+how it reaches both the browser and the server call.
+
+Show the exact JSON payload sent to Meta for one registration, so I can
+confirm it carries no personal data.
+
+Confirm what happens in each of the three environment paths, and show the
+log line for each.
+
+Confirm what happens when META_CAPI_ACCESS_TOKEN is absent.
+
+Confirm what happens when the Meta API call fails or times out.
+
+Confirm the async send is not truncated by the response returning.
+
+Report actual check numbers.
+
+Commit to feature/meta-capi.
+
+Report when done. Do not merge.
