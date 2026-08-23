@@ -19,7 +19,15 @@ const PUBLIC_PATHS = new Set([
   // parameter, not part of the pathname, so the exact path suffices.
   '/unsubscribe',
 ])
-const PUBLIC_PREFIXES = ['/icons/', '/brand/', '/_next/']
+const PUBLIC_PREFIXES = [
+  '/icons/',
+  '/brand/',
+  '/_next/',
+  // Static legal/marketing pages (refund policy, and the four more to
+  // follow) must stay reachable without SITE_PASSWORD — a payment gateway
+  // reviewer needs public access to them.
+  '/policies/',
+]
 
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.has(pathname)) return true

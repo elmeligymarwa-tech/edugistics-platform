@@ -34,6 +34,14 @@
   --palette-chart-5: #7c8aae;
 
   --radius: 0.5rem;
+
+  /* Marketing/policy brand palette — the four logo colours, distinct from
+   * --palette-* above which tints the in-app UI. Fixed for both colour
+   * schemes: marketing/policy chrome is not theme-adaptive. */
+  --brand-navy: #1e3060;
+  --brand-teal: #3c8c90;
+  --brand-gold: #e5b366;
+  --brand-coral: #d8483c;
 }
 
 .dark {
@@ -102,6 +110,10 @@
 }
 
 @theme inline {
+  --color-brand-navy: var(--brand-navy);
+  --color-brand-teal: var(--brand-teal);
+  --color-brand-gold: var(--brand-gold);
+  --color-brand-coral: var(--brand-coral);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
