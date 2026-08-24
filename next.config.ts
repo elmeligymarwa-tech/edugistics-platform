@@ -28,7 +28,13 @@ const nextConfig: NextConfig = {
       source: `/${path}`,
       destination: `/app/${path}`,
       permanent: true,
-    }));
+    })).concat([
+      {
+        source: "/training/privacy",
+        destination: "/policies/privacy",
+        permanent: true,
+      },
+    ]);
   },
 };
 
