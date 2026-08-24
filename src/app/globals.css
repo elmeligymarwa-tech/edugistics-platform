@@ -35,10 +35,10 @@
 
   --radius: 0.5rem;
 
-  /* Marketing/policy brand palette — the four logo colours, distinct from
+  /* Marketing/policy brand palette — navy sampled from the logo, teal gold and coral deliberately muted for interface use, distinct from
    * --palette-* above which tints the in-app UI. Fixed for both colour
    * schemes: marketing/policy chrome is not theme-adaptive. */
-  --brand-navy: #1e3060;
+  --brand-navy: #203868;
   --brand-teal: #3c8c90;
   --brand-gold: #e5b366;
   --brand-coral: #d8483c;
