@@ -1,60 +1,78 @@
-EDUGISTICS - PHASE 1 (v3)
+EDUGISTICS - PHASE 1 (v4)
 Policy pages, policies index, contact page and FAQ.
 No landing page work in this phase.
 
 Branch: feature/landing-page
 Auto mode: OFF. Confirm the status bar.
-Supersedes phase-1-policy-pages.txt and phase-1-policy-pages-v2.txt.
+Supersedes all earlier phase 1 prompts. Inspection is COMPLETE.
+Begin at Section D. Do not re-inspect.
 
 ====================================================================
-SECTION A - WHAT IS ALREADY KNOWN. DO NOT RE-INVESTIGATE.
+SECTION A - ESTABLISHED FACTS. DO NOT RE-INVESTIGATE.
 ====================================================================
 
-Verified by the owner on 24 August 2026. Treat as fact.
+Verified 24 August 2026 by owner inspection and by the Section B report.
 
-  App Router:              src/app
-  School-planning app:     src/app/app          OUT OF SCOPE
-  Training system:         src/app/training     OUT OF SCOPE
-  Brand tokens:            src/app/globals.css, --brand-navy / teal /
-                           gold / coral, marketing and policy only,
-                           not theme-adaptive. ALREADY CORRECT. DO NOT EDIT.
-  Tailwind:                v4. No tailwind.config file exists.
-  Existing components:     src/components/policy/policy-layout.tsx
-                           src/components/policy/policy-header.tsx
-                           src/components/policy/policy-footer.tsx
-  Existing policy route:   src/app/policies/refund-and-cancellation/page.tsx
-  Existing privacy route:  src/app/training/privacy
+PATHS
+  App Router:            src/app
+  School-planning app:   src/app/app          OUT OF SCOPE
+  Training system:       src/app/training     OUT OF SCOPE
+  Existing refund page:  src/app/policies/refund-and-cancellation/page.tsx
+  Existing privacy page: src/app/training/privacy
 
-The standing rule "never modify /app" means src/app/app. It does NOT mean
-the App Router. Do not refuse work on that basis.
+  "Never modify /app" means src/app/app. It does NOT mean the App
+  Router. Do not refuse work on that basis.
+
+STYLING
+  Tailwind v4. No tailwind.config file exists.
+  src/app/globals.css declares --brand-navy #203868, --brand-teal,
+  --brand-gold, --brand-coral on :root, then maps them to utilities via
+  an @theme inline block. Fixed across colour schemes.
+  ALREADY CORRECT. DO NOT EDIT globals.css.
+
+COMPONENTS, reuse as-is, build no replacement
+  src/components/policy/policy-layout.tsx
+    renders PolicyHeader, a max-w-[720px] main, PolicyFooter.
+    Props: { children: ReactNode } only.
+  src/components/policy/policy-header.tsx   no props
+  src/components/policy/policy-footer.tsx   no props
+    Its copyright line reads "(c) 2026 Edugistics. All Rights Reserved."
+    This is correct. DO NOT CHANGE IT.
+
+REGISTRATION FIELDS, from publicRegistrationSchema
+  courseId, fullName, email, phone, schoolName, subject, grade,
+  address (optional), marketingConsent (defaults false),
+  promoCode (optional), website (honeypot, never stored).
+
+SYSTEM BEHAVIOUR, three findings that override earlier drafts
+  1. Registration is NOT payment-gated. Status is decided purely on
+     capacity. The confirmation email states that payment is not
+     collected through the registration system and that payment
+     instructions follow separately.
+  2. There is NO Zoom link field. The email carries a free text
+     joiningInstructions value written by an admin, falling back to the
+     location. Do not promise a Zoom link.
+  3. Delivery has three modes: online, in person and hybrid. Hybrid is
+     deliberately excluded from this phase. Write nothing about it.
+
+CAPACITY
+  Below maxCapacity, or maxCapacity null: CONFIRMED.
+  Full and waitlist enabled: WAITLISTED with a position.
+  Full and waitlist disabled: submission rejected.
+
+METADATA PATTERN, follow exactly on every new page
+  SITE_URL from process.env.NEXT_PUBLIC_SITE_URL, falling back to
+  https://edugistics.online. Title suffixed "| Edugistics". One sentence
+  description. robots index and follow true. alternates.canonical built
+  from SITE_URL plus PATH.
 
 ====================================================================
-SECTION B - SHORT PRE-WORK INSPECTION. REPORT BEFORE ANY CODE.
+SECTION B - INSPECTION COMPLETE
 ====================================================================
 
-Section A removes most of this. Six items remain. Report all six, then
-stop and wait for approval.
-
-B.1 Read src/components/policy/policy-layout.tsx, policy-header.tsx and
-    policy-footer.tsx. Report what each renders and what props each takes.
-    Every new page uses these. Build no replacement.
-
-B.2 Report whether src/app/globals.css uses an @theme block or plain CSS
-    custom properties, and how brand-navy reaches the class
-    text-brand-navy. Report only. Change nothing.
-
-B.3 List the exact fields the public registration form collects. The
-    privacy policy is written from this list. Report only. Do not modify
-    the form.
-
-B.4 Report what the existing registration confirmation email contains and
-    when it sends. Report only. Do not open email code to edit it.
-
-B.5 Confirm whether registrations resolve to CONFIRMED or WAITLISTED on
-    capacity, and where that logic sits. Report only.
-
-B.6 Report the metadata pattern used by the existing refund page and
-    confirm every new page will follow it, including canonical URLs.
+No further inspection. Produce a short implementation plan listing the
+files you will create and modify, then stop and wait for approval before
+writing code.
 
 ====================================================================
 SECTION C - HARD SCOPE BOUNDARY
@@ -62,25 +80,28 @@ SECTION C - HARD SCOPE BOUNDARY
 
 Do not modify, refactor, reformat or add imports to:
 
-  src/components/app-shell/**
-  src/app/page.tsx
   src/app/app/**
   src/app/training/**
   src/app/api/**
   src/app/login/**
   src/app/unsubscribe/**
-  src/app/globals.css
+  src/app/page.tsx
   src/app/layout.tsx
+  src/app/globals.css
+  src/components/app-shell/**
+  src/components/policy/**
+  src/domain/training/**
+  src/lib/training/**
   prisma/schema.prisma
   any server action, email template or Meta CAPI/pixel code
   any existing test file
   package.json. Add no new packages.
 
 One permitted exception, requiring its own separate diff for approval:
-next.config, for the privacy redirect in section G.
+next.config, for the privacy redirect in Section G.
 
 Do not build a payment gateway, a cookie consent banner, the landing
-page, a hero, or any course listing. Later phases.
+page, a hero, or any course listing.
 
 ====================================================================
 SECTION D - WHAT TO BUILD
@@ -91,8 +112,8 @@ metadata pattern and its PolicyLayout usage. Rewrite the policy text:
 
   src/app/policies/refund-and-cancellation/page.tsx
 
-CREATE these routes under src/app/policies/, each following the exact
-structure and styling of the existing refund page:
+CREATE under src/app/policies/, each matching the existing refund page in
+structure, heading scale, spacing and section numbering:
 
   privacy
   terms-and-conditions
@@ -103,22 +124,21 @@ structure and styling of the existing refund page:
   attendance
   certificate
 
-CREATE an index at src/app/policies/page.tsx listing all nine with a one
+CREATE src/app/policies/page.tsx, an index listing all nine with a one
 line description each.
 
 CREATE src/app/contact/page.tsx and src/app/faq/page.tsx.
 
-CREATE the constants file described in section E.
+CREATE src/lib/policy-terms.ts per Section E.
 
-Create no new layout, header or footer components. Reuse
-src/components/policy.
+Create no new layout, header or footer components.
 
 ====================================================================
 SECTION E - SINGLE SOURCE OF TRUTH. ENFORCE STRICTLY.
 ====================================================================
 
-Create src/lib/policy-terms.ts. Every page imports from it. No policy
-figure is hardcoded in page content anywhere.
+src/lib/policy-terms.ts. Every page imports from it. No policy figure is
+hardcoded in page content anywhere.
 
   REFUND_FULL_DAYS = 7
   TRANSFER_DEADLINE_DAYS = 3
@@ -176,11 +196,11 @@ F.1 REFUND AND CANCELLATION (replacing the existing page)
     original start date. A teacher who finds it inconvenient may request
     a full refund at any point up to the new start date.
   - Edugistics is not responsible for travel, accommodation or any other
-    associated costs. KEEP THIS CLAUSE. It exists on the current page.
+    associated costs. KEEP THIS CLAUSE, it exists on the current page.
   - Refunds are issued in Egyptian Pounds for the amount paid. Where a
     card was issued outside Egypt the amount received may differ because
     of exchange rates applied by the issuer, and Edugistics does not
-    cover the difference. KEEP THIS CLAUSE. It exists on the current page.
+    cover the difference. KEEP THIS CLAUSE, it exists on the current page.
   - Approved refunds are processed by Edugistics within 48 hours. Bank
     transfer refunds arrive the same day. Card refunds appear according
     to the issuing bank's own processing times.
@@ -192,43 +212,51 @@ F.1 REFUND AND CANCELLATION (replacing the existing page)
   DELETE the current section 7 on recorded and downloadable materials.
   No session is recorded and no recordings are provided.
 
-  DO NOT state any number of days for card refunds. That figure is not
-  confirmed. No estimate, no range, no "typically", no "14 working days".
+  DO NOT state any number of days for card refunds. No estimate, no
+  range, no "typically", no "14 working days".
 
 F.2 PAYMENT
 
   - All fees are payable in Egyptian Pounds.
+  - Payment is not collected through the registration system. A place is
+    confirmed on availability, and payment instructions are sent
+    separately after registration.
   - Payment is collected by a payment link sent to the phone number given
     at registration, using InstaPay.
-  - A place is confirmed once payment is received.
   - Exactly one marked placeholder:
     [PENDING: card payment methods, available once the online gateway
     goes live]
   - Name no card scheme, gateway or processor beyond InstaPay.
   - Cross-link to the refund policy. Restate no refund figures.
 
+  Do not write that payment confirms a place. It does not.
+
 F.3 DIGITAL DELIVERY
 
   - On registration a teacher receives a confirmation email containing a
-    registration number.
-  - Online courses: the confirmation email carries the Zoom joining link.
-  - In person courses: the confirmation email carries venue and timing.
+    registration reference, the course name, the date and the time.
+  - The confirmation email carries the joining instructions for the
+    course, which is the online joining link for online courses and the
+    venue details for in person courses.
   - Online courses: materials are sent after the course begins.
   - In person courses: materials are handed out during the session.
   - No session is recorded. No recordings or replays are provided.
   - Cross-link to the certificate policy for certificate timing.
 
-  Compare against B.4. If the live email differs, report the difference
-  and write nothing the system does not do.
+  Do not name Zoom. The system holds free text joining instructions, not
+  a Zoom link field.
+  Write nothing about hybrid delivery.
 
 F.4 REGISTRATION
 
-  Process only, no figures: how to register, selecting a course, what
-  information is supplied, that payment confirms a place with a link to
-  the payment policy, the confirmation email and registration number,
-  capacity and waitlisting (include only if B.5 confirms it), what
-  happens after registration linking to digital delivery, and certificate
-  eligibility linking to the certificate policy.
+  Process only, no figures: how to register, selecting a course, the
+  information a teacher supplies, that a place is confirmed on
+  availability rather than on payment, that payment instructions follow
+  separately with a link to the payment policy, the confirmation email
+  and its reference, that a full course places a teacher on a waiting
+  list with a position where waiting lists are open, what happens after
+  registration linking to digital delivery, and certificate eligibility
+  linking to the certificate policy.
 
 F.5 COURSE TRANSFER
 
@@ -266,8 +294,12 @@ F.7 CERTIFICATE
 
 F.8 TERMS AND CONDITIONS
 
-  Eligibility, accuracy of information supplied, conduct during training,
-  intellectual property, limitation of liability, changes to the terms.
+  Open by identifying the operator as Edugistics Ltd, trading as
+  Edugistics.
+
+  Cover eligibility, accuracy of information supplied, conduct during
+  training, intellectual property, limitation of liability, changes to
+  the terms.
 
   Intellectual property: course materials are provided for the registered
   attendee's own professional use and may not be shared, copied,
@@ -279,10 +311,13 @@ F.8 TERMS AND CONDITIONS
 
 F.9 PRIVACY
 
-  Base the collected data list on B.3. Report the list before writing.
+  State exactly what the registration form collects: full name, email
+  address, phone number, school name, subject taught, year group taught,
+  an optional address, and a marketing consent choice.
 
-  Cover: what is collected and why; that details are used to send
-  information about available courses where consent was given; that an
+  Cover: why each category is collected; that details are used to send
+  information about available courses only where marketing consent was
+  given; that consent defaults to off and is not assumed; that an
   unsubscribe option appears on every marketing email; that records are
   retained while the relationship is active; that deletion is honoured
   within 30 days of a written request to Info@edugistics.online; who data
@@ -330,6 +365,8 @@ white. Use a brand-navy circle with a white WhatsApp glyph.
 Minimum tap target 44 by 44 pixels. aria-label "Contact Edugistics on
 WhatsApp". New tab, rel="noopener noreferrer". Inline SVG, no package.
 
+Add it inside the new pages, not by modifying PolicyLayout.
+
 ====================================================================
 SECTION J - FAQ
 ====================================================================
@@ -344,21 +381,22 @@ Edugistics to process a refund.
   3  Are your courses accredited?
   4  How do I register for a course?
   5  How do I pay?
-  6  When will I receive my joining details?
-  7  Are course materials provided?
-  8  Are sessions recorded?
-  9  When do I receive my certificate?
-  10 Can I get a refund if I cancel?
-  11 Can I change to a different course date?
-  12 Can I send a colleague in my place?
-  13 What happens if Edugistics cancels or reschedules?
-  14 How do I contact Edugistics?
+  6  What happens if a course is full?
+  7  When will I receive my joining details?
+  8  Are course materials provided?
+  9  Are sessions recorded?
+  10 When do I receive my certificate?
+  11 Can I get a refund if I cancel?
+  12 Can I change to a different course date?
+  13 Can I send a colleague in my place?
+  14 What happens if Edugistics cancels or reschedules?
+  15 How do I contact Edugistics?
 
 Native <details> and <summary>. No JavaScript accordion, no animation
 library, no new package. Style the marker, keep keyboard focus visible,
 make the whole summary row a tap target.
 
-Answer 1 and 2 from section L only.
+Answer 1 and 2 from Section L only.
 
 ====================================================================
 SECTION K - BUSINESS DETAILS. THE ONLY PERMITTED FACTS.
@@ -373,7 +411,10 @@ SECTION K - BUSINESS DETAILS. THE ONLY PERMITTED FACTS.
   Email:         Info@edugistics.online
   WhatsApp:      +201040400015   https://wa.me/201040400015
   Accreditation: The CPD Standards Office, CPD Provider 50966, 2026-2027
-  Footer line:   (c) 2026 Edugistics Ltd. All Rights Reserved.
+
+The legal name Edugistics Ltd appears in the terms and conditions and the
+certificate policy only. Every other page uses Edugistics. The existing
+footer copyright line stays exactly as it is.
 
 Invent nothing else. No registration number, tax number, awards,
 partnerships, trainer names, testimonials, course names, dates, prices,
@@ -400,8 +441,8 @@ confidence they apply in the classroom.
 SECTION M - STYLING
 ====================================================================
 
-Use the existing brand tokens through their Tailwind classes. Hardcode no
-hex values. Do not edit globals.css.
+Use the existing brand tokens through their Tailwind utility classes.
+Hardcode no hex values. Do not edit globals.css.
 
 Contrast rules, non negotiable:
   brand-teal on white is 3.9:1 and fails AA for body text. Never use it
@@ -422,13 +463,13 @@ Mobile first.
 SECTION N - DELIVERABLES
 ====================================================================
 
-  1. Section B report first. No code until approved.
+  1. Implementation plan first. File list only. Wait for approval.
   2. Implement on feature/landing-page only.
   3. Written report of every file created and modified, one line each.
   4. Run the test suite. Report the result. Fix nothing outside scope.
   5. Output and paste git diff --stat main feature/landing-page
   6. List every [PENDING: ...] placeholder with its file path.
-  7. State plainly whether any file outside section D was touched.
+  7. State plainly whether any file outside Section D was touched.
   8. Report the measured contrast ratio of every colour pair used.
   9. Present the next.config redirect as a separate diff.
 
