@@ -18,14 +18,19 @@ const PUBLIC_PATHS = new Set([
   // misconfigured, same as the landing page. The token is a query
   // parameter, not part of the pathname, so the exact path suffices.
   '/unsubscribe',
+  // Static legal/marketing pages, same as PUBLIC_PREFIXES below — the
+  // /policies/ prefix does not match the bare index route.
+  '/policies',
+  '/contact',
+  '/faq',
 ])
 const PUBLIC_PREFIXES = [
   '/icons/',
   '/brand/',
   '/_next/',
-  // Static legal/marketing pages (refund policy, and the four more to
-  // follow) must stay reachable without SITE_PASSWORD — a payment gateway
-  // reviewer needs public access to them.
+  // Static legal/marketing pages (nine policy pages plus their index) must
+  // stay reachable without SITE_PASSWORD — a payment gateway reviewer needs
+  // public access to them.
   '/policies/',
 ]
 

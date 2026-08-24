@@ -1,0 +1,12 @@
+export const REFUND_FULL_DAYS = 7
+export const TRANSFER_DEADLINE_DAYS = 3
+export const EDUGISTICS_CANCELLATION_NOTICE_DAYS = 3
+export const REFUND_PROCESSING_HOURS = 48
+export const CERTIFICATE_DIGITAL_DAYS = 7
+export const CREDIT_EXPIRY_MONTHS = 12
+export const DATA_DELETION_DAYS = 30
+export const CHANGE_REQUEST_EMAIL = 'Info@edugistics.online'
+export const CHANGE_REQUEST_SUBJECT = 'Teacher change request'
+export const CPD_PROVIDER_NUMBER = '50966'
+export const CPD_ACCREDITATION_PERIOD = '2026-2027'
+export const MINIMUM_ATTENDANCE_PERCENT = 80

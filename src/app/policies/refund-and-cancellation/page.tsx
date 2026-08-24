@@ -1,6 +1,16 @@
 import type { Metadata } from 'next'
 
 import { PolicyLayout } from '@/components/policy/policy-layout'
+import { WhatsAppBubble } from '@/components/whatsapp-bubble'
+import {
+  CHANGE_REQUEST_EMAIL,
+  CHANGE_REQUEST_SUBJECT,
+  CREDIT_EXPIRY_MONTHS,
+  EDUGISTICS_CANCELLATION_NOTICE_DAYS,
+  REFUND_FULL_DAYS,
+  REFUND_PROCESSING_HOURS,
+  TRANSFER_DEADLINE_DAYS,
+} from '@/lib/policy-terms'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://edugistics.online'
 const PATH = '/policies/refund-and-cancellation'
@@ -8,7 +18,7 @@ const PATH = '/policies/refund-and-cancellation'
 export const metadata: Metadata = {
   title: 'Refund and Cancellation Policy | Edugistics',
   description:
-    'Refund, cancellation, transfer and substitution terms for Edugistics training courses and webinars.',
+    'Refund, cancellation, transfer and substitution terms for Edugistics training courses.',
   robots: { index: true, follow: true },
   alternates: { canonical: `${SITE_URL}${PATH}` },
 }
@@ -25,91 +35,161 @@ export default function RefundAndCancellationPolicyPage() {
         <section className="flex flex-col gap-3">
           <h2 className="font-heading text-xl sm:text-2xl">1. Scope</h2>
           <p>
-            This policy applies to all paid bookings for Edugistics training courses, workshops and webinars made
-            through www.edugistics.online.
+            This policy applies to all paid bookings for Edugistics training courses made through
+            www.edugistics.online.
           </p>
         </section>
 
         <section className="flex flex-col gap-3">
           <h2 className="font-heading text-xl sm:text-2xl">2. Cancelling your booking</h2>
           <p>
-            If you cancel 7 or more days before the published start date and time of the first session, you receive
-            a full refund.
+            If you cancel {REFUND_FULL_DAYS} or more days before the published start date of the
+            course, you receive a full refund.
           </p>
           <p>
-            If you cancel fewer than 7 days before the start, no refund is issued. You may instead transfer your
-            place or send a colleague, as set out in section 3.
+            If you cancel fewer than {REFUND_FULL_DAYS} days before the start date, no refund is
+            issued. You may instead transfer your place or nominate a substitute, as set out in
+            section 3.
           </p>
         </section>
 
         <section className="flex flex-col gap-3">
           <h2 className="font-heading text-xl sm:text-2xl">3. Transfers and substitutions</h2>
           <p>
-            You may transfer your place to a later scheduled run of the same course. One transfer per booking,
-            subject to availability. Request the transfer at least 48 hours before the original start time. A
-            transferred booking is not refundable.
+            Up to {TRANSFER_DEADLINE_DAYS} days before the start date, you may transfer your place
+            to any Edugistics course, or nominate a substitute teacher to attend in your place.
           </p>
           <p>
-            You may send a colleague in your place at no extra charge. Send us their name and email address at least
-            24 hours before the start time.
+            Send your request by email to{' '}
+            <a
+              href={`mailto:${CHANGE_REQUEST_EMAIL}`}
+              className="underline underline-offset-2"
+            >
+              {CHANGE_REQUEST_EMAIL}
+            </a>{' '}
+            with the subject line &ldquo;{CHANGE_REQUEST_SUBJECT}&rdquo;. If nominating a
+            substitute, name them in the email.
           </p>
-        </section>
-
-        <section className="flex flex-col gap-3">
-          <h2 className="font-heading text-xl sm:text-2xl">4. Non-attendance</h2>
-          <p>No refund is issued where a delegate does not attend and gave no prior notice.</p>
-        </section>
-
-        <section className="flex flex-col gap-3">
-          <h2 className="font-heading text-xl sm:text-2xl">5. Multi-day courses</h2>
-          <p>Once a course has started, no partial or pro-rata refund is issued for sessions missed.</p>
-        </section>
-
-        <section className="flex flex-col gap-3">
-          <h2 className="font-heading text-xl sm:text-2xl">6. Cancellation or postponement by Edugistics</h2>
           <p>
-            If Edugistics cancels or postpones a course, you choose between a full refund and a transfer to the
-            rescheduled date. Edugistics is not responsible for travel, accommodation or any other associated costs.
+            A transfer may be made to any Edugistics course, not only a later run of the same one.
+            There is no limit on the number of transfers, and a transferred booking does not
+            expire. This is distinct from credit issued on a transfer under section 4, which does
+            expire, as set out in section 5.
           </p>
         </section>
 
         <section className="flex flex-col gap-3">
-          <h2 className="font-heading text-xl sm:text-2xl">7. Recorded and downloadable materials</h2>
+          <h2 className="font-heading text-xl sm:text-2xl">4. Price differences on transfer</h2>
+          <p>Where the new course costs more, you pay the difference.</p>
           <p>
-            Where a booking includes recorded sessions or downloadable resources, the right to a refund ends once
-            those materials have been accessed or downloaded.
+            Where the new course costs less and the transfer is requested {REFUND_FULL_DAYS} or
+            more days before the original start date, the difference is refunded.
+          </p>
+          <p>
+            Where the new course costs less and the transfer is requested inside{' '}
+            {REFUND_FULL_DAYS} days of the original start date, the difference is held as credit,
+            not refunded in cash.
           </p>
         </section>
 
         <section className="flex flex-col gap-3">
-          <h2 className="font-heading text-xl sm:text-2xl">8. Requesting a refund</h2>
+          <h2 className="font-heading text-xl sm:text-2xl">5. Credit terms</h2>
+          <p>
+            Credit expires {CREDIT_EXPIRY_MONTHS} months from the date it is issued. Credit is
+            never convertible to cash. Credit stays with the teacher who paid and cannot be passed
+            to a colleague.
+          </p>
+        </section>
+
+        <section className="flex flex-col gap-3">
+          <h2 className="font-heading text-xl sm:text-2xl">6. When the refund right ends</h2>
+          <p>
+            The refund right attaches to the original booking. Once the original course passes its{' '}
+            {REFUND_FULL_DAYS} day mark, the booking stays transferable but carries no refund
+            right.
+          </p>
+        </section>
+
+        <section className="flex flex-col gap-3">
+          <h2 className="font-heading text-xl sm:text-2xl">7. Non-attendance</h2>
+          <p>
+            Fewer than {TRANSFER_DEADLINE_DAYS} days before the start date, non-attendance is a no
+            show. No refund, no transfer and no substitution is available.
+          </p>
+        </section>
+
+        <section className="flex flex-col gap-3">
+          <h2 className="font-heading text-xl sm:text-2xl">8. Once a course has started</h2>
+          <p>
+            Once a course has started, no refund is issued, and no partial or pro-rata refund is
+            given for sessions missed.
+          </p>
+        </section>
+
+        <section className="flex flex-col gap-3">
+          <h2 className="font-heading text-xl sm:text-2xl">
+            9. Cancellation or postponement by Edugistics
+          </h2>
+          <p>
+            If Edugistics cancels a course for any reason, including low enrolment, you choose
+            between a full refund and a transfer to the rescheduled date. Where the cancellation is
+            due to low enrolment, at least {EDUGISTICS_CANCELLATION_NOTICE_DAYS} days&rsquo; notice
+            is given.
+          </p>
+          <p>
+            If Edugistics reschedules a course, the new date is announced before the original
+            start date. If the new date is inconvenient, you may request a full refund at any
+            point up to the new start date.
+          </p>
+        </section>
+
+        <section className="flex flex-col gap-3">
+          <h2 className="font-heading text-xl sm:text-2xl">10. Travel and other costs</h2>
+          <p>
+            Edugistics is not responsible for travel, accommodation or any other associated costs.
+          </p>
+        </section>
+
+        <section className="flex flex-col gap-3">
+          <h2 className="font-heading text-xl sm:text-2xl">11. Currency</h2>
+          <p>
+            Refunds are issued in Egyptian Pounds for the amount paid. Where a card was issued
+            outside Egypt, the amount received may differ because of exchange rates applied by the
+            issuer. Edugistics does not cover the difference.
+          </p>
+        </section>
+
+        <section className="flex flex-col gap-3">
+          <h2 className="font-heading text-xl sm:text-2xl">12. Requesting a refund</h2>
           <p>
             Email{' '}
-            <a href="mailto:Info@edugistics.online" className="underline underline-offset-2">
-              Info@edugistics.online
+            <a
+              href={`mailto:${CHANGE_REQUEST_EMAIL}`}
+              className="underline underline-offset-2"
+            >
+              {CHANGE_REQUEST_EMAIL}
             </a>{' '}
-            with your registration reference and the course name. Requests made by phone or WhatsApp are
-            acknowledged, then confirmed by email before processing begins.
+            with your registration reference and the course name. Requests made by phone or
+            WhatsApp are acknowledged, then confirmed by email before processing begins.
           </p>
         </section>
 
         <section className="flex flex-col gap-3">
-          <h2 className="font-heading text-xl sm:text-2xl">9. Processing time</h2>
+          <h2 className="font-heading text-xl sm:text-2xl">13. Processing time</h2>
           <p>
-            Approved refunds are returned to the original payment method within 14 working days of approval. Your
-            bank or card issuer may take further time before the funds appear on your statement.
+            Approved refunds are processed by Edugistics within {REFUND_PROCESSING_HOURS} hours.
+            Bank transfer refunds arrive the same day. Card refunds appear according to the
+            issuing bank&rsquo;s own processing times.
           </p>
         </section>
 
         <section className="flex flex-col gap-3">
-          <h2 className="font-heading text-xl sm:text-2xl">10. Currency</h2>
-          <p>
-            Refunds are issued in Egyptian Pounds for the amount paid. Where a card was issued outside Egypt, the
-            amount received may differ because of exchange rates applied by the issuer. Edugistics does not cover
-            the difference.
-          </p>
+          <h2 className="font-heading text-xl sm:text-2xl">14. Administrative fee</h2>
+          <p>Edugistics deducts no administrative fee from an approved refund.</p>
         </section>
       </div>
+
+      <WhatsAppBubble />
     </PolicyLayout>
   )
 }
