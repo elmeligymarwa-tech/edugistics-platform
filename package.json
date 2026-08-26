@@ -8,6 +8,7 @@
     "postinstall": "prisma generate",
     "start": "next start",
     "lint": "eslint",
+    "pretest": "echo \"Use npm run testdb:run instead — npm test/vitest run load no env file and vitest.database-guard.ts will abort.\" && exit 1",
     "test": "vitest run",
     "test:db-guard": "vitest run --config vitest.database-guard.config.mts",
     "test:batch-send": "vitest run --config vitest.batch-send.config.mts",
