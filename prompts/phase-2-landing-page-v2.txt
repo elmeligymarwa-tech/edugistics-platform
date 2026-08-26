@@ -1,0 +1,354 @@
+EDUGISTICS - PHASE 2 (v2)
+Landing page: header, hero, why, about, accreditation, contact prompt.
+Supersedes phase-2-landing-page.txt.
+
+Branch: feature/landing-page-phase2
+Auto mode: OFF. Confirm the status bar.
+
+====================================================================
+SECTION A - ESTABLISHED FACTS. DO NOT RE-INVESTIGATE.
+====================================================================
+
+Verified 24-26 August 2026. Phase 1 is merged and live.
+
+PATHS
+  App Router:            src/app
+  School-planning app:   src/app/app          OUT OF SCOPE
+  Training system:       src/app/training     OUT OF SCOPE
+  Landing page:          src/app/page.tsx     THIS PHASE REPLACES IT
+  "Never modify /app" means src/app/app. Not the App Router.
+
+STYLING
+  Tailwind v4, no config file. Tokens in src/app/globals.css on :root,
+  mapped to utilities via @theme inline.
+  --brand-navy #203868, --brand-teal #3c8c90, --brand-gold #e5b366,
+  --brand-coral #d8483c. Marketing and policy only, not theme-adaptive.
+  DO NOT EDIT globals.css.
+
+COMPONENTS TO REUSE, do not rebuild
+  src/components/policy/policy-footer.tsx
+    This is the footer. Phase 1 reused it rather than creating a new one.
+    The landing page uses this same component. It already carries the
+    business name, descriptor, address, both phones, email, WhatsApp and
+    the copyright line.
+  src/components/whatsapp-bubble.tsx
+    Navy circle, white glyph, aria-labelled, 44px minimum.
+  src/lib/policy-terms.ts
+    Twelve constants. Import any figure from here, hardcode none.
+
+LIVE ROUTES the landing page links to
+  /training            public, returns 200, course listing
+  /policies            index of nine policies
+  /faq  /contact       public
+
+MIDDLEWARE
+  src/middleware.ts holds PUBLIC_PATHS and PUBLIC_PREFIXES. Any new
+  public route must be added there or it is gated behind SITE_PASSWORD.
+  This phase adds no new routes, so no change is expected. If you find
+  you need one, stop and report.
+
+====================================================================
+SECTION B - THE CLAUDE DESIGN FILE IS A REFERENCE, NOT AN IMPORT
+====================================================================
+
+A design exists at
+https://claude.ai/design/p/0e9b35c4-0ce9-4a7e-8876-04f80d411e14
+
+Read it for layout, hierarchy, spacing and section order.
+
+DO NOT import, copy, vendor or reference any of these:
+  _ds/**/_ds_bundle.js
+  _ds/**/styles.css
+  image-slot.js
+  support.js
+  assets/edugistics-logo-navy.png
+  assets/edugistics-mark.png
+
+Importing that bundle would give the landing page a second design system
+that knows nothing about the brand tokens, and a second set of logo
+assets alongside the ones already in public/brand/. Rebuild the design
+using the existing tokens, fonts and components.
+
+If the design conflicts with a contrast rule in Section H, the contrast
+rule wins. Report the conflict.
+
+====================================================================
+SECTION C - SCOPE
+====================================================================
+
+IN SCOPE
+  Replace src/app/page.tsx
+  A header component used by the landing page
+  Hero, Why Edugistics, About, accreditation strip, contact prompt
+  Reuse of policy-footer and whatsapp-bubble
+  SEO metadata for the landing route
+
+OUT OF SCOPE, do not modify
+  src/app/app/**
+  src/app/training/**
+  src/app/api/**
+  src/app/login/**
+  src/app/unsubscribe/**
+  src/app/policies/**
+  src/app/faq/**  src/app/contact/**
+  src/app/layout.tsx
+  src/app/globals.css
+  src/components/policy/**
+  src/components/app-shell/**
+  src/domain/training/**
+  src/lib/training/**
+  prisma/schema.prisma
+  any server action, email template or Meta CAPI/pixel code
+  any existing test file
+  package.json. Add no new packages.
+
+Build no course listing, no webinar section, no instructors page, no
+testimonials, no statistics, no cookie banner, no payment gateway.
+
+====================================================================
+SECTION D - POSITIONING. THIS IS THE POINT OF THE PAGE.
+====================================================================
+
+Edugistics sells professional development directly to individual
+teachers. The teacher is the customer, not a school, not a procurement
+department.
+
+A teacher landing on this page must understand within five seconds:
+  who it is for          teachers and educators
+  what it provides       professional development courses
+  how to take part       browse, register, attend, get certified
+  why Edugistics         experienced trainers, practical training
+
+Language throughout uses "teachers", "your professional development",
+"your teaching", "courses for teachers", "register for your course".
+
+Do not position Edugistics as a school procurement service, a corporate
+training provider, or an institutional consultancy. Do not imply a
+school must buy a package before a teacher can train.
+
+The wider consultancy and school-management offering may be mentioned as
+a secondary capability in About. It must never lead.
+
+Final test before you report complete: if a teacher who has never heard
+of Edugistics reads only the top of this page on a phone, do they know
+they can register themselves for training? If not, revise.
+
+====================================================================
+SECTION E - HEADER
+====================================================================
+
+  Home | Courses | About | FAQ | Contact          [ REGISTER NOW ]
+
+  Courses links to /training. Not an anchor, not a placeholder.
+  Policies do not appear in the header. They are in the footer.
+  No Instructors item. No trainer names exist.
+
+REGISTER NOW is the only gold element on the page. Gold background,
+navy label. It links to /training, because registration happens after a
+course is chosen. Visible without scrolling on mobile.
+
+Logo: use the E mark alone at roughly 40px with "Edugistics" set as text
+beside it in the heading font. Do not put the stacked lockup in the
+header. Serve a resized asset from public/brand/, never the 3947px
+original.
+
+Mobile: a plain disclosure menu. Keyboard accessible, focus trapped
+while open, closes on Escape. No animation beyond open and close.
+
+====================================================================
+SECTION F - HERO
+====================================================================
+
+Approved copy. Use verbatim.
+
+  Professional Development Built for Teachers
+
+  Practical training courses designed to help teachers strengthen their
+  skills, expand their expertise and progress professionally. Delivered
+  by experienced trainers across core teaching subjects, with over 25
+  years of educational leadership behind them.
+
+  Learn. Grow. Lead.
+
+  [ Explore Teacher Training ]
+
+ONE primary CTA. It links to /training.
+
+Do not add a second hero button. Register Now already sits in the
+header, and two competing calls to action halve the click rate on both.
+
+Two deliberate wording constraints, do not revert them:
+  "25 years of educational leadership" not "25 years of educational
+  experience", because Edugistics Ltd is a new company and the
+  experience belongs to its founder.
+  "experienced trainers across core teaching subjects" not "expert
+  instructors across all subjects", because no trainer names or
+  credentials appear anywhere on the site to support the stronger claim.
+
+Do not use the tagline "Your Educational Logistics Partner" as page
+copy. It appears only inside the logo artwork.
+
+No background image, no gradient, no video, no animation. Navy type on
+white with generous space.
+
+====================================================================
+SECTION G - PAGE ORDER
+====================================================================
+
+  1  Header
+  2  Hero
+  3  Why Edugistics
+  4  About
+  5  Accreditation strip
+  6  Contact prompt
+  7  Footer (policy-footer)
+
+Why Edugistics sits directly under the hero. Do not push it below About.
+
+G.3 WHY EDUGISTICS. Approved copy, verbatim.
+
+  25+ Years of Educational Leadership
+  Over 25 years of experience in school management, education and
+  professional development.
+
+  Experienced Trainers Across Core Subjects
+  Access experienced trainers and subject specialists across major
+  teaching subjects and areas of education.
+
+  Practical and Career Focused
+  Courses provide practical strategies and skills teachers apply
+  immediately in the classroom and use to advance their careers.
+
+  Professional Growth and Excellence
+  Edugistics helps teachers develop continuously, build confidence and
+  stay ahead of the demands of modern education.
+
+  Four items. Icons optional, teal, decorative, aria-hidden. No numbers,
+  no counters, no statistics.
+
+G.4 ABOUT. Approved copy, verbatim. Note the order: teacher-facing
+training leads, consultancy follows.
+
+  Edugistics provides professional development and training courses
+  directly to teachers, covering teaching strategies, classroom
+  management, curriculum development, assessment, educational technology
+  and leadership.
+
+  Our training is practical, engaging and designed to give teachers the
+  skills, knowledge and confidence to make a real impact in the
+  classroom.
+
+  Alongside our teacher training, Edugistics also works with schools on
+  educational consultancy, leadership and school improvement.
+
+  Add no founding story, no mission statement, no values list, no team
+  photographs, no founder biography.
+
+G.5 ACCREDITATION STRIP
+
+  A narrow white band above the footer:
+    CPD badge image, 140px minimum width, on white only
+    One line: Edugistics Ltd is an accredited provider with The CPD
+      Standards Office. CPD Provider 50966.
+    A link to /policies/certificate
+
+  The badge is a JPEG with an off-white background. It shows a grey box
+  on any coloured panel. White backgrounds only.
+  Alt text: "Accredited by The CPD Standards Office, CPD Provider 50966".
+  Do not recolour, crop or alter its proportions.
+  Do not link, embed or reproduce the accreditation letter. It is
+  licensed to the business and sharing it is prohibited.
+  Claim no accreditation, endorsement or approval beyond this line.
+
+  NOTE: which CPDSO mark is correct for a homepage is unconfirmed. Use
+  the existing badge asset unchanged and flag this in your report.
+
+G.6 CONTACT PROMPT
+
+  One short section: a line inviting contact, the WhatsApp button, and a
+  link to /contact. No form.
+
+G.7 FOOTER
+
+  Import and use src/components/policy/policy-footer.tsx unchanged. Do
+  not create a landing page footer. Do not modify policy-footer. If you
+  believe a variation is needed, stop and report why before changing it.
+
+====================================================================
+SECTION H - PALETTE, CONTRAST AND TYPE
+====================================================================
+
+Use the existing brand tokens through their Tailwind utility classes.
+Hardcode no hex values. Do not edit globals.css.
+
+Contrast rules, non negotiable:
+  brand-teal on white is 3.9:1 and fails AA for body text. Never for
+    inline links or text under 18.66px. Headings 24px and above, icons
+    and borders only.
+  Inline links use brand-navy with a visible underline.
+  Gold on white fails for text. The gold CTA carries a navy label.
+  Every text and background pair reaches 4.5:1.
+  Report the measured ratio for every pair used.
+
+Navy and whitespace carry the page. Gold appears on the header CTA only.
+Coral appears nowhere in this phase. Four saturated colours at equal
+weight reads as a children's app and destroys the consultancy
+positioning.
+
+Two font families maximum, preferring what is already loaded. No
+gradients, no parallax, no scroll animation, no carousels.
+
+Mobile first. Most teachers arrive from social media or WhatsApp on a
+phone. The B2C message must be visible without scrolling.
+
+====================================================================
+SECTION I - BUSINESS FACTS. THE ONLY PERMITTED ONES.
+====================================================================
+
+  Legal name:    Edugistics Ltd
+  Trading as:    Edugistics
+  Descriptor:    Educational Management and Consultancy
+  Address:       Building 5, Zizina Gardens, New Cairo, Cairo, Egypt
+  Phone:         01040400015 and 01040400016
+  Email:         Info@edugistics.online
+  WhatsApp:      https://wa.me/201040400015
+  Accreditation: The CPD Standards Office, CPD Provider 50966, 2026-2027
+
+Invent nothing else. No registration number, tax number, awards,
+partnerships, trainer names, testimonials, course names, dates, prices,
+percentages, student numbers or founding year.
+
+If a section reads as though a fact is missing, leave it missing and
+list it in your report.
+
+====================================================================
+SECTION J - PERFORMANCE AND SEO
+====================================================================
+
+Serve resized logo assets. Never ship the 3947px original. Set explicit
+width and height on every image. Lazy load everything below the fold.
+
+SEO metadata for the landing route following the pattern already used by
+the policy pages: SITE_URL from NEXT_PUBLIC_SITE_URL falling back to
+https://edugistics.online, title suffixed "| Edugistics", one sentence
+description, robots index and follow, canonical. Add Open Graph and
+Twitter tags. Use business facts only.
+
+====================================================================
+SECTION K - DELIVERABLES
+====================================================================
+
+  1. Implementation plan first. Section order, component list, file
+     paths. Wait for approval. No code until then.
+  2. Implement on feature/landing-page-phase2 only.
+  3. Written report of every file created and modified, one line each.
+  4. Run the test suite with `npm run testdb:run`. Never `npm test`.
+     Report the result. Fix nothing outside scope.
+  5. Output and paste git diff --stat main feature/landing-page-phase2
+  6. State plainly whether any file outside Section C was touched.
+  7. Report the measured contrast ratio of every colour pair used.
+  8. Report mobile Lighthouse performance and accessibility scores.
+  9. Confirm the CPD badge sits on white and the accreditation line
+     matches the certificate policy word for word.
+
+Do not merge. Do not push to main. Do not deploy.
