@@ -42,6 +42,22 @@
   --brand-teal: #3c8c90;
   --brand-gold: #e5b366;
   --brand-coral: #d8483c;
+
+  /* Landing-page-only palette from the approved Claude Design (phase 2b).
+   * Distinct from --brand-* above — additive, not a replacement. Every
+   * existing --brand-* consumer (the nine policy pages, FAQ, contact) is
+   * untouched and keeps rendering with --brand-*.
+   * --edu-teal-dark is a darkened variant of --edu-teal, used only as a
+   * section background where white text sits on it: #05949C measures
+   * 3.67:1 for white text (fails AA); #04767C measures 5.40:1 (passes).
+   * Never use --edu-teal-dark as a text or icon colour, and never put
+   * --edu-teal-dark text/icons on white — it exists solely as that one
+   * section's background. */
+  --edu-navy: #2A396C;
+  --edu-teal: #05949C;
+  --edu-teal-dark: #04767C;
+  --edu-gold: #F9BB5D;
+  --edu-red: #EF443E;
 }
 
 .dark {
@@ -114,6 +130,11 @@
   --color-brand-teal: var(--brand-teal);
   --color-brand-gold: var(--brand-gold);
   --color-brand-coral: var(--brand-coral);
+  --color-edu-navy: var(--edu-navy);
+  --color-edu-teal: var(--edu-teal);
+  --color-edu-teal-dark: var(--edu-teal-dark);
+  --color-edu-gold: var(--edu-gold);
+  --color-edu-red: var(--edu-red);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);

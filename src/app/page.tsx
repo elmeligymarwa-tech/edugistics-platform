@@ -1,13 +1,25 @@
 import type { Metadata } from 'next'
 
 import { About } from '@/components/landing/about'
-import { AccreditationStrip } from '@/components/landing/accreditation-strip'
 import { ContactPrompt } from '@/components/landing/contact-prompt'
+import { CredentialsStrip } from '@/components/landing/credentials-strip'
+import { FaqPreview } from '@/components/landing/faq-preview'
 import { Hero } from '@/components/landing/hero'
+import { HowItWorks } from '@/components/landing/how-it-works'
 import { LandingHeader } from '@/components/landing/landing-header'
+import { RegisterYourself } from '@/components/landing/register-yourself'
+import { SubjectsGrid } from '@/components/landing/subjects-grid'
+import { TrainingSection } from '@/components/landing/training-section'
 import { WhyEdugistics } from '@/components/landing/why-edugistics'
 import { PolicyFooter } from '@/components/policy/policy-footer'
 import { WhatsAppBubble } from '@/components/whatsapp-bubble'
+import { listPublicCourses } from '@/lib/training/public-courses'
+
+// The open-course count must reflect the database at request time, not a
+// build-time snapshot — a course can be published, filled or archived at
+// any point, and Next would otherwise prerender this page once and serve
+// a stale count until the next deploy.
+export const dynamic = 'force-dynamic'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://edugistics.online'
 const PATH = '/'
@@ -34,15 +46,23 @@ export const metadata: Metadata = {
   },
 }
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const courses = await listPublicCourses()
+  const openCourseCount = courses.filter((course) => !course.isFull || course.waitlistEnabled).length
+
   return (
     <div className="flex min-h-dvh flex-col bg-white">
       <LandingHeader />
       <main className="flex-1">
         <Hero />
+        <CredentialsStrip />
+        <TrainingSection openCourseCount={openCourseCount} />
         <WhyEdugistics />
+        <SubjectsGrid />
+        <HowItWorks />
+        <RegisterYourself />
         <About />
-        <AccreditationStrip />
+        <FaqPreview />
         <ContactPrompt />
       </main>
       <PolicyFooter />
