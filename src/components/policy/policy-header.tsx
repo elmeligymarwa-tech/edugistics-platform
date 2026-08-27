@@ -7,7 +7,7 @@ export function PolicyHeader() {
       <div className="mx-auto flex w-full max-w-5xl items-center px-4">
         <Link href="/" className="flex items-center gap-2">
           <Image
-            src="/brand/mark-dark.png"
+            src="/brand/mark-light.png"
             alt=""
             width={27}
             height={40}

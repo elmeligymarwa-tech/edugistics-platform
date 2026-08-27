@@ -5,7 +5,7 @@ export function PolicyFooter() {
     <footer className="bg-brand-navy px-4 py-12 text-white">
       <div className="mx-auto flex max-w-5xl flex-col items-center gap-4 text-center">
         <Image
-          src="/brand/mark-light.png"
+          src="/brand/mark-dark.png"
           alt="Edugistics"
           width={32}
           height={48}
