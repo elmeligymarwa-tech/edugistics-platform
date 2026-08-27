@@ -1,0 +1,365 @@
+EDUGISTICS - PHASE 2b
+Replace the landing page with the completed Claude Design.
+
+Branch: feature/landing-design
+Auto mode: OFF. Confirm the status bar.
+This supersedes the phase 2 landing page shipped on 26 August.
+
+====================================================================
+SECTION A - ESTABLISHED FACTS. DO NOT RE-INVESTIGATE.
+====================================================================
+
+Phases 1 and 2 are merged and live.
+
+PATHS
+  App Router:           src/app
+  Landing page:         src/app/page.tsx        REPLACED BY THIS PHASE
+  School-planning app:  src/app/app             OUT OF SCOPE
+  Training system:      src/app/training        OUT OF SCOPE
+  Nine policy pages:    src/app/policies/*      OUT OF SCOPE THIS PHASE
+  FAQ and contact:      src/app/faq, src/app/contact   OUT OF SCOPE
+
+  "Never modify /app" means src/app/app, not the App Router.
+
+EXISTING LANDING COMPONENTS, built 26 August, replaced by this phase
+  src/components/landing/landing-header.tsx   (has a working Policies
+    dropdown: click-toggled button, focus trap, Escape, mobile nested
+    group, and a shared useFocusTrapAndEscape hook. REUSE THAT LOGIC.)
+  src/components/landing/hero.tsx
+  src/components/landing/why-edugistics.tsx
+  src/components/landing/about.tsx
+  src/components/landing/accreditation-strip.tsx
+  src/components/landing/contact-prompt.tsx
+
+COMPONENTS TO REUSE UNCHANGED
+  src/components/policy/policy-footer.tsx    the site footer
+  src/components/whatsapp-bubble.tsx
+  src/lib/policy-terms.ts                    twelve constants
+
+LIVE ROUTES
+  /training  public, 200, currently one published course
+  /policies  index, plus nine individual policy routes
+  /faq  /contact
+
+MIDDLEWARE
+  src/middleware.ts PUBLIC_PATHS already covers /, /policies, /faq,
+  /contact. This phase adds no routes, so no change is expected.
+
+TEST COMMAND
+  npm run testdb:run     NEVER npm test, which is blocked by design.
+
+====================================================================
+SECTION B - THE DESIGN ZIP
+====================================================================
+
+Extracted at design/ (gitignored). Contents, already inspected:
+
+  Edugistics Teacher Training.dc.html   490 lines, the design
+  support.js                            Claude Design runtime, 69KB
+  assets/edugistics-logo.png            2.3MB
+  assets/hero-training.png              1.5MB
+  uploads/                              byte-identical duplicates of both
+
+DO NOT import, vendor or reference support.js.
+DO NOT copy sc-for, sc-if, x-dc or data-dc-script into production. The
+file contains 22 sc-for loops and 4 sc-if blocks. Translate each into
+React: sc-for becomes .map(), sc-if becomes a conditional.
+DO NOT ship assets/edugistics-logo.png. It is the same 2.3MB file
+removed from public/brand/ on 26 August. Use the existing optimised
+assets in public/brand/ instead.
+
+hero-training.png at 1.5MB must be optimised before it ships. Resize to
+the largest size actually rendered, convert to WebP with a JPEG
+fallback, and report the final byte size. If it is a stock or
+placeholder image rather than real Edugistics photography, say so and
+keep it as a clearly marked placeholder.
+
+The design is the visual source of truth. The existing application is
+the functional source of truth.
+
+====================================================================
+SECTION C - PALETTE. ADDITIVE ONLY.
+====================================================================
+
+Approved landing palette:
+  Navy   #2A396C
+  Teal   #05949C
+  Gold   #F9BB5D
+  Red    #EF443E
+
+Add these to src/app/globals.css as NEW tokens beside the existing
+--brand-* ones. Suggested names --edu-navy, --edu-teal, --edu-gold,
+--edu-red, mapped to utilities through the same @theme inline block the
+existing tokens use.
+
+DO NOT change, remove or repoint any existing --brand-* token. The nine
+policy pages, the FAQ and the contact page must render byte-identically
+after this phase. Verify that and report it.
+
+Present the globals.css change as its own separate diff for approval
+before applying it.
+
+CONTRAST, measured. Non negotiable.
+  Navy #2A396C on white          11.05:1   fine everywhere
+  Navy #2A396C on gold #F9BB5D    6.47:1   fine, gold CTAs carry navy
+  Gold #F9BB5D on navy            6.47:1   fine for accent text on navy
+  White on teal #05949C           3.67:1   FAILS AA
+  Red #EF443E on white            3.77:1   FAILS AA for body text
+
+  The design uses a full section of white text on #05949C. Darken that
+  section's background until white text reaches at least 4.5:1.
+  #04767C measures 5.40:1 and is visually near-identical. Use it, or a
+  nearer value you verify yourself, and report the measured ratio.
+
+  Keep #05949C for borders, icons, rules and large display text only.
+  Use #EF443E for accents, never for body text.
+  Report the measured ratio for every text and background pair.
+
+====================================================================
+SECTION D - TYPOGRAPHY. ADDITIVE ONLY.
+====================================================================
+
+  League Spartan, weight 700    major headings
+  Source Sans 3                 body and supporting text
+
+The design specifies Calibri, which has no web licence and is absent
+from Android and iOS. Source Sans 3 is the approved substitute and must
+preserve the same hierarchy, weight and spacing.
+
+Load both with next/font from Google in src/app/layout.tsx, ADDING to
+whatever is already loaded. Remove nothing. Scope the new families to
+the landing page so existing pages keep their current fonts.
+
+Present the layout.tsx change as its own separate diff for approval.
+
+====================================================================
+SECTION E - SECTIONS, FROM THE DESIGN
+====================================================================
+
+  1  Header, navy
+  2  Hero, navy: "Professional Development Built for Teachers"
+  3  Credentials strip, white
+  4  Training: "Find Training That Fits Your Teaching"
+  5  Why Edugistics
+  6  Subjects and Areas
+  7  How It Works, navy
+  8  "Register Yourself. No Approval Needed.", teal
+  9  About: "Professional Development, Delivered Directly to Teachers"
+     including "More Than Teacher Training" as the secondary
+     consultancy mention
+  10 FAQ preview
+  11 Contact, navy
+  12 Footer: policy-footer, unchanged
+
+Follow the design's layout, spacing, cards, borders, section order and
+mobile behaviour. Keep its clamp() based responsive type scale.
+
+====================================================================
+SECTION F - NAVIGATION AND CTAs
+====================================================================
+
+HEADER
+  Courses | About | How It Works | FAQ | Contact | Policies (dropdown)
+  plus the gold Register Now.
+
+  Courses links to /training. Not an anchor.
+  Policies is a click-toggled dropdown listing all nine policy routes
+  plus the /policies index. Never hover. Reuse the existing
+  useFocusTrapAndEscape hook and the mobile nested group already built
+  in landing-header.tsx.
+
+  REMOVE the Arabic and English toggle if the design contains one. The
+  site is English only and no bilingual implementation exists.
+
+HERO, two CTAs
+  Primary:   Explore Teacher Training  ->  /training
+             Gold background, navy label, visually dominant.
+  Secondary: Learn About Edugistics    ->  the About section on this page
+             Clearly subordinate. Outline or text treatment, not gold.
+
+Every other "Explore Teacher Training" on the page also goes to
+/training.
+
+====================================================================
+SECTION G - POLICIES ARE NOT DUPLICATED
+====================================================================
+
+The design renders policies as an in-page modal overlay with its own
+title, sections and a "Back to the page" button. DO NOT BUILD THAT.
+
+Nine authoritative policy pages already exist and went live on 26
+August. A modal copy would be a second source of truth that drifts from
+the real one.
+
+Delete the overlay. Every policy link navigates to its real route.
+
+====================================================================
+SECTION H - COURSE DATA
+====================================================================
+
+Invent no course names, dates, prices, instructors, venues, durations
+or certificates.
+
+THE COURSE COUNT MUST BE DATA-DRIVEN.
+
+The design hardcodes "One course is open for registration right now."
+That is true today and false the moment a second course is published.
+Delete it. Read the real count from the existing public course data
+source. Create no second source of truth and fabricate no count.
+
+Render exactly these three cases:
+
+  count == 1
+    "1 course is currently open for registration"
+
+  count >= 2
+    "{count} courses are currently open for registration"
+
+  count == 0
+    "New training dates are published to the catalogue as they are
+     confirmed"
+
+  Note on the zero case: do not write "Explore our upcoming courses" or
+  anything implying scheduled dates exist. If the count is zero there
+  may be nothing scheduled, and the sentence must stay true either way.
+
+DEFINE "OPEN FOR REGISTRATION" AND REPORT YOUR DEFINITION.
+
+The existing system has courses that are active, archived, full with a
+waiting list open, and full with a waiting list closed. A course that is
+full with waiting lists closed is not open for registration, because the
+submission is rejected.
+
+State plainly in your report:
+  which database condition you used
+  that archived courses are excluded
+  that courses which are full with waiting lists closed are excluded
+  whether courses that are full with a waiting list OPEN are counted,
+    and your reasoning either way
+  the file and function you read the count from
+
+Do not modify the course data source, its queries or its schema. Read
+only. If no public read path exists that gives this count without
+touching a protected file, stop and report rather than creating one.
+
+If the design contains placeholder course cards, either wire them to
+real course data or remove them. Do not ship fabricated cards.
+
+The full catalogue stays on /training.
+
+====================================================================
+SECTION I - CPDSO
+====================================================================
+
+Keep the credentials strip structurally as designed.
+
+Do not invent or choose between the Activity mark and the Provider
+mark. That is unconfirmed with The CPD Standards Office.
+
+Use public/brand/cpd-accredited-badge.jpg, 280px wide, on a white
+background only. It has an off-white background and shows a grey box on
+any coloured panel.
+
+The accreditation line must match the certificate policy word for word:
+"Edugistics Ltd is an accredited provider with The CPD Standards
+Office, CPD Provider number 50966, accreditation period 2026-2027."
+Build it from CPD_PROVIDER_NUMBER and CPD_ACCREDITATION_PERIOD in
+policy-terms.ts, not from a literal string.
+
+Claim no accreditation, endorsement or approval beyond that line.
+Do not reproduce, link or embed the accreditation letter.
+
+====================================================================
+SECTION J - BUSINESS FACTS. THE ONLY PERMITTED ONES.
+====================================================================
+
+  Legal name:    Edugistics Ltd
+  Trading as:    Edugistics
+  Descriptor:    Educational Management and Consultancy
+  Address:       Building 5, Zizina Gardens, New Cairo, Cairo, Egypt
+  Phone:         01040400015 and 01040400016
+  Email:         Info@edugistics.online
+  WhatsApp:      https://wa.me/201040400015
+  Accreditation: The CPD Standards Office, CPD Provider 50966, 2026-2027
+
+Invent nothing else. No registration number, tax number, awards,
+partnerships, trainer names, testimonials, prices, percentages, student
+numbers or founding year.
+
+Two wording constraints carried from the last phase, do not revert:
+  "25 years of educational leadership", not "25 years of educational
+  experience". Edugistics Ltd is a new company.
+  "experienced trainers across core teaching subjects", not "expert
+  instructors across all subjects". No trainer names exist on the site.
+
+If the design's copy breaches either, change the copy and report it.
+
+====================================================================
+SECTION K - SCOPE BOUNDARY
+====================================================================
+
+DO NOT modify:
+  src/app/app/**
+  src/app/training/**
+  src/app/api/**
+  src/app/login/**  src/app/unsubscribe/**
+  src/app/policies/**  src/app/faq/**  src/app/contact/**
+  src/components/policy/**
+  src/components/app-shell/**
+  src/domain/training/**  src/lib/training/**
+  src/middleware.ts
+  prisma/schema.prisma
+  any server action, email template or Meta CAPI/pixel code
+  any existing test file
+  vitest.setup.ts, package.json test scripts
+
+TWO PERMITTED EXCEPTIONS, each requiring its own approved diff:
+  src/app/globals.css   additive tokens only, Section C
+  src/app/layout.tsx    additive font loading only, Section D
+
+CRITICAL: the Meta pixel currently loads on /. Whatever renders it must
+survive this replacement. Verify after building and report how you
+confirmed it.
+
+Add no new packages. lucide-react is already installed.
+
+====================================================================
+SECTION L - ACCESSIBILITY AND PERFORMANCE
+====================================================================
+
+Semantic HTML, one h1, correct heading order, keyboard navigation,
+visible focus states, 44px minimum touch targets, meaningful alt text,
+no reliance on colour alone, no horizontal scroll at 320px.
+
+Optimise every image. Explicit width and height on all of them. Lazy
+load below the fold. No heavy animation, no parallax, no carousels.
+
+Report mobile Lighthouse performance and accessibility scores.
+
+SEO: preserve or improve the existing homepage title, description,
+canonical, Open Graph and Twitter tags, following the pattern the
+policy pages already use. Target teacher professional development.
+
+====================================================================
+SECTION M - DELIVERABLES
+====================================================================
+
+  1. Inspection and integration plan first. File list, section mapping,
+     which existing landing components are replaced and which reused.
+     Wait for approval. No code until then.
+  2. Present the globals.css diff separately and wait for approval.
+  3. Present the layout.tsx diff separately and wait for approval.
+  4. Implement on feature/landing-design only.
+  5. Written report of every file created, modified and deleted.
+  6. Run npm run testdb:run. Report the result.
+  7. Run the production build. Confirm it compiles.
+  8. Output and paste git diff --stat main feature/landing-design
+  9. State plainly whether any file outside Section K was touched.
+  10. Report every measured contrast ratio.
+  11. Report the final byte size of every image shipped.
+  12. Confirm the nine policy pages, FAQ and contact render unchanged.
+  13. Confirm the Meta pixel still loads on /.
+  14. Verify in a browser at 320px, 390px and desktop: hero, both CTAs,
+      the Policies dropdown, /training link, and no horizontal scroll.
+
+Do not merge. Do not push to main. Do not deploy.
