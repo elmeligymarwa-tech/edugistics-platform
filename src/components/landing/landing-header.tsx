@@ -202,7 +202,7 @@ export function LandingHeader() {
         <Link href="#top" className="flex items-center">
           <Image
             src="/brand/logo-light.png"
-            alt="Edugistics"
+            alt="Edugistics — Your Educational Logistics Partner"
             width={900}
             height={649}
             priority
