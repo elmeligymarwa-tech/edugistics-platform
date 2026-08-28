@@ -202,6 +202,7 @@ function MobilePoliciesGroup({ onNavigate }: { onNavigate: () => void }) {
 export function SiteHeader() {
   const pathname = usePathname()
   const isLandingPage = pathname === '/'
+  const isTrainingPage = pathname === '/training'
 
   const [menuOpen, setMenuOpen] = useState(false)
   const toggleRef = useRef<HTMLButtonElement>(null)
@@ -239,7 +240,7 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-1.5 sm:gap-3">
-          <RegisterNowLink />
+          {!isTrainingPage && <RegisterNowLink />}
 
           <button
             ref={toggleRef}

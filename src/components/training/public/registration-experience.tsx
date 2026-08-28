@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Controller, useForm } from 'react-hook-form'
 
+import { LANDING_HEADING_FONT } from '@/components/landing/landing-typography'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FieldDescription, FieldError, FieldLabel } from '@/components/ui/field'
@@ -42,6 +43,38 @@ interface PromoValidateSuccessBody {
 /** A single course is only worth auto-selecting if a visitor could actually submit it — a lone full course with no waitlist would otherwise strand them on an unselectable step 1. */
 function isCourseSelectable(course: PublicCourse): boolean {
   return !course.isFull || course.waitlistEnabled
+}
+
+interface CourseMonthGroup {
+  key: string
+  label: string
+  courses: PublicCourse[]
+}
+
+/**
+ * Groups an already courseDate-ascending course list into month buckets,
+ * keyed by the UTC year/month of each course's own courseDate — its START
+ * month only. A course is placed in exactly one bucket and never revisited,
+ * so a course spanning into a later month still appears once, under the
+ * month it starts in. Bucket order follows first-occurrence order, which is
+ * already chronological because the input array is — nothing is re-sorted.
+ * No bucket is created for a month with no course in the given list.
+ */
+function groupCoursesByStartMonth(courses: PublicCourse[]): CourseMonthGroup[] {
+  const groups = new Map<string, CourseMonthGroup>()
+
+  for (const course of courses) {
+    const key = `${course.courseDate.getUTCFullYear()}-${course.courseDate.getUTCMonth()}`
+    let group = groups.get(key)
+    if (!group) {
+      const label = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(course.courseDate)
+      group = { key, label, courses: [] }
+      groups.set(key, group)
+    }
+    group.courses.push(course)
+  }
+
+  return [...groups.values()]
 }
 
 /**
@@ -253,14 +286,23 @@ export function RegistrationExperience({ courses }: { courses: PublicCourse[] })
             control={control}
             rules={{ required: 'Please select a course.' }}
             render={({ field }) => (
-              <div role="radiogroup" className="flex flex-col gap-2">
-                {courses.map((course) => (
-                  <CourseOptionCard
-                    key={course.id}
-                    course={course}
-                    selected={field.value === course.id}
-                    onSelect={() => field.onChange(course.id)}
-                  />
+              <div role="radiogroup" className="flex flex-col gap-3 sm:gap-4">
+                {groupCoursesByStartMonth(courses).map((group) => (
+                  <div key={group.key} className="flex flex-col">
+                    <p className={`${LANDING_HEADING_FONT} rounded-t-lg bg-edu-navy px-3 py-1.5 text-sm text-white sm:px-4 sm:py-2`}>
+                      {group.label}
+                    </p>
+                    <div className="flex flex-col gap-2 rounded-b-lg border border-t-0 border-edu-navy/15 p-2 sm:p-3">
+                      {group.courses.map((course) => (
+                        <CourseOptionCard
+                          key={course.id}
+                          course={course}
+                          selected={field.value === course.id}
+                          onSelect={() => field.onChange(course.id)}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             )}
@@ -434,7 +476,7 @@ export function RegistrationExperience({ courses }: { courses: PublicCourse[] })
 
         <FieldDescription>
           By submitting this form you agree to our{' '}
-          <a href="/training/privacy" className="underline underline-offset-2 hover:text-foreground">
+          <a href="/policies/privacy" className="underline underline-offset-2 hover:text-foreground">
             privacy notice
           </a>
           .
