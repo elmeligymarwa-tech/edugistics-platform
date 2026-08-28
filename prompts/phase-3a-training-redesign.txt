@@ -1,0 +1,276 @@
+EDUGISTICS - PHASE 3a
+Restyle /training and group the course list by month.
+
+Branch: feature/training-redesign
+Auto mode: OFF. Confirm the status bar.
+
+READ SECTION B BEFORE ANYTHING ELSE. This phase touches a component
+that takes real registrations from teachers who have paid.
+
+====================================================================
+SECTION A - ESTABLISHED FACTS. DO NOT RE-INVESTIGATE.
+====================================================================
+
+Phases 1, 2, 2b, 2c, 2d and the logo fix are merged and live.
+
+THE PAGE
+  src/app/training/page.tsx is a thin server wrapper: a metadata export,
+  force-dynamic, a heading block, a Meta Pixel privacy note, and
+  <RegistrationExperience courses={courses} />. It fetches via
+  listPublicCourses().
+
+THE COMPONENT
+  src/components/training/public/registration-experience.tsx, 451 lines,
+  client component. It holds course selection AND the registration form
+  AND the confirmation screen. Course selection cannot be restyled
+  without editing this file. That is why it is in scope, narrowly.
+
+  It renders each unselected course through
+  src/components/training/public/course-option-card.tsx.
+
+DATA
+  listPublicCourses() in src/lib/training/public-courses.ts. PROTECTED,
+  read-only. It already applies isActive, archivedAt null and
+  isCourseOpenForRegistration. Do not modify it or widen its query.
+
+  PublicCourse provides: id, name, shortDescription, category,
+  courseDate, sessions (Date[] ascending), isMultiDay, startTime,
+  endTime, deliveryMethod, location, feeAmount, currency,
+  waitlistEnabled, isFull.
+
+FORMATTING HELPERS, all in src/domain/training/format.ts. PROTECTED,
+read-only. Reuse, never reimplement.
+  formatCourseDateOrSessions(course)   dispatcher, branches on isMultiDay
+  formatCourseSessionList(dates)       SESSION_LIST_THRESHOLD = 5
+  formatCourseTimeRange(start, end)    includes "(Cairo time)"
+  formatCourseFee(amount, currency)    feeAmount === 0 renders "Free" at
+                                       the call site, not in the helper
+
+LABELS, in src/domain/training/schema.ts. PROTECTED, read-only.
+  DELIVERY_METHOD_LABELS, COURSE_CATEGORY_LABELS
+
+DESIGN SYSTEM, already in globals.css and layout.tsx
+  --edu-navy #2A396C, --edu-teal #05949C, --edu-teal-dark #04767C,
+  --edu-gold #F9BB5D, --edu-red #EF443E
+  League Spartan 700 headings, Source Sans 3 body, via the arbitrary
+  value pattern the landing components use.
+  src/components/landing/landing-typography.ts holds
+  LANDING_HEADING_FONT. Reuse it rather than adding a twelfth copy.
+
+THE LANDING CARD, built in phase 2d and the visual reference for this
+  src/components/landing/course-card.tsx
+
+TEST COMMAND
+  npm run testdb:run     NEVER npm test, which is blocked by design.
+
+====================================================================
+SECTION B - THIS IS PRODUCTION-CRITICAL CODE
+====================================================================
+
+registration-experience.tsx handles live registrations. Teachers use it.
+Money depends on it. 846 tests sit behind it.
+
+You may change ONLY the rendering of the unselected course list.
+
+DO NOT change, in that file or any other:
+  registration form state
+  validation
+  submission behaviour or the API call
+  the confirmation screen, its behaviour or its styling
+  promo code handling
+  waitlist handling
+  selection state, or what happens when a course is chosen
+  any hook, effect, handler or type signature
+  anything below the course list
+
+If a styling change appears to require touching form state, selection
+logic or the confirmation screen, STOP and report. Do not proceed.
+
+TESTING IS NOT OPTIONAL HERE.
+  Run npm run testdb:run BEFORE any change. Record the exact numbers:
+  files passed, tests passed, tests failed, and the name of any failing
+  test.
+  Run it again AFTER. Compare against that baseline, not against
+  memory or against what this prompt says.
+  Any test that passed before and fails after must be investigated and
+  reported. Do not dismiss it as unrelated or as a known flake. The
+  known flake is register-for-course.test.ts timing out under pooler
+  latency; if that is the only difference, say so explicitly and show
+  both numbers.
+
+====================================================================
+SECTION C - INSPECTION FIRST. NO CODE UNTIL APPROVED.
+====================================================================
+
+C.1 Read registration-experience.tsx in full. Report its structure:
+    what state it holds, what it renders in each state, and the exact
+    line range that renders the unselected course list. That range is
+    your entire working area.
+
+C.2 Report every token, class and helper the course list uses that is
+    ALSO used by the confirmation screen or the form. Those are shared
+    surfaces. Changing one changes the other. Name them.
+
+C.3 Read course-option-card.tsx in full. Report whether it is used
+    anywhere except the unselected list. If it is used by the selected
+    state or the confirmation screen, restyling it changes those too.
+
+C.4 Report which semantic tokens (bg-background, text-accent,
+    text-heading, text-muted-foreground, and any others) appear in the
+    course list versus elsewhere in the file.
+
+C.5 Report how the page currently orders courses, and confirm
+    listPublicCourses returns them ordered by courseDate ascending.
+
+C.6 Report the baseline test result, run before any change.
+
+Stop and wait for approval.
+
+====================================================================
+SECTION D - MONTH GROUPING
+====================================================================
+
+Group the eligible courses by month.
+
+  Group by the month of courseDate, the START month only. A course
+  running from August into September appears once, under August. It does
+  NOT appear again under September. This was decided deliberately: a
+  teacher seeing the same course twice assumes there are two.
+
+  Render only months that contain at least one course in the list you
+  were given. No empty months, ever.
+
+  Do not build a calendar. Do not generate a month range. Do not fetch
+  anything. Derive the groups from the array already passed in.
+
+  Order months chronologically, ascending, matching the order
+  listPublicCourses already returns.
+
+  Within a month, preserve the existing order. Do not re-sort.
+
+  Past months: a course only reaches this list if
+  isCourseOpenForRegistration allows it. If that puts a course in a
+  month already past, it is still legitimately open and must be shown.
+  Do not add a second filter of your own.
+
+  Month heading format: state what you chose and why. It must be
+  unambiguous about the year.
+
+====================================================================
+SECTION E - VISUAL DESIGN
+====================================================================
+
+Match the landing page. Use src/components/landing/course-card.tsx as
+the visual reference.
+
+  --edu-* tokens, League Spartan headings, Source Sans 3 body.
+  Reuse LANDING_HEADING_FONT rather than duplicating the string.
+  Month headings in navy, League Spartan.
+  Course cards matching the landing card's treatment.
+
+DO NOT do a blanket find and replace of semantic tokens across the file.
+bg-background, text-accent, text-heading and text-muted-foreground may
+be shared with the form and confirmation screen, which are out of scope.
+Change them ONLY within the course list, and only where C.2 and C.4
+confirm they are not shared.
+
+The page wrapper in page.tsx may be restyled: heading block, background,
+spacing. That file is a thin server component and is safe.
+
+CONTRAST, report every measured pair.
+  --edu-navy on white       11.05:1
+  --edu-teal on white        3.67:1  headings 24px+, borders, icons only
+  --edu-red on white         3.77:1  borders only, never text
+  --edu-navy on --edu-gold   6.47:1
+  white on --edu-teal-dark   5.40:1
+  Every text pair reaches 4.5:1 or is justified as large text.
+
+====================================================================
+SECTION F - THE PRIVACY LINK
+====================================================================
+
+page.tsx links to /training/privacy. That route was redirected to
+/policies/privacy on 26 August. Point the link directly at
+/policies/privacy and remove the redirect hop.
+
+Do not touch the redirect in next.config. Do not touch the
+/training/privacy page itself.
+
+====================================================================
+SECTION G - SCOPE BOUNDARY
+====================================================================
+
+IN SCOPE
+  src/app/training/page.tsx
+  the unselected course list rendering inside
+    src/components/training/public/registration-experience.tsx
+  src/components/training/public/course-option-card.tsx, but ONLY if
+    C.3 confirms it is not used by the selected state or the
+    confirmation screen. If it is shared, do not restyle it in place.
+    Report and propose an alternative.
+
+OUT OF SCOPE, do not modify
+  everything else in registration-experience.tsx
+  src/app/app/**
+  src/app/api/**  src/app/login/**  src/app/unsubscribe/**
+  src/app/policies/**  src/app/faq/**  src/app/contact/**
+  src/app/training/privacy/**
+  src/components/policy/**  src/components/landing/**
+  src/components/site-header.tsx  src/components/app-shell/**
+  src/domain/training/**  src/lib/training/**
+  src/lib/policy-terms.ts
+  src/app/globals.css  src/app/layout.tsx
+  src/middleware.ts  next.config
+  prisma/schema.prisma
+  any server action, email template or Meta CAPI/pixel code
+  any existing test file
+  vitest.setup.ts, package.json test scripts
+
+NOT THIS PHASE, do not start
+  course detail pages or /training/[slug]
+  embedding registration on a course page
+  extracting course selection from RegistrationExperience
+  any global token migration
+
+Add no new packages.
+
+====================================================================
+SECTION H - CURRENT CODE WINS
+====================================================================
+
+This prompt is context. The codebase is the source of truth. Where they
+disagree, trust the code, act on what you find, and explain the
+discrepancy. Do not implement something because a document says so.
+
+====================================================================
+SECTION I - DELIVERABLES
+====================================================================
+
+  1. Section C inspection report first, including the baseline test
+     numbers. No code until approved.
+  2. Implementation plan second, naming every file and the exact line
+     range you will touch inside registration-experience.tsx. Wait for
+     approval.
+  3. Implement on feature/training-redesign only.
+  4. Written report of every file created, modified and deleted.
+  5. Run npm run testdb:run. Show the AFTER numbers beside the BEFORE
+     numbers from C.6. Explain any difference.
+  6. Run the production build. Confirm it compiles.
+  7. Output and paste git diff --stat main feature/training-redesign
+  8. State plainly whether any file outside Section G was touched.
+  9. State plainly whether anything below the course list in
+     registration-experience.tsx was touched.
+  10. Report every measured contrast ratio.
+  11. Before and after screenshots of /training at 1280px and the
+      narrowest width your tooling reaches. State the actual width
+      captured, not the width requested.
+  12. Demonstrate month grouping: show what renders with courses in one
+      month, in two months, and in three or more.
+  13. Confirm no empty month renders.
+  14. Confirm a multi-day course spanning two months appears once, under
+      its start month.
+  15. Confirm the registration form, the selected state and the
+      confirmation screen are visually and behaviourally unchanged.
+      Screenshot the confirmation screen before and after.
+
+Do not merge. Do not push to main. Do not deploy.
