@@ -2,6 +2,7 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 
 const NAV_LINKS = [
@@ -26,6 +27,15 @@ const POLICY_LINKS = [
 ]
 
 const FOCUS_RING = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-edu-teal'
+
+// On the landing page, a bare "#about"/"#how" scrolls within the page. On
+// every other route those ids don't exist, so the same href would be a dead
+// anchor — resolve it to "/#about"/"/#how" instead, a real cross-page link
+// Next.js scrolls to on arrival.
+function resolveHref(href: string, isLandingPage: boolean): string {
+  if (!href.startsWith('#')) return href
+  return isLandingPage ? href : `/${href}`
+}
 
 function RegisterNowLink() {
   return (
@@ -189,17 +199,22 @@ function MobilePoliciesGroup({ onNavigate }: { onNavigate: () => void }) {
   )
 }
 
-export function LandingHeader() {
+export function SiteHeader() {
+  const pathname = usePathname()
+  const isLandingPage = pathname === '/'
+
   const [menuOpen, setMenuOpen] = useState(false)
   const toggleRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
   useFocusTrapAndEscape({ open: menuOpen, onClose: () => setMenuOpen(false), panelRef, triggerRef: toggleRef })
 
+  const logoHref = isLandingPage ? '#top' : '/'
+
   return (
     <header id="top" className="sticky top-0 z-50 border-b border-edu-navy/10 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-2 sm:gap-4 sm:px-4 sm:py-3">
-        <Link href="#top" className="flex items-center">
+        <Link href={logoHref} className="flex items-center">
           <Image
             src="/brand/logo-light.png"
             alt="Edugistics — Your Educational Logistics Partner"
@@ -214,7 +229,7 @@ export function LandingHeader() {
           {NAV_LINKS.map((link) => (
             <Link
               key={link.href}
-              href={link.href}
+              href={resolveHref(link.href, isLandingPage)}
               className={`flex min-h-11 items-center text-base text-edu-navy hover:text-edu-teal ${FOCUS_RING}`}
             >
               {link.label}
@@ -266,7 +281,7 @@ export function LandingHeader() {
             {NAV_LINKS.map((link) => (
               <Link
                 key={link.href}
-                href={link.href}
+                href={resolveHref(link.href, isLandingPage)}
                 onClick={() => setMenuOpen(false)}
                 className={`min-h-11 rounded px-2 py-3 text-base text-edu-navy hover:text-edu-teal ${FOCUS_RING}`}
               >

@@ -6,7 +6,7 @@ import { CredentialsStrip } from '@/components/landing/credentials-strip'
 import { FaqPreview } from '@/components/landing/faq-preview'
 import { Hero } from '@/components/landing/hero'
 import { HowItWorks } from '@/components/landing/how-it-works'
-import { LandingHeader } from '@/components/landing/landing-header'
+import { SiteHeader } from '@/components/site-header'
 import { RegisterYourself } from '@/components/landing/register-yourself'
 import { SubjectsGrid } from '@/components/landing/subjects-grid'
 import { TrainingSection } from '@/components/landing/training-section'
@@ -52,7 +52,7 @@ export default async function LandingPage() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-white">
-      <LandingHeader />
+      <SiteHeader />
       <main className="flex-1">
         <Hero />
         <CredentialsStrip />

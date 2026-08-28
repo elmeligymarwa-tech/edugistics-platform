@@ -3,6 +3,7 @@ import Link from 'next/link'
 import type { ReactNode } from 'react'
 
 import { PolicyLayout } from '@/components/policy/policy-layout'
+import { POLICY_TITLE } from '@/components/policy/policy-typography'
 import { WhatsAppBubble } from '@/components/whatsapp-bubble'
 import { REFUND_FULL_DAYS, REFUND_PROCESSING_HOURS, TRANSFER_DEADLINE_DAYS } from '@/lib/policy-terms'
 
@@ -18,14 +19,14 @@ export const metadata: Metadata = {
 
 function FaqItem({ question, children }: { question: string; children: ReactNode }) {
   return (
-    <details className="group border-b border-brand-navy/20 py-4">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-heading text-lg text-brand-navy marker:text-brand-navy focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-navy sm:text-xl">
+    <details className="group border-b border-edu-navy/20 py-4">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 font-[family-name:var(--font-league-spartan)] font-bold text-lg text-edu-navy marker:text-edu-navy focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-edu-teal sm:text-xl">
         {question}
         <span aria-hidden="true" className="shrink-0 text-xl transition-transform group-open:rotate-45">
           +
         </span>
       </summary>
-      <div className="mt-3 text-base leading-relaxed text-brand-navy sm:text-lg">{children}</div>
+      <div className="mt-3 text-base leading-relaxed text-edu-navy sm:text-lg">{children}</div>
     </details>
   )
 }
@@ -34,8 +35,8 @@ export default function FaqPage() {
   return (
     <PolicyLayout>
       <div className="flex flex-col gap-2">
-        <h1 className="font-heading text-3xl text-brand-navy">Frequently Asked Questions</h1>
-        <p className="text-sm text-brand-navy">Last updated: August 2026</p>
+        <h1 className={POLICY_TITLE}>Frequently Asked Questions</h1>
+        <p className="text-sm text-edu-navy">Last updated: August 2026</p>
       </div>
 
       <div className="mt-10 flex flex-col sm:mt-12">

@@ -1,8 +1,10 @@
 import Image from 'next/image'
 
+import { POLICY_BODY_FONT } from './policy-typography'
+
 export function PolicyFooter() {
   return (
-    <footer className="bg-brand-navy px-4 py-12 text-white">
+    <footer className={`bg-edu-navy px-4 py-12 text-white ${POLICY_BODY_FONT}`}>
       <div className="mx-auto flex max-w-5xl flex-col items-center gap-4 text-center">
         <Image
           src="/brand/mark-dark.png"
