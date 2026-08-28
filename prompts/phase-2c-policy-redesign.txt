@@ -1,0 +1,339 @@
+EDUGISTICS - PHASE 2c
+Migrate the policy routes, FAQ and contact page onto the Edugistics
+design system introduced with the new landing page.
+
+Branch: feature/policy-redesign
+Auto mode: OFF. Confirm the status bar.
+
+====================================================================
+SECTION A - ESTABLISHED FACTS. DO NOT RE-INVESTIGATE.
+====================================================================
+
+Phases 1, 2, 2b and the logo variant fix are all merged and live.
+
+ROUTES IN SCOPE, twelve total
+  Nine policies under src/app/policies/
+    privacy, terms-and-conditions, payment, digital-delivery,
+    registration, course-transfer, attendance, certificate,
+    refund-and-cancellation
+  src/app/policies/page.tsx          the policies index
+  src/app/faq/page.tsx
+  src/app/contact/page.tsx
+
+  Nine of these are policies. The other three are an index, an FAQ and
+  a contact page. Do not go looking for a tenth, eleventh or twelfth
+  policy. They do not exist.
+
+TOKENS, both sets live in src/app/globals.css
+  --brand-navy #203868, --brand-teal #3c8c90, --brand-gold #e5b366,
+    --brand-coral #d8483c
+  --edu-navy #2A396C, --edu-teal #05949C, --edu-teal-dark #04767C,
+    --edu-gold #F9BB5D, --edu-red #EF443E
+  Both are mapped to Tailwind utilities through the same @theme inline
+  block.
+
+FONTS, loaded in src/app/layout.tsx via next/font/google
+  League Spartan weight 700, and Source Sans 3.
+  Currently used by the landing page only. The twelve routes in scope
+  still use whatever the root layout previously loaded.
+
+COMPONENTS
+  src/components/policy/policy-header.tsx   logo only, NO navigation
+  src/components/policy/policy-footer.tsx   SHARED with the landing page
+  src/components/landing/landing-header.tsx has the working Policies
+    dropdown, mobile disclosure menu, useFocusTrapAndEscape hook, and
+    two landing-only anchors: #top on the logo link and #how in the nav
+  src/components/whatsapp-bubble.tsx
+  src/lib/policy-terms.ts                   twelve constants
+
+LOGO VARIANTS, the naming is inverted and this catches people
+  mark-light.png and logo-light.png are the NAVY artwork, for light
+    backgrounds
+  mark-dark.png and logo-dark.png are the PALE artwork, for dark
+    backgrounds
+  policy-header correctly uses mark-light.png on white.
+  policy-footer correctly uses mark-dark.png on navy.
+  Do not swap these. They were fixed on 28 August.
+
+TEST COMMAND
+  npm run testdb:run     NEVER npm test, which is blocked by design.
+
+====================================================================
+SECTION B - THE VERIFICATION BASELINE CHANGES. READ THIS.
+====================================================================
+
+Every previous phase verified success by proving these twelve routes
+rendered byte-identically before and after. This phase deliberately
+changes how they look, so that check no longer applies.
+
+Replace it with this: capture a full-page screenshot of all twelve
+routes at 390px and at 1280px BEFORE any change, and again after. Do
+not judge them yourself beyond obvious breakage. Present them for
+review and state plainly what changed on each.
+
+Separately, the landing page must NOT change visually except where
+Section D's header refactor makes it unavoidable. Screenshot the
+landing page before and after too, and report any difference you see,
+however small.
+
+====================================================================
+SECTION C - INSPECTION FIRST. NO CODE UNTIL APPROVED.
+====================================================================
+
+Report before changing anything:
+
+C.1 Every file that imports policy-header, policy-footer or
+    landing-header. Include the training system, the school-planning
+    app and any test file. This is the dependency map that decides
+    whether the header refactor is safe.
+
+C.2 Every occurrence of a --brand-* token or a brand-* Tailwind class
+    across the twelve routes in scope, with file and line.
+
+C.3 Every occurrence of a --brand-* token or brand-* class OUTSIDE
+    those twelve routes. This tells us what still depends on the legacy
+    palette after this phase.
+
+C.4 What the root layout currently applies to body typography, and
+    which font the twelve routes inherit today.
+
+C.5 The current structure of policy-header and landing-header side by
+    side: props, state, what each renders, and exactly where the #top
+    and #how anchors appear.
+
+C.6 Whether policy-footer is referenced anywhere in src/app/training or
+    src/app/app.
+
+Stop and wait for approval.
+
+====================================================================
+SECTION D - HEADER. SHARED, CONTEXT AWARE, NOT DUPLICATED.
+====================================================================
+
+The twelve routes need real navigation. policy-header has none.
+
+Refactor landing-header so one component serves both contexts. Do not
+build a second copy of the navigation inside policy-header.
+
+  On the landing page: the logo links to #top and the nav includes
+  How It Works pointing at #how. Preserve both exactly.
+
+  On the twelve routes in scope: the logo links to "/" and the
+  How It Works item either points at "/#how" or is omitted. Choose one,
+  state which, and say why. Do not render an anchor that goes nowhere.
+
+Everything else stays identical across both contexts: Courses to
+/training, About, FAQ, Contact, the Policies dropdown listing all nine
+policies plus the index, the gold Register Now, the mobile disclosure
+menu, the focus trap, Escape to close, and the click-only dropdown that
+never uses hover.
+
+Keep the existing useFocusTrapAndEscape hook. Do not reimplement it.
+
+policy-header may become a thin wrapper around the shared header, or be
+deleted entirely if nothing else uses it. State which you chose. If it
+is deleted, confirm from C.1 that nothing outside these twelve routes
+imports it.
+
+The header logo on the twelve routes should match the landing page
+treatment, including the clamp(56px, 14vw, 102px) sizing, unless that
+makes a document page look like a marketing page. If you deviate,
+say so and why.
+
+====================================================================
+SECTION E - FOOTER
+====================================================================
+
+policy-footer is shared with the landing page. Migrate it to --edu-*
+tokens and the new typography.
+
+This changes the landing page footer too. That is expected and
+accepted. Report exactly what changed there.
+
+Preserve every existing link, the business details, the CPD badge, the
+copyright line and the current structure. This is a restyle, not a
+rebuild. Do not create a second footer.
+
+====================================================================
+SECTION F - POLICY PAGE DESIGN
+====================================================================
+
+Build one shared layout and apply it to all twelve routes. Do not
+restyle twelve pages individually.
+
+  Palette: --edu-* tokens only. Hardcode no hex values. Introduce no
+    new tokens and no --policy-* aliases unless technically forced, in
+    which case explain why.
+  Typography: League Spartan for page titles and section headings,
+    Source Sans 3 for body, navigation, labels and metadata.
+  Reading measure roughly 65 to 75 characters.
+  Generous line height and section spacing. These are documents.
+  Clear numbered section hierarchy, matching what the pages already use.
+  Subtle borders and surfaces. No cards for body copy.
+  A last updated line at the top of each policy, using the existing date.
+
+These must not look like the landing page. No hero, no gold CTA banners,
+no marketing sections, no decorative imagery. Premium and readable is
+the target, not persuasive.
+
+CONTRAST, non negotiable. Report the measured ratio for every text and
+background pair you use.
+  --edu-navy on white          11.05:1  fine everywhere
+  --edu-teal on white           3.67:1  FAILS AA for body text. Headings
+    24px and above, icons, borders and rules only. Never inline links,
+    never text under 18.66px.
+  --edu-red on white            3.77:1  FAILS AA for body text. Accents
+    only.
+  --edu-navy on --edu-gold      6.47:1  fine
+  white on --edu-teal-dark      5.40:1  fine
+  Inline links use --edu-navy with a visible underline.
+
+====================================================================
+SECTION G - CONTENT IS UNTOUCHABLE
+====================================================================
+
+Change no policy wording. Not a sentence, not a number, not a heading.
+Do not rewrite, shorten, summarise, reorder or improve anything.
+
+Every figure on these pages comes from src/lib/policy-terms.ts. It
+stays that way. Hardcode nothing.
+
+If you notice a factual conflict between two pages, or anything that
+looks wrong, REPORT IT SEPARATELY at the end. Do not fix it. Yesterday's
+sessions established these terms carefully and any change is a business
+decision.
+
+Two marked placeholders exist and must survive verbatim:
+  the payment page's [PENDING: card payment methods ...]
+  the attendance page's [PENDING: minimum attendance ...]
+
+Wait. Check that. The attendance placeholder was replaced with the 80
+percent rule on 27 August. Verify which placeholders actually exist
+before assuming, and report what you find.
+
+====================================================================
+SECTION H - FAQ
+====================================================================
+
+Restyle only. The FAQ currently has fifteen questions built with native
+<details> and <summary>, working and accessible.
+
+Preserve their content, their order and their behaviour exactly.
+
+Do NOT add categories. Do NOT add search. Do NOT rewrite answers. Do
+NOT change which policy each answer links to. Do not convert it to a
+JavaScript accordion.
+
+Restyle the summary rows, the markers, the spacing and the typography to
+match the new system. Keep the focus states visible and the whole
+summary row a tap target at 44px minimum.
+
+====================================================================
+SECTION I - CONTACT PAGE
+====================================================================
+
+Restyle only. No form, no input fields, no submission path, exactly as
+now. Address, both phones as tel: links, the email as mailto:, and the
+WhatsApp button.
+
+The WhatsApp button stays navy with a white glyph. Do not use WhatsApp
+green, which measures 1.9:1 on white.
+
+====================================================================
+SECTION J - SCOPE BOUNDARY
+====================================================================
+
+DO NOT modify:
+  src/app/app/**
+  src/app/training/**
+  src/app/api/**
+  src/app/login/**  src/app/unsubscribe/**
+  src/components/app-shell/**
+  src/domain/training/**  src/lib/training/**
+  src/middleware.ts
+  prisma/schema.prisma
+  any server action, email template or Meta CAPI/pixel code
+  any existing test file
+  vitest.setup.ts, package.json test scripts
+  src/lib/policy-terms.ts        values only, do not change any figure
+
+PERMITTED, each with its own diff presented for approval:
+  src/app/globals.css   ONLY if technically forced. Do not remove,
+    rename or repoint any --brand-* token. They stay for now, and will
+    be audited separately before any future removal.
+  src/app/layout.tsx    ONLY if the twelve routes need the new fonts
+    applied at the root. Additive only, nothing removed.
+
+The landing page components may be modified only as far as Section D's
+header refactor requires. Report every landing file you touch.
+
+Add no new packages. lucide-react is already installed.
+
+====================================================================
+SECTION K - DELIVERABLES
+====================================================================
+
+  1. Section C inspection report first. No code until approved.
+  2. Implementation plan second, listing every file to be created,
+     modified or deleted. Wait for approval.
+  3. Present any globals.css or layout.tsx diff separately.
+  4. Implement on feature/policy-redesign only.
+  5. Written report of every file created, modified and deleted.
+  6. Run npm run testdb:run. Report the result. Do not chase failures
+     in src/lib/training/register-for-course.test.ts, which times out
+     intermittently under pooler latency and is unrelated.
+  7. Run the production build. Confirm it compiles.
+  8. Output and paste git diff --stat main feature/policy-redesign
+  9. State plainly whether any file outside Section J was touched.
+  10. Report every measured contrast ratio.
+  11. Before and after screenshots of all twelve routes at 390px and
+      1280px, plus the landing page, per Section B.
+  12. Confirm the landing page's #top and #how behaviour is unchanged.
+  13. Confirm no route in scope renders a dead anchor.
+  14. Report any content conflict you noticed without fixing it.
+  15. Report every --brand-* usage that remains anywhere in the repo.
+
+====================================================================
+SECTION L - CURRENT CODE WINS
+====================================================================
+
+This prompt, previous session notes and anything you have been told
+are context only. The codebase is the source of truth.
+
+Where this prompt and the code disagree, trust the code, act on what
+you find, and explain the discrepancy in your report. Do not implement
+something because a document says it is true.
+
+====================================================================
+SECTION M - ACCEPTANCE CHECKLIST
+====================================================================
+
+Confirm each of these explicitly before reporting complete. A bare
+"done" is not an answer; state what you observed.
+
+  All twelve routes use --edu-* tokens.
+  All twelve use League Spartan for headings and Source Sans 3 for body.
+  Every --brand-* token still exists in globals.css, unchanged.
+  No new colour token or --policy-* alias was created.
+  Every measured contrast pair is reported and every text pair reaches
+    4.5:1.
+  The fifteen FAQ questions are intact, in order, with unchanged
+    content, links and native <details> behaviour.
+  No FAQ categories and no FAQ search were added.
+  The header is shared, not duplicated.
+  The landing page's #top and #how behaviour is unchanged.
+  No route in scope renders a dead anchor.
+  The How It Works decision is stated with its reasoning.
+  policy-footer is still a single shared component.
+  Every policy word, figure and heading is unchanged.
+  Every figure still comes from policy-terms.ts.
+  All twelve routes still resolve, with no broken links or imports.
+  No console errors.
+  Layouts hold at 320px, 390px, tablet and desktop.
+  The landing page is not visually damaged.
+  Before and after screenshots exist for all twelve routes plus the
+    landing page, and are presented for review.
+  The placeholder audit is based on what is in the code today, not on
+    what this prompt or any note claims.
+
+Do not merge. Do not push to main. Do not deploy.
