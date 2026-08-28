@@ -1,0 +1,263 @@
+EDUGISTICS - PHASE 2d
+Replace the landing page's course availability block with real course
+cards.
+
+Branch: feature/course-cards
+Auto mode: OFF. Confirm the status bar.
+
+====================================================================
+SECTION A - ESTABLISHED FACTS. DO NOT RE-INVESTIGATE.
+====================================================================
+
+Phases 1, 2, 2b, 2c and the logo fix are merged and live.
+
+THE DATA SOURCE, read-only
+  src/lib/training/public-courses.ts exports listPublicCourses() and the
+  PublicCourse interface. It is PROTECTED. Do not modify it, its query,
+  its filters or its shape.
+
+  PublicCourse already provides:
+    id, name, shortDescription, category, courseDate,
+    sessions (Date[], ascending, empty for single-day),
+    isMultiDay, startTime, endTime, deliveryMethod, location,
+    feeAmount (number), currency, waitlistEnabled, isFull
+
+  It does NOT provide durationMinutes. Derive duration from startTime
+  and endTime in the component. Do not widen the query to fetch it.
+
+  listPublicCourses() already applies isActive, archivedAt null and
+  isCourseOpenForRegistration. It is the same list /training renders.
+
+THE SECTION BEING CHANGED
+  src/components/landing/training-section.tsx currently renders a
+  heading, an intro paragraph, a CTA and the data-driven availability
+  sentence. The cards go inside it.
+
+DESIGN SYSTEM, all already in globals.css and layout.tsx
+  --edu-navy #2A396C, --edu-teal #05949C, --edu-teal-dark #04767C,
+  --edu-gold #F9BB5D, --edu-red #EF443E
+  League Spartan 700 for headings, Source Sans 3 for body, applied via
+  the arbitrary-value pattern the landing components already use.
+
+  Shared typography constants exist at
+  src/components/policy/policy-typography.ts. Read them. If a landing
+  equivalent is needed, say so rather than duplicating strings.
+
+COMPONENTS
+  src/components/site-header.tsx    shared header, all thirteen routes
+  src/components/policy/policy-footer.tsx   shared footer
+  src/components/whatsapp-bubble.tsx
+
+TEST COMMAND
+  npm run testdb:run     NEVER npm test, which is blocked by design.
+
+====================================================================
+SECTION B - INSPECTION FIRST. NO CODE UNTIL APPROVED.
+====================================================================
+
+B.1 Read training-section.tsx and report exactly how the availability
+    count is currently derived: which function it calls, and whether
+    that path applies isCourseOpenForRegistration.
+
+    This matters. listPublicCourses() applies the registration window.
+    If the count uses a different or looser condition, the sentence and
+    the cards can disagree on screen. Report whether they agree today,
+    and if not, propose making both read the same list.
+
+B.2 Report what src/app/training/page.tsx renders per course today. The
+    cards should not contradict the catalogue in wording, formatting or
+    date handling. Reuse its formatting helpers if any exist. Report
+    them by path.
+
+B.3 Report how deliveryMethod and category render as human labels today
+    and where those label maps live. Do not invent new label text.
+
+B.4 Report how currency and feeAmount are formatted anywhere they are
+    already shown to a teacher.
+
+B.5 Confirm whether any landing typography constants exist, or whether
+    the landing components inline their font classes.
+
+Stop and wait for approval.
+
+====================================================================
+SECTION C - WHAT THE CARD SHOWS
+====================================================================
+
+Every field below already exists on PublicCourse. Invent nothing, and
+show nothing that is null.
+
+  Course name                    name
+  Short description              shortDescription
+  Date                           see Section D
+  Delivery mode                  deliveryMethod, human label per B.3
+  Duration                       derived from startTime and endTime
+  Price                          feeAmount with currency, per B.4
+  Status                         see Section E
+
+Location may be shown for in-person courses if it is not null. If it is
+null, omit the line entirely rather than printing an empty label.
+
+Do not show category unless it earns its place. State your decision.
+
+Add a price note: promo codes may apply at registration. Once per
+section, not once per card.
+
+====================================================================
+SECTION D - DATES
+====================================================================
+
+Single-day course, isMultiDay false, sessions empty
+  Show courseDate, formatted as the catalogue formats it.
+
+Multi-day course, isMultiDay true
+  Show the number of sessions and that the course runs across multiple
+  dates. Do not show courseDate alone as if it were the whole course.
+  The sessions array holds the real dates, ascending.
+
+  Decide whether to list every date or show a count with a range, and
+  state which. A four-session course listing four dates is honest; a
+  twelve-session course listing twelve is a wall. Pick a rule that
+  works at both and say what it is.
+
+Never present a derived start date as though it were the only date.
+
+====================================================================
+SECTION E - STATUS
+====================================================================
+
+  isFull false
+    No status label. The card is simply available.
+
+  isFull true and waitlistEnabled true
+    Show a "Waiting list" label. A full course with an open waitlist is
+    materially different from one with places, and a teacher can still
+    act on it.
+
+  isFull true and waitlistEnabled false
+    This course cannot be registered for and should not reach the
+    landing page at all, since listPublicCourses excludes it. If you
+    find such a course in the list, report it rather than designing
+    around it.
+
+The status label uses --edu-red as an accent. Do not use red anywhere
+else in this phase. It carries meaning and must stay scarce.
+
+====================================================================
+SECTION F - LAYOUT AND VISUAL DESIGN
+====================================================================
+
+The availability sentence STAYS, above the cards. It sets the overall
+context before a teacher evaluates individual courses. Do not remove it
+and do not duplicate its figure on the cards.
+
+Cards are navy and white with teal accents.
+  White card surface on the section background.
+  Course name in --edu-navy, League Spartan.
+  Body text in --edu-navy, Source Sans 3.
+  Teal for a rule, a border or a small icon. Not for body text.
+  One gold Register button per card, navy label, linking to /training.
+
+DO NOT put cards on a red background. White on --edu-red measures
+3.77:1 and fails AA for text, and red carries status meaning.
+
+The grid must work at one, three and twelve courses. A three-across
+layout that looks deliberate at three and broken at four is a failure.
+State your grid rule and how it behaves at 1, 2, 4 and 12.
+
+Mobile first. Single column below the md breakpoint. Cards must not
+force horizontal scroll at 320px.
+
+CONTRAST, report every measured pair.
+  --edu-navy on white          11.05:1  body, headings, links
+  --edu-teal on white           3.67:1  FAILS AA for text. Rules,
+    borders, icons and headings 24px and above only.
+  --edu-red on white            3.77:1  FAILS AA for text. If the
+    status label uses red text, it must be 24px and above or carry a
+    non-colour cue as well. Report how you handled it.
+  --edu-navy on --edu-gold      6.47:1  the Register button
+  Every text pair must reach 4.5:1 or be justified as large text.
+
+====================================================================
+SECTION G - LINKS
+====================================================================
+
+Every card's Register button links to /training.
+
+No individual course pages exist. There is no /training/[slug] route,
+and the slug field is unused publicly. Do not create one, do not link
+to one, and do not build a course detail page in this phase.
+
+Report this gap in your final report: a teacher who has already chosen
+a course from a card lands on the catalogue and must find it again.
+That is a known cost of shipping cards before course pages exist.
+
+====================================================================
+SECTION H - SCOPE BOUNDARY
+====================================================================
+
+DO NOT modify:
+  src/app/app/**
+  src/app/training/**
+  src/app/api/**
+  src/app/login/**  src/app/unsubscribe/**
+  src/app/policies/**  src/app/faq/**  src/app/contact/**
+  src/components/policy/**
+  src/components/site-header.tsx
+  src/components/app-shell/**
+  src/domain/training/**
+  src/lib/training/**            includes public-courses.ts
+  src/lib/policy-terms.ts
+  src/app/globals.css
+  src/app/layout.tsx
+  src/middleware.ts
+  prisma/schema.prisma
+  any server action, email template or Meta CAPI/pixel code
+  any existing test file
+  vitest.setup.ts, package.json test scripts
+
+IN SCOPE:
+  src/components/landing/training-section.tsx
+  a new card component under src/components/landing/
+  src/app/page.tsx only if the data must be fetched there and passed
+    down. Report why if you touch it.
+
+Add no new packages. lucide-react is already installed.
+
+If a field or helper you need sits inside a protected path, import it
+read-only. If it does not exist there, stop and report rather than
+creating it.
+
+====================================================================
+SECTION I - CURRENT CODE WINS
+====================================================================
+
+This prompt is context. The codebase is the source of truth. Where they
+disagree, trust the code, act on what you find, and explain the
+discrepancy. Do not implement something because a document says so.
+
+====================================================================
+SECTION J - DELIVERABLES
+====================================================================
+
+  1. Section B inspection report first. No code until approved.
+  2. Implementation plan second, naming every file. Wait for approval.
+  3. Implement on feature/course-cards only.
+  4. Written report of every file created, modified and deleted.
+  5. Run npm run testdb:run. Report the result.
+  6. Run the production build. Confirm it compiles.
+  7. Output and paste git diff --stat main feature/course-cards
+  8. State plainly whether any file outside Section H was touched.
+  9. Report every measured contrast ratio.
+  10. Before and after screenshots of the landing page at the narrowest
+      width your tooling reaches, and at 1280px. State the actual width
+      captured, not the width requested.
+  11. State your grid rule and how it behaves at 1, 2, 3, 4 and 12
+      courses. Demonstrate it, do not assert it.
+  12. State your multi-day date rule.
+  13. Confirm the availability sentence and the cards read from the same
+      list and cannot disagree.
+  14. Confirm no card shows an empty, null or invented field.
+  15. Report the missing course detail page as a known gap.
+
+Do not merge. Do not push to main. Do not deploy.

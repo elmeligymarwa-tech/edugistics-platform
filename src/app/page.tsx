@@ -48,7 +48,8 @@ export const metadata: Metadata = {
 
 export default async function LandingPage() {
   const courses = await listPublicCourses()
-  const openCourseCount = courses.filter((course) => !course.isFull || course.waitlistEnabled).length
+  const openCourses = courses.filter((course) => !course.isFull || course.waitlistEnabled)
+  const openCourseCount = openCourses.length
 
   return (
     <div className="flex min-h-dvh flex-col bg-white">
@@ -56,7 +57,7 @@ export default async function LandingPage() {
       <main className="flex-1">
         <Hero />
         <CredentialsStrip />
-        <TrainingSection openCourseCount={openCourseCount} />
+        <TrainingSection openCourseCount={openCourseCount} courses={openCourses} />
         <WhyEdugistics />
         <SubjectsGrid />
         <HowItWorks />

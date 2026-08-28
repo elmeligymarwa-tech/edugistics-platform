@@ -1,5 +1,9 @@
 import Link from 'next/link'
 
+import type { PublicCourse } from '@/lib/training/public-courses'
+
+import { CourseCard } from './course-card'
+
 const HEADING_FONT = 'font-[family-name:var(--font-league-spartan)] font-bold'
 const FOCUS_RING = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-edu-teal'
 
@@ -13,7 +17,13 @@ function availabilityMessage(openCourseCount: number): string {
   return `${openCourseCount} courses are currently open for registration.`
 }
 
-export function TrainingSection({ openCourseCount }: { openCourseCount: number }) {
+export function TrainingSection({
+  openCourseCount,
+  courses,
+}: {
+  openCourseCount: number
+  courses: PublicCourse[]
+}) {
   return (
     <section id="training" className="bg-white">
       <div className="mx-auto flex max-w-6xl flex-col gap-10 px-4 py-16 sm:py-20">
@@ -38,6 +48,17 @@ export function TrainingSection({ openCourseCount }: { openCourseCount: number }
         <div className="border border-edu-navy/15 bg-edu-navy/[0.03] p-6 sm:p-8">
           <p className="text-lg leading-relaxed text-edu-navy">{availabilityMessage(openCourseCount)}</p>
         </div>
+
+        {courses.length > 0 && (
+          <>
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {courses.map((course) => (
+                <CourseCard key={course.id} course={course} />
+              ))}
+            </div>
+            <p className="text-sm text-edu-navy/70">Promo codes may apply at registration.</p>
+          </>
+        )}
       </div>
     </section>
   )
