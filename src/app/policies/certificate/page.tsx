@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 
+import { CpdVerificationLink } from '@/components/policy/cpd-verification-link'
 import { PolicyLayout } from '@/components/policy/policy-layout'
 import { POLICY_SECTION_HEADING, POLICY_TITLE } from '@/components/policy/policy-typography'
 import { WhatsAppBubble } from '@/components/whatsapp-bubble'
@@ -31,6 +32,9 @@ export default function CertificatePolicyPage() {
             Edugistics Ltd is an accredited provider with The CPD Standards Office, CPD Provider
             number {CPD_PROVIDER_NUMBER}, accreditation period {CPD_ACCREDITATION_PERIOD}. All
             Edugistics courses are registered with The CPD Standards Office by prior arrangement.
+          </p>
+          <p>
+            <CpdVerificationLink />
           </p>
         </section>
 

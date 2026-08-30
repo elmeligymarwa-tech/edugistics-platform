@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
+import { CpdVerificationLink } from '@/components/policy/cpd-verification-link'
 import {
   CERTIFICATE_DIGITAL_DAYS,
   CPD_ACCREDITATION_PERIOD,
@@ -92,7 +93,8 @@ export function FaqPreview() {
 
           <FaqItem question="Are the courses accredited?" href="/policies/certificate" linkLabel="Certificate Policy">
             Yes. Edugistics Ltd is an accredited provider with The CPD Standards Office, CPD
-            Provider number {CPD_PROVIDER_NUMBER}, accreditation period {CPD_ACCREDITATION_PERIOD}.
+            Provider number {CPD_PROVIDER_NUMBER}, accreditation period {CPD_ACCREDITATION_PERIOD}.{' '}
+            <CpdVerificationLink className={`font-bold text-edu-navy hover:text-edu-teal ${FOCUS_RING}`} />.
           </FaqItem>
 
           <FaqItem

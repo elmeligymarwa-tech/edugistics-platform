@@ -9,4 +9,5 @@ export const CHANGE_REQUEST_EMAIL = 'Info@edugistics.online'
 export const CHANGE_REQUEST_SUBJECT = 'Teacher change request'
 export const CPD_PROVIDER_NUMBER = '50966'
 export const CPD_ACCREDITATION_PERIOD = '2026-2027'
+export const CPD_VERIFICATION_URL = 'https://directory.cpdstandards.com/providers/edugistics-ltd/'
 export const MINIMUM_ATTENDANCE_PERCENT = 80

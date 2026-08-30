@@ -1,4 +1,8 @@
+import { CpdVerificationLink } from '@/components/policy/cpd-verification-link'
+import { CPD_ACCREDITATION_PERIOD, CPD_PROVIDER_NUMBER } from '@/lib/policy-terms'
+
 const HEADING_FONT = 'font-[family-name:var(--font-league-spartan)] font-bold'
+const FOCUS_RING = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-edu-teal'
 
 const CREDENTIALS = [
   { title: '25+ Years', body: 'Educational leadership' },
@@ -18,6 +22,11 @@ export function CredentialsStrip() {
           </div>
         ))}
       </div>
+      <p className="mx-auto max-w-6xl border-t border-edu-navy/10 px-4 py-4 text-sm leading-relaxed text-edu-navy/70">
+        Accredited Provider — CPD Provider {CPD_PROVIDER_NUMBER} |{' '}
+        {CPD_ACCREDITATION_PERIOD.replace('-', '–')}{' '}
+        <CpdVerificationLink className={`font-bold text-edu-navy hover:text-edu-teal ${FOCUS_RING}`} />
+      </p>
     </section>
   )
 }

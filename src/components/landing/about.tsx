@@ -1,6 +1,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 
+import { CpdVerificationLink } from '@/components/policy/cpd-verification-link'
 import { CPD_ACCREDITATION_PERIOD, CPD_PROVIDER_NUMBER } from '@/lib/policy-terms'
 
 const HEADING_FONT = 'font-[family-name:var(--font-league-spartan)] font-bold'
@@ -60,7 +61,7 @@ export function About() {
               >
                 Read our certificate policy
               </Link>
-              .
+              . <CpdVerificationLink className={`font-bold text-edu-navy hover:text-edu-teal ${FOCUS_RING}`} />.
             </p>
           </div>
         </div>

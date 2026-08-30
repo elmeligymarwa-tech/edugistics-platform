@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
+import { CpdVerificationLink } from '@/components/policy/cpd-verification-link'
 import { PolicyLayout } from '@/components/policy/policy-layout'
 import { POLICY_TITLE } from '@/components/policy/policy-typography'
 import { WhatsAppBubble } from '@/components/whatsapp-bubble'
@@ -61,7 +62,7 @@ export default function FaqPage() {
             <Link href="/policies/certificate" className="underline underline-offset-2">
               Certificate Policy
             </Link>
-            .
+            . <CpdVerificationLink />.
           </p>
         </FaqItem>
 
